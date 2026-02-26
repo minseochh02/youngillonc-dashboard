@@ -19,6 +19,7 @@ export default function DailyStatusPage() {
   const [activeTab, setActiveTab] = useState(tabs[0].id);
   const [selectedDate, setSelectedDate] = useState("2026-02-03");
   const [salesData, setSalesData] = useState<any[]>([]);
+  const [miscMobil, setMiscMobil] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -33,6 +34,7 @@ export default function DailyStatusPage() {
       const response = await apiFetch(`/api/dashboard/daily-status/sales?date=${selectedDate}`);
       const result = await response.json();
       if (result.success) {
+        setMiscMobil(result.miscMobil);
         // Ensure data is an array before reducing
         const rawData = result.data;
         const data = Array.isArray(rawData) ? rawData : [];
@@ -187,7 +189,25 @@ export default function DailyStatusPage() {
                   <p className="text-sm">데이터를 불러오는 중입니다...</p>
                 </div>
               ) : (
-                <SalesTable data={salesData} />
+                <div className="space-y-4">
+                  <SalesTable data={salesData} />
+                  
+                  {miscMobil && miscMobil.count > 0 && (
+                    <div className="flex items-start gap-3 p-4 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                      <div className="mt-0.5 text-blue-500">
+                        <Loader2 className="w-4 h-4 animate-pulse" />
+                      </div>
+                      <div className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                        <span className="font-bold text-zinc-700 dark:text-zinc-300">💡 데이터 알림:</span> 
+                        <br />
+                        분류 체계 외(AA 그룹)에서 발견된 <span className="text-blue-600 dark:text-blue-400 font-medium">Mobil 제품 {miscMobil.count}건</span>이 별도 확인되었습니다. 
+                        해당 항목들의 매출액은 <span className="text-zinc-900 dark:text-zinc-100 font-semibold">₩{Number(miscMobil.amount).toLocaleString()}</span>, 
+                        중량은 <span className="text-zinc-900 dark:text-zinc-100 font-semibold">{Number(miscMobil.weight).toLocaleString()} kg</span>입니다. 
+                        (현재 상단 집계 및 상세 지표에는 포함되지 않았습니다.)
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
