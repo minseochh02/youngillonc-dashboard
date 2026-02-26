@@ -10,6 +10,8 @@ The "Branch" dimension is identified by different columns in different tables. F
 | :--- | :--- | :--- | :--- |
 | **Sales** | `거래처그룹1코드명` | 창원사업소, 화성사업소, MB, 서부사업소, 중부사업소, 부산사업소, 제주사업소, 동부사업소, 남부지사 | 창원, 화성, MB, 서부, 중부, 부산, 제주, 동부, 남부 |
 | **Purchases** | `거래처그룹1명` | 창원사업소, 화성사업소, 서부사업소, 동부사업소, 부산사업소, 제주사업소, 남부지사, 매입처 | 창원, 화성, 서부, 동부, 부산, 제주, 남부 |
+| **Deposits** | `부서명` | 창원, 화성, 서부, etc. | 창원, 화성, 서부, etc. |
+| **Notes** | `부서명` | 창원, 화성, 서부, etc. | 창원, 화성, 서부, etc. |
 
 > **Note**: Always use `COALESCE` or `REPLACE` in SQL to normalize these names when joining tables.
 
@@ -59,8 +61,8 @@ Based on official internal reporting rules:
 - **Mandatory Filter**: `계정명 = '외상매출금'` (Accounts Receivable only).
 - **Excluded**: 미수금, 잡이익, etc.
 - **Categorization**: 
-    - **Card**: Account (`계좌`) contains '카드' or '이니시스'.
-    - **Cash**: Everything else.
+    - **Card**: Account (`계좌`) contains '카드' or '이니시스' AND does not match specific bank branch names.
+    - **Cash**: Specific bank branch accounts or generic accounts not labeled as card.
 
 ### 5.2 Notes (어음)
 - **Table**: `promissory_notes`
@@ -71,3 +73,18 @@ Based on official internal reporting rules:
     - **N**: 동부
     - **C**: 창원
     - **P**: 부산
+
+## 6. Mobil Payment (모빌결제내역) Business Logic
+
+Based on Mobil Korea purchase tracking:
+
+### 6.1 Industry Group Classification
+- **Table**: `purchase_orders` (발주서현황) - **Exclusive Source**
+- **Supplier Filter**: `거래처명 LIKE '%모빌%'`
+- **Date Filter**: `월_일` column
+- **Branch Column**: `창고명`
+- **Categorization Logic**:
+    - **IL (Industrial)**: `품목그룹1코드 = 'IL'` (Mobil-산업유)
+    - **AUTO (Automotive)**: `품목그룹1코드 IN ('PVL', 'CVL')` (Mobil-자동차, Mobil-대형차)
+    - **MBK (Specialized)**: `품목그룹1코드 IN ('MB', 'AVI')` (Mobil-MB, Mobil-항공기유)
+- **Primary Group**: The "산업군" displayed in the report is dynamically determined by the highest payment volume category among IL, AUTO, and MBK for each branch.

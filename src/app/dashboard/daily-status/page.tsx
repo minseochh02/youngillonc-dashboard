@@ -7,7 +7,8 @@ import CollectionsTable from "@/components/CollectionsTable";
 import MonthlyCollectionsTable from "@/components/MonthlyCollectionsTable";
 import FundsTable from "@/components/FundsTable";
 import InOutTable from "@/components/InOutTable";
-import { Calendar, Loader2, TrendingUp, Wallet, Landmark, Coins, ArrowLeftRight } from "lucide-react";
+import MobilPaymentsTable from "@/components/MobilPaymentsTable";
+import { Calendar, Loader2, TrendingUp, Wallet, Landmark, Coins, ArrowLeftRight, CreditCard } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 
 const tabs = [
@@ -17,6 +18,7 @@ const tabs = [
   { id: "monthly-collections", label: "월별외상매출금현황" },
   { id: "funds", label: "자금현황" },
   { id: "in-out", label: "입출금현황" },
+  { id: "mobil-payments", label: "모빌결제내역" },
 ];
 
 export default function DailyStatusPage() {
@@ -28,6 +30,7 @@ export default function DailyStatusPage() {
   const [monthlyCollectionsData, setMonthlyCollectionsData] = useState<any[]>([]);
   const [fundsData, setFundsData] = useState<any>(null);
   const [inOutData, setInOutData] = useState<any>(null);
+  const [mobilPaymentsData, setMobilPaymentsData] = useState<any[]>([]);
   const [miscMobil, setMiscMobil] = useState<any>(null);
   const [monthlyMiscMobil, setMonthlyMiscMobil] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,6 +48,8 @@ export default function DailyStatusPage() {
       fetchFundsData();
     } else if (activeTab === "in-out") {
       fetchInOutData();
+    } else if (activeTab === "mobil-payments") {
+      fetchMobilPaymentsData();
     }
   }, [selectedDate, activeTab]);
 
@@ -160,6 +165,21 @@ export default function DailyStatusPage() {
       }
     } catch (error) {
       console.error("Failed to fetch in-out data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchMobilPaymentsData = async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiFetch(`/api/dashboard/daily-status/mobil-payments?date=${selectedDate}`);
+      const result = await response.json();
+      if (result.success) {
+        setMobilPaymentsData(result.data || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch mobil payments data:", error);
     } finally {
       setIsLoading(false);
     }
@@ -334,7 +354,7 @@ export default function DailyStatusPage() {
               </div>
             )}
           </div>
-        ) : (
+        ) : activeTab === "in-out" ? (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
@@ -352,6 +372,22 @@ export default function DailyStatusPage() {
               <div className="p-8 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl text-center bg-white dark:bg-zinc-900/50">
                 <p className="text-zinc-400 italic text-sm">해당 날짜의 입출금 데이터가 없습니다.</p>
               </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-blue-500" /> 모빌 매입 결제 내역 ({selectedDate})
+              </h3>
+              <div className="text-[10px] font-medium text-zinc-400 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded">
+                Mobil Korea Payments
+              </div>
+            </div>
+            {isLoading && mobilPaymentsData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400"><Loader2 className="w-8 h-8 animate-spin" /><p>결제 내역을 불러오고 있습니다...</p></div>
+            ) : (
+              <MobilPaymentsTable data={mobilPaymentsData} />
             )}
           </div>
         )}
