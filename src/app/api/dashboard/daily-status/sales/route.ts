@@ -23,23 +23,25 @@ export async function GET(request: Request) {
         COALESCE(p.flagshipPurchaseWeight, 0) as flagshipPurchaseWeight
       FROM (
         SELECT 
-          REPLACE(REPLACE(COALESCE(거래처그룹1코드명, '기타'), '사업소', ''), '지사', '') as branch,
+          REPLACE(REPLACE(거래처그룹1코드명, '사업소', ''), '지사', '') as branch,
           SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as totalSales,
           SUM(CASE WHEN 품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(공급가액, ',', '') AS NUMERIC) ELSE 0 END) as mobileSalesAmount,
           SUM(CASE WHEN 품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(중량, ',', '') AS NUMERIC) ELSE 0 END) as mobileSalesWeight,
           SUM(CASE WHEN 품목그룹3코드 = 'FLA' THEN CAST(REPLACE(중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipSalesWeight
         FROM sales
         WHERE 일자 = '${date}'
-        GROUP BY REPLACE(REPLACE(COALESCE(거래처그룹1코드명, '기타'), '사업소', ''), '지사', '')
+          AND (거래처그룹1코드명 LIKE '%사업소%' OR 거래처그룹1코드명 LIKE '%지사%' OR 거래처그룹1코드명 = 'MB')
+        GROUP BY REPLACE(REPLACE(거래처그룹1코드명, '사업소', ''), '지사', '')
       ) s
       FULL OUTER JOIN (
         SELECT 
-          REPLACE(REPLACE(COALESCE(거래처그룹1명, '기타'), '사업소', ''), '지사', '') as branch,
+          REPLACE(REPLACE(거래처그룹1명, '사업소', ''), '지사', '') as branch,
           SUM(CASE WHEN 품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(중량, ',', '') AS NUMERIC) ELSE 0 END) as mobilePurchaseWeight,
           SUM(CASE WHEN 품목그룹3코드 = 'FLA' THEN CAST(REPLACE(중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipPurchaseWeight
         FROM purchases
         WHERE 일자 = '${date}'
-        GROUP BY REPLACE(REPLACE(COALESCE(거래처그룹1명, '기타'), '사업소', ''), '지사', '')
+          AND (거래처그룹1명 LIKE '%사업소%' OR 거래처그룹1명 LIKE '%지사%' OR 거래처그룹1명 = 'MB')
+        GROUP BY REPLACE(REPLACE(거래처그룹1명, '사업소', ''), '지사', '')
       ) p ON s.branch = p.branch
       ORDER BY totalSales DESC
     `;

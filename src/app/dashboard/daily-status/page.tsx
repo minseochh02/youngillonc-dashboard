@@ -3,25 +3,22 @@
 import { useState, useEffect } from "react";
 import SalesTable from "@/components/SalesTable";
 import MonthlySalesTable from "@/components/MonthlySalesTable";
-import { Calendar, Loader2, TrendingUp } from "lucide-react";
+import CollectionsTable from "@/components/CollectionsTable";
+import { Calendar, Loader2, TrendingUp, Wallet } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 
 const tabs = [
   { id: "sales", label: "매출현황" },
   { id: "monthly", label: "월별매출현황" },
-  { id: "production", label: "생산현황" },
-  { id: "shipment", label: "출고현황" },
-  { id: "inventory", label: "재고현황" },
-  { id: "orders", label: "주문현황" },
-  { id: "raw-materials", label: "원자재현황" },
-  { id: "defects", label: "불량현황" },
+  { id: "collections", label: "외상매출금현황" },
 ];
 
 export default function DailyStatusPage() {
   const [activeTab, setActiveTab] = useState(tabs[0].id);
-  const [selectedDate, setSelectedDate] = useState("2026-02-03");
+  const [selectedDate, setSelectedDate] = useState("2026-02-04");
   const [salesData, setSalesData] = useState<any[]>([]);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [collectionsData, setCollectionsData] = useState<any[]>([]);
   const [miscMobil, setMiscMobil] = useState<any>(null);
   const [monthlyMiscMobil, setMonthlyMiscMobil] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -31,6 +28,8 @@ export default function DailyStatusPage() {
       fetchSalesData();
     } else if (activeTab === "monthly") {
       fetchMonthlyData();
+    } else if (activeTab === "collections") {
+      fetchCollectionsData();
     }
   }, [selectedDate, activeTab]);
 
@@ -98,6 +97,21 @@ export default function DailyStatusPage() {
       }
     } catch (error) {
       console.error("Failed to fetch monthly data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchCollectionsData = async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiFetch(`/api/dashboard/daily-status/collections?date=${selectedDate}`);
+      const result = await response.json();
+      if (result.success) {
+        setCollectionsData(result.data || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch collections data:", error);
     } finally {
       setIsLoading(false);
     }
@@ -250,8 +264,39 @@ export default function DailyStatusPage() {
               )}
             </div>
           </div>
-        ) : activeTab === "monthly" ? (
+        ) : activeTab === "collections" ? (
           <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-blue-500" />
+                지사별 수금 현황 ({selectedDate})
+              </h3>
+              <div className="text-[10px] font-medium text-zinc-400 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded">
+                Accounts Receivable Collection
+              </div>
+            </div>
+            
+            {isLoading && collectionsData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400">
+                <Loader2 className="w-8 h-8 animate-spin" />
+                <p className="text-sm">수금 데이터를 불러오고 있습니다...</p>
+              </div>
+            ) : (
+              <CollectionsTable data={collectionsData} />
+            )}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-blue-500" />
+                {selectedDate.split('-')[0]}년 지사별 월간 추이
+              </h3>
+              <div className="text-[10px] font-medium text-zinc-400 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded">
+                Monthly Performance
+              </div>
+            </div>
+
             {/* YTD Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
@@ -279,56 +324,32 @@ export default function DailyStatusPage() {
                 <p className="mt-2 text-[10px] text-zinc-400 text-amber-600/60 font-medium italic">공급망 실적</p>
               </div>
             </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-blue-500" />
-                  {selectedDate.split('-')[0]}년 지사별 월간 추이
-                </h3>
-                <div className="text-[10px] font-medium text-zinc-400 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded">
-                  Monthly Breakdown by Division
-                </div>
+            
+            {isLoading && monthlyData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400">
+                <Loader2 className="w-8 h-8 animate-spin" />
+                <p className="text-sm">월별 데이터를 집계하고 있습니다...</p>
               </div>
-              
-              {isLoading && monthlyData.length === 0 ? (
-                <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400">
-                  <Loader2 className="w-8 h-8 animate-spin" />
-                  <p className="text-sm">월별 데이터를 집계하고 있습니다...</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <MonthlySalesTable data={monthlyData} />
-                  
-                  {monthlyMiscMobil && monthlyMiscMobil.count > 0 && (
-                    <div className="flex items-start gap-3 p-4 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl">
-                      <div className="mt-0.5 text-blue-500">
-                        <Loader2 className="w-4 h-4 animate-pulse" />
-                      </div>
-                      <div className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                        <span className="font-bold text-zinc-700 dark:text-zinc-300">💡 연간 데이터 알림:</span> 
-                        <br />
-                        올해 분류 체계 외(AA 그룹)에서 <span className="text-blue-600 dark:text-blue-400 font-medium">Mobil 제품 {monthlyMiscMobil.count}건</span>이 발견되었습니다. 
-                        누적 매출액은 <span className="text-zinc-900 dark:text-zinc-100 font-semibold">₩{Number(monthlyMiscMobil.amount).toLocaleString()}</span>, 
-                        누적 중량은 <span className="text-zinc-900 dark:text-zinc-100 font-semibold">{Number(monthlyMiscMobil.weight).toLocaleString()} kg</span>입니다.
-                      </div>
+            ) : (
+              <div className="space-y-4">
+                <MonthlySalesTable data={monthlyData} />
+                
+                {monthlyMiscMobil && monthlyMiscMobil.count > 0 && (
+                  <div className="flex items-start gap-3 p-4 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                    <div className="mt-0.5 text-blue-500">
+                      <Loader2 className="w-4 h-4 animate-pulse" />
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="p-8 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl flex flex-col items-center justify-center min-h-[400px] text-center bg-white dark:bg-zinc-900/50">
-            <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center mb-4 text-zinc-400">
-              📊
-            </div>
-            <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-50">
-              {tabs.find((t) => t.id === activeTab)?.label} 데이터
-            </h3>
-            <p className="text-sm text-zinc-500 max-w-xs mt-2">
-              선택한 테이블에 대한 상세 데이터를 로드하고 있습니다.
-            </p>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      <span className="font-bold text-zinc-700 dark:text-zinc-300">💡 연간 데이터 알림:</span> 
+                      <br />
+                      올해 분류 체계 외(AA 그룹)에서 <span className="text-blue-600 dark:text-blue-400 font-medium">Mobil 제품 {monthlyMiscMobil.count}건</span>이 발견되었습니다. 
+                      누적 매출액은 <span className="text-zinc-900 dark:text-zinc-100 font-semibold">₩{Number(monthlyMiscMobil.amount).toLocaleString()}</span>, 
+                      누적 중량은 <span className="text-zinc-900 dark:text-zinc-100 font-semibold">{Number(monthlyMiscMobil.weight).toLocaleString()} kg</span>입니다.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

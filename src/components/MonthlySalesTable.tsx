@@ -1,3 +1,5 @@
+import DataLogicInfo from "./DataLogicInfo";
+
 interface MonthlySalesRow {
   month: string;
   branch: string;
@@ -191,6 +193,19 @@ export default function MonthlySalesTable({ data }: MonthlySalesTableProps) {
         );
       })}
       
+      {data.length > 0 && (
+        <DataLogicInfo 
+          title="월별 매출"
+          description="지사별 월간 실적 추이 및 이전 달 대비 성장 지표를 분석합니다."
+          steps={[
+            "월간 그룹화: 데이터베이스의 일별 거래 내역을 연-월 단위로 묶어 지사별 월간 총계를 산출합니다.",
+            "성장 추이 추적: 현재 달과 바로 이전 달의 실적을 비교하여 증감액(↑/↓)을 실시간으로 계산합니다.",
+            "호버 인사이트: 숫자 위에 마우스를 올리면 이전 달 대비 구체적인 차이 금액 또는 중량이 팝업됩니다.",
+            "누적 실적(YTD): 올해 1월부터 현재까지의 모든 데이터를 합산하여 전체적인 사업 흐름을 요약합니다."
+          ]}
+        />
+      )}
+
       {data.length === 0 && (
         <div className="p-12 text-center border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl text-zinc-400 italic">
           올해 집계된 데이터가 없습니다.

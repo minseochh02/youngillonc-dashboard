@@ -50,5 +50,24 @@ SUM(CAST(REPLACE(column_name, ',', '') AS NUMERIC))
 - **Currency**: KRW (₩)
 - **Weight**: KG (kg)
 
-## 5. Table Relationships
-The `sales` and `purchases` tables are usually joined via the normalized **Branch Name** and filtered by the **`일자` (Date)** column.
+## 5. Collection (수금) Business Logic
+
+Based on official internal reporting rules:
+
+### 5.1 Deposits (Cash/Card)
+- **Table**: `deposits`
+- **Mandatory Filter**: `계정명 = '외상매출금'` (Accounts Receivable only).
+- **Excluded**: 미수금, 잡이익, etc.
+- **Categorization**: 
+    - **Card**: Account (`계좌`) contains '카드' or '이니시스'.
+    - **Cash**: Everything else.
+
+### 5.2 Notes (어음)
+- **Table**: `promissory_notes`
+- **Filter**: `증감구분 = '증가'` (New notes received).
+- **Branch Mapping Prefixes**: 
+    - **Y**: 화성
+    - **IC**: 서부
+    - **N**: 동부
+    - **C**: 창원
+    - **P**: 부산
