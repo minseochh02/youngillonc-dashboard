@@ -11,31 +11,8 @@ export async function GET(request: Request) {
     const date = searchParams.get('date') || '2026-02-03';
 
     // SQL to aggregate data from sales and purchases tables
-    // 1. Sales metrics from 'sales' table (Total, Mobile Sales, Mobile/Flagship Weights)
-    // 2. Purchase metrics from 'purchases' table (Mobile/Flagship Purchase Weights)
-    // Grouped by Branch (창고명 or 거래처그룹1코드명 depending on data characteristics)
-    
+    // Clean numeric strings (remove commas) and use correct keywords (MOBIL, FLA)
     const query = `
-      WITH DailySales AS (
-        SELECT 
-          COALESCE(창고명, '기타') as branch,
-          SUM(합_계) as totalSales,
-          SUM(CASE WHEN 품목명_규격_ LIKE '%모빌%' THEN 공급가액 ELSE 0 END) as mobileSalesAmount,
-          SUM(CASE WHEN 품목명_규격_ LIKE '%모빌%' THEN 중량 ELSE 0 END) as mobileSalesWeight,
-          SUM(CASE WHEN 품목명_규격_ LIKE '%플래그십%' OR 품목명_규격_ LIKE '%Flagship%' THEN 중량 ELSE 0 END) as flagshipSalesWeight
-        FROM sales
-        WHERE 일자 = '${date}'
-        GROUP BY COALESCE(창고명, '기타')
-      ),
-      DailyPurchases AS (
-        SELECT 
-          COALESCE(창고명, '기타') as branch,
-          SUM(CASE WHEN 품목명 LIKE '%모빌%' THEN 중량 ELSE 0 END) as mobilePurchaseWeight,
-          SUM(CASE WHEN 품목명 LIKE '%플래그십%' OR 품목명 LIKE '%Flagship%' THEN 중량 ELSE 0 END) as flagshipPurchaseWeight
-        FROM purchases
-        WHERE 일자 = '${date}'
-        GROUP BY COALESCE(창고명, '기타')
-      )
       SELECT 
         COALESCE(s.branch, p.branch) as branch,
         COALESCE(s.totalSales, 0) as totalSales,
@@ -44,12 +21,31 @@ export async function GET(request: Request) {
         COALESCE(s.flagshipSalesWeight, 0) as flagshipSalesWeight,
         COALESCE(p.mobilePurchaseWeight, 0) as mobilePurchaseWeight,
         COALESCE(p.flagshipPurchaseWeight, 0) as flagshipPurchaseWeight
-      FROM DailySales s
-      FULL OUTER JOIN DailyPurchases p ON s.branch = p.branch
+      FROM (
+        SELECT 
+          COALESCE(창고명, '기타') as branch,
+          SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as totalSales,
+          SUM(CASE WHEN 품목명_규격_ LIKE '%MOBIL%' THEN CAST(REPLACE(공급가액, ',', '') AS NUMERIC) ELSE 0 END) as mobileSalesAmount,
+          SUM(CASE WHEN 품목명_규격_ LIKE '%MOBIL%' THEN CAST(REPLACE(중량, ',', '') AS NUMERIC) ELSE 0 END) as mobileSalesWeight,
+          SUM(CASE WHEN 품목그룹3코드 = 'FLA' THEN CAST(REPLACE(중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipSalesWeight
+        FROM sales
+        WHERE 일자 = '${date}'
+        GROUP BY COALESCE(창고명, '기타')
+      ) s
+      FULL OUTER JOIN (
+        SELECT 
+          COALESCE(창고명, '기타') as branch,
+          SUM(CASE WHEN 품목명 LIKE '%MOBIL%' THEN CAST(REPLACE(중량, ',', '') AS NUMERIC) ELSE 0 END) as mobilePurchaseWeight,
+          SUM(CASE WHEN 품목그룹3코드 = 'FLA' THEN CAST(REPLACE(중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipPurchaseWeight
+        FROM purchases
+        WHERE 일자 = '${date}'
+        GROUP BY COALESCE(창고명, '기타')
+      ) p ON s.branch = p.branch
       ORDER BY totalSales DESC
     `;
 
-    const data = await executeSQL(query);
+    const resultData = await executeSQL(query);
+    const data = resultData?.rows || [];
 
     return NextResponse.json({
       success: true,

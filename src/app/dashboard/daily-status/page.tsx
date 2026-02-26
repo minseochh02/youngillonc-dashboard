@@ -33,16 +33,18 @@ export default function DailyStatusPage() {
       const response = await apiFetch(`/api/dashboard/daily-status/sales?date=${selectedDate}`);
       const result = await response.json();
       if (result.success) {
-        // Calculate totals for the UI if not provided by API
-        const data = result.data || [];
+        // Ensure data is an array before reducing
+        const rawData = result.data;
+        const data = Array.isArray(rawData) ? rawData : [];
+        
         const totalRow = data.reduce((acc: any, curr: any) => ({
           ...acc,
-          totalSales: acc.totalSales + curr.totalSales,
-          mobileSalesAmount: acc.mobileSalesAmount + curr.mobileSalesAmount,
-          mobileSalesWeight: acc.mobileSalesWeight + curr.mobileSalesWeight,
-          flagshipSalesWeight: acc.flagshipSalesWeight + curr.flagshipSalesWeight,
-          mobilePurchaseWeight: acc.mobilePurchaseWeight + curr.mobilePurchaseWeight,
-          flagshipPurchaseWeight: acc.flagshipPurchaseWeight + curr.flagshipPurchaseWeight,
+          totalSales: (acc.totalSales || 0) + (Number(curr.totalSales) || 0),
+          mobileSalesAmount: (acc.mobileSalesAmount || 0) + (Number(curr.mobileSalesAmount) || 0),
+          mobileSalesWeight: (acc.mobileSalesWeight || 0) + (Number(curr.mobileSalesWeight) || 0),
+          flagshipSalesWeight: (acc.flagshipSalesWeight || 0) + (Number(curr.flagshipSalesWeight) || 0),
+          mobilePurchaseWeight: (acc.mobilePurchaseWeight || 0) + (Number(curr.mobilePurchaseWeight) || 0),
+          flagshipPurchaseWeight: (acc.flagshipPurchaseWeight || 0) + (Number(curr.flagshipPurchaseWeight) || 0),
         }), { 
           id: 'total', 
           branch: 'Total', 
