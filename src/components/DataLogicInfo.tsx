@@ -7,9 +7,10 @@ interface DataLogicInfoProps {
   title: string;
   description: string;
   steps: string[];
+  footnote?: string;
 }
 
-export default function DataLogicInfo({ title, description, steps }: DataLogicInfoProps) {
+export default function DataLogicInfo({ title, description, steps, footnote }: DataLogicInfoProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -58,8 +59,8 @@ export default function DataLogicInfo({ title, description, steps }: DataLogicIn
             </div>
             
             <div className="px-3 py-2 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg border border-blue-100/50 dark:border-blue-900/30">
-              <p className="text-[10px] text-blue-600/80 dark:text-blue-400/80 font-medium">
-                ※ 위 로직은 영일오엔씨 공식 집계 방식(Excel)을 시스템화하여 실시간으로 반영하고 있습니다.
+              <p className="text-[10px] text-blue-600/80 dark:text-blue-400/80 font-medium leading-relaxed italic whitespace-pre-line">
+                {footnote || "※ 위 로직은 영일오엔씨 공식 집계 방식(Excel)을 시스템화하여 실시간으로 반영하고 있습니다."}
               </p>
             </div>
           </div>

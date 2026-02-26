@@ -5,14 +5,18 @@ import SalesTable from "@/components/SalesTable";
 import MonthlySalesTable from "@/components/MonthlySalesTable";
 import CollectionsTable from "@/components/CollectionsTable";
 import MonthlyCollectionsTable from "@/components/MonthlyCollectionsTable";
-import { Calendar, Loader2, TrendingUp, Wallet, Landmark } from "lucide-react";
+import FundsTable from "@/components/FundsTable";
+import InOutTable from "@/components/InOutTable";
+import { Calendar, Loader2, TrendingUp, Wallet, Landmark, Coins, ArrowLeftRight } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 
 const tabs = [
   { id: "sales", label: "매출현황" },
   { id: "monthly", label: "월별매출현황" },
   { id: "collections", label: "외상매출금현황" },
-  { id: "monthly-collections", label: "월별수금현황" },
+  { id: "monthly-collections", label: "월별외상매출금현황" },
+  { id: "funds", label: "자금현황" },
+  { id: "in-out", label: "입출금현황" },
 ];
 
 export default function DailyStatusPage() {
@@ -22,6 +26,8 @@ export default function DailyStatusPage() {
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [collectionsData, setCollectionsData] = useState<any[]>([]);
   const [monthlyCollectionsData, setMonthlyCollectionsData] = useState<any[]>([]);
+  const [fundsData, setFundsData] = useState<any>(null);
+  const [inOutData, setInOutData] = useState<any>(null);
   const [miscMobil, setMiscMobil] = useState<any>(null);
   const [monthlyMiscMobil, setMonthlyMiscMobil] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -35,6 +41,10 @@ export default function DailyStatusPage() {
       fetchCollectionsData();
     } else if (activeTab === "monthly-collections") {
       fetchMonthlyCollectionsData();
+    } else if (activeTab === "funds") {
+      fetchFundsData();
+    } else if (activeTab === "in-out") {
+      fetchInOutData();
     }
   }, [selectedDate, activeTab]);
 
@@ -120,6 +130,36 @@ export default function DailyStatusPage() {
       }
     } catch (error) {
       console.error("Failed to fetch monthly collections data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchFundsData = async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiFetch(`/api/dashboard/daily-status/funds?date=${selectedDate}`);
+      const result = await response.json();
+      if (result.success) {
+        setFundsData(result.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch funds data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchInOutData = async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiFetch(`/api/dashboard/daily-status/in-out?date=${selectedDate}`);
+      const result = await response.json();
+      if (result.success) {
+        setInOutData(result.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch in-out data:", error);
     } finally {
       setIsLoading(false);
     }
@@ -267,12 +307,52 @@ export default function DailyStatusPage() {
               <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400"><Loader2 className="w-8 h-8 animate-spin" /><p>로딩 중...</p></div>
             ) : <CollectionsTable data={collectionsData} />}
           </div>
-        ) : (
+        ) : activeTab === "monthly-collections" ? (
           <div className="space-y-6">
             <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2"><Landmark className="w-5 h-5 text-blue-500" /> 지사별 월간 수금 추이</h3>
             {isLoading && monthlyCollectionsData.length === 0 ? (
               <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400"><Loader2 className="w-8 h-8 animate-spin" /><p>로딩 중...</p></div>
             ) : <MonthlyCollectionsTable data={monthlyCollectionsData} />}
+          </div>
+        ) : activeTab === "funds" ? (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <Coins className="w-5 h-5 text-blue-500" /> 전사 자금 흐름 ({selectedDate})
+              </h3>
+              <div className="text-[10px] font-medium text-zinc-400 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded">
+                Corporate Funds Status
+              </div>
+            </div>
+            {isLoading && !fundsData ? (
+              <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400"><Loader2 className="w-8 h-8 animate-spin" /><p>자금 현황을 집계하고 있습니다...</p></div>
+            ) : fundsData ? (
+              <FundsTable data={fundsData} />
+            ) : (
+              <div className="p-8 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl text-center bg-white dark:bg-zinc-900/50">
+                <p className="text-zinc-400 italic text-sm">해당 날짜의 자금 데이터가 없습니다.</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <ArrowLeftRight className="w-5 h-5 text-blue-500" /> 일일 입출금 내역 ({selectedDate})
+              </h3>
+              <div className="text-[10px] font-medium text-zinc-400 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded">
+                Daily Cash Flow
+              </div>
+            </div>
+            {isLoading && !inOutData ? (
+              <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400"><Loader2 className="w-8 h-8 animate-spin" /><p>입출금 내역을 불러오고 있습니다...</p></div>
+            ) : inOutData ? (
+              <InOutTable data={inOutData} />
+            ) : (
+              <div className="p-8 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl text-center bg-white dark:bg-zinc-900/50">
+                <p className="text-zinc-400 italic text-sm">해당 날짜의 입출금 데이터가 없습니다.</p>
+              </div>
+            )}
           </div>
         )}
       </div>
