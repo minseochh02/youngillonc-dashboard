@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import SalesTable from "@/components/SalesTable";
-import { Calendar, Loader2 } from "lucide-react";
+import MonthlySalesTable from "@/components/MonthlySalesTable";
+import { Calendar, Loader2, TrendingUp } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 
 const tabs = [
   { id: "sales", label: "매출현황" },
+  { id: "monthly", label: "월별매출현황" },
   { id: "production", label: "생산현황" },
   { id: "shipment", label: "출고현황" },
   { id: "inventory", label: "재고현황" },
@@ -19,12 +21,16 @@ export default function DailyStatusPage() {
   const [activeTab, setActiveTab] = useState(tabs[0].id);
   const [selectedDate, setSelectedDate] = useState("2026-02-03");
   const [salesData, setSalesData] = useState<any[]>([]);
+  const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [miscMobil, setMiscMobil] = useState<any>(null);
+  const [monthlyMiscMobil, setMonthlyMiscMobil] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (activeTab === "sales") {
       fetchSalesData();
+    } else if (activeTab === "monthly") {
+      fetchMonthlyData();
     }
   }, [selectedDate, activeTab]);
 
@@ -80,6 +86,23 @@ export default function DailyStatusPage() {
     }
   };
 
+  const fetchMonthlyData = async () => {
+    setIsLoading(true);
+    try {
+      const currentYear = selectedDate.split('-')[0];
+      const response = await apiFetch(`/api/dashboard/monthly-sales?year=${currentYear}`);
+      const result = await response.json();
+      if (result.success) {
+        setMonthlyData(result.data || []);
+        setMonthlyMiscMobil(result.miscMobil);
+      }
+    } catch (error) {
+      console.error("Failed to fetch monthly data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const totals = salesData.find(d => d.id === 'total') || {
     totalSales: 0,
     mobileSalesAmount: 0,
@@ -89,8 +112,24 @@ export default function DailyStatusPage() {
     flagshipPurchaseWeight: 0,
   };
 
+  const ytdTotals = monthlyData.reduce((acc, curr) => ({
+    totalSales: acc.totalSales + Number(curr.totalSales),
+    mobileSalesAmount: acc.mobileSalesAmount + Number(curr.mobileSalesAmount),
+    mobileSalesWeight: acc.mobileSalesWeight + Number(curr.mobileSalesWeight),
+    flagshipSalesWeight: acc.flagshipSalesWeight + Number(curr.flagshipSalesWeight),
+    mobilePurchaseWeight: acc.mobilePurchaseWeight + Number(curr.mobilePurchaseWeight),
+    flagshipPurchaseWeight: acc.flagshipPurchaseWeight + Number(curr.flagshipPurchaseWeight),
+  }), { 
+    totalSales: 0, mobileSalesAmount: 0, mobileSalesWeight: 0, 
+    flagshipSalesWeight: 0, mobilePurchaseWeight: 0, flagshipPurchaseWeight: 0 
+  });
+
   const mobileRatio = totals.totalSales > 0 
     ? ((totals.mobileSalesAmount / totals.totalSales) * 100).toFixed(1) 
+    : "0.0";
+
+  const ytdMobileRatio = ytdTotals.totalSales > 0 
+    ? ((ytdTotals.mobileSalesAmount / ytdTotals.totalSales) * 100).toFixed(1) 
     : "0.0";
 
   return (
@@ -204,6 +243,74 @@ export default function DailyStatusPage() {
                         해당 항목들의 매출액은 <span className="text-zinc-900 dark:text-zinc-100 font-semibold">₩{Number(miscMobil.amount).toLocaleString()}</span>, 
                         중량은 <span className="text-zinc-900 dark:text-zinc-100 font-semibold">{Number(miscMobil.weight).toLocaleString()} kg</span>입니다. 
                         (현재 상단 집계 및 상세 지표에는 포함되지 않았습니다.)
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeTab === "monthly" ? (
+          <div className="space-y-6">
+            {/* YTD Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">올해 총 매출액 (YTD)</p>
+                <p className="text-2xl font-bold mt-2 text-blue-600 dark:text-blue-400">₩{ytdTotals.totalSales.toLocaleString()}</p>
+                <div className="mt-2 flex items-center gap-1 text-[10px] text-zinc-400">
+                  <span>누적 실적</span>
+                </div>
+              </div>
+              <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">YTD 모빌 비중</p>
+                <p className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-100">{ytdMobileRatio}%</p>
+                <div className="mt-2 w-full bg-zinc-100 dark:bg-zinc-800 h-1 rounded-full overflow-hidden">
+                  <div className="bg-blue-500 h-full transition-all duration-500" style={{ width: `${ytdMobileRatio}%` }} />
+                </div>
+              </div>
+              <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">YTD 총 판매 중량</p>
+                <p className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-100">{(ytdTotals.mobileSalesWeight + ytdTotals.flagshipSalesWeight).toLocaleString()} kg</p>
+                <p className="mt-2 text-[10px] text-zinc-400">전 지사 합계</p>
+              </div>
+              <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">YTD 총 구매 중량</p>
+                <p className="text-2xl font-bold mt-2 text-amber-600 dark:text-amber-500">{(ytdTotals.mobilePurchaseWeight + ytdTotals.flagshipPurchaseWeight).toLocaleString()} kg</p>
+                <p className="mt-2 text-[10px] text-zinc-400 text-amber-600/60 font-medium italic">공급망 실적</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-blue-500" />
+                  {selectedDate.split('-')[0]}년 지사별 월간 추이
+                </h3>
+                <div className="text-[10px] font-medium text-zinc-400 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded">
+                  Monthly Breakdown by Division
+                </div>
+              </div>
+              
+              {isLoading && monthlyData.length === 0 ? (
+                <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                  <p className="text-sm">월별 데이터를 집계하고 있습니다...</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <MonthlySalesTable data={monthlyData} />
+                  
+                  {monthlyMiscMobil && monthlyMiscMobil.count > 0 && (
+                    <div className="flex items-start gap-3 p-4 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                      <div className="mt-0.5 text-blue-500">
+                        <Loader2 className="w-4 h-4 animate-pulse" />
+                      </div>
+                      <div className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                        <span className="font-bold text-zinc-700 dark:text-zinc-300">💡 연간 데이터 알림:</span> 
+                        <br />
+                        올해 분류 체계 외(AA 그룹)에서 <span className="text-blue-600 dark:text-blue-400 font-medium">Mobil 제품 {monthlyMiscMobil.count}건</span>이 발견되었습니다. 
+                        누적 매출액은 <span className="text-zinc-900 dark:text-zinc-100 font-semibold">₩{Number(monthlyMiscMobil.amount).toLocaleString()}</span>, 
+                        누적 중량은 <span className="text-zinc-900 dark:text-zinc-100 font-semibold">{Number(monthlyMiscMobil.weight).toLocaleString()} kg</span>입니다.
                       </div>
                     </div>
                   )}
