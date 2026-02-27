@@ -86,22 +86,19 @@ export default function FundsTable({ data }: FundsTableProps) {
 
   return (
     <div className="space-y-10">
-      {data.krw.length > 0 && renderFundSection("현금 및 예금 (당일 실데이터)", data.krw, <Wallet className="w-5 h-5 text-blue-500" />, "bg-blue-500")}
+      {data.krw.length > 0 && renderFundSection("현금 및 예금", data.krw, <Wallet className="w-5 h-5 text-blue-500" />, "bg-blue-500")}
       {data.foreign.length > 0 && renderFundSection("외화 자산 (Foreign)", data.foreign, <Globe className="w-5 h-5 text-purple-500" />, "bg-purple-500")}
       {data.loans.length > 0 && renderFundSection("차입금 및 부채 (Liabilities)", data.loans, <Landmark className="w-5 h-5 text-amber-500" />, "bg-amber-500")}
 
       <DataLogicInfo 
         title="자금현황"
-        description="전사 계좌별 잔액 이동 및 외화 자산, 대출 현황을 통합 집계합니다."
+        description="전사 계좌별 잔액 이동을 집계합니다. 현금 시재금(ledger), 보통예금·받을어음(deposits/expenses/promissory_notes) 반영."
         steps={[
-          "잔액 흐름 계산: '전일잔액 + 당일증가 - 당일감소 = 금일잔액' 공식을 바탕으로 모든 자금의 흐름을 실시간 추적합니다.",
-          "외화 자산 분리: USD, EUR, JPY 등 주요 외화 예금을 별도 관리하여 환율 변동에 따른 자산 가치를 명확히 파악합니다.",
-          "금융 상품 통합: 보통예금 외에도 적금, 보험, 기타 단기 금융 상품의 잔액을 포함하여 전체 유동성을 계산합니다.",
-          "부채 현황 모니터링: 한도 대출(마이너스 통장) 및 단기/장기 차입금 잔액을 실시간으로 반영하여 재무 건전성을 체크합니다."
+          "잔액 흐름: '전일잔액 + 당일증가 - 당일감소 = 금일잔액'. 현금 시재금은 ledger 테이블(계정별 최종 잔액·차변/대변)에서 집계합니다.",
+          "보통예금 (당일): deposits(외상매출금 입금) − expenses(지출). 받을어음 (당일): promissory_notes 증감구분=증가 (DB_KNOWLEDGE §5, §7).",
+          "금액 컬럼은 DB_KNOWLEDGE §3에 따라 쉼표 제거 후 NUMERIC으로 집계합니다."
         ]}
-        footnote={`※ 현재 데이터 안내:
-현재 데이터베이스에는 매출 수금(외상매출금) 관련 흐름만 포함되어 있어, 전체 자금 흐름(지출 및 계좌별 총 잔액)을 실시간으로 추출하기에는 데이터가 제한적입니다.
-이에 따라 현재 화면은 제공해주신 레포트 이미지를 기반으로 한 고정 데이터(Mock Data)로 구성되어 있으며, 추후 전사 지출 내역 및 은행 잔액 테이블이 연동되면 실시간 집계로 자동 전환됩니다.`}
+        footnote="※ 외화 자산·차입금은 데이터 연동 후 표시됩니다."
       />
     </div>
   );

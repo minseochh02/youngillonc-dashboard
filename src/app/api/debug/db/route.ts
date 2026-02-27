@@ -15,6 +15,7 @@ import { executeSQL, listTables } from '@/egdesk-helpers';
  *     --data-urlencode "query=SELECT * FROM purchase_orders LIMIT 2"
  *
  * GET ?action=tables  -> list table names
+ * GET ?action=ledger&limit=N -> SELECT * FROM ledger LIMIT N (default 10)
  * GET ?action=mobil&date=YYYY-MM-DD -> same query as mobil-payments (purchase_orders per DB_KNOWLEDGE §6)
  * GET ?action=raw&query=URL_ENCODED_SELECT -> run raw SELECT
  */
@@ -23,10 +24,23 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get('action') || 'tables';
     const date = searchParams.get('date') || '2026-02-04';
+    const limit = Math.min(Number(searchParams.get('limit')) || 10, 100);
 
     if (action === 'tables') {
       const tables = await listTables();
       return NextResponse.json({ success: true, action: 'tables', data: tables });
+    }
+
+    if (action === 'ledger') {
+      const query = `SELECT * FROM ledger LIMIT ${limit}`;
+      const result = await executeSQL(query);
+      return NextResponse.json({
+        success: true,
+        action: 'ledger',
+        limit,
+        data: result?.rows ?? result,
+        raw: result,
+      });
     }
 
     if (action === 'mobil') {
@@ -92,7 +106,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(
-      { success: false, error: 'Unknown action. Use action=tables|mobil|raw' },
+      { success: false, error: 'Unknown action. Use action=tables|ledger|mobil|raw' },
       { status: 400 }
     );
   } catch (error: any) {

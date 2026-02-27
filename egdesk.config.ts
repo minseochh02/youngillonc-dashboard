@@ -1,14 +1,13 @@
 /**
  * EGDesk User Data Configuration
- * Generated at: 2026-02-27T08:30:22.008Z
+ * Generated at: 2026-02-27T11:24:39.740Z
  *
  * This file contains type-safe definitions for your EGDesk tables.
  */
 
-// Use env so regenerating this file doesn't overwrite your API key
 export const EGDESK_CONFIG = {
-  apiUrl: process.env.NEXT_PUBLIC_EGDESK_API_URL || 'http://localhost:8080',
-  apiKey: process.env.NEXT_PUBLIC_EGDESK_API_KEY || '',
+  apiUrl: 'http://localhost:8080',
+  apiKey: '10d8fc35-eb53-4f54-aa59-dd00f4132b82',
 } as const;
 
 export interface TableDefinition {
@@ -22,12 +21,12 @@ export interface TableDefinition {
 
 export const TABLES = {
   table1: {
-    name: 'expenses',
-    displayName: '지출결의서',
-    description: undefined,
-    rowCount: 299,
-    columnCount: 11,
-    columns: ['id', '전표번호', '전표번호_번호', '계좌', '계정명', '거래처명', '적요', '금액', '부가세', '수수료', '부서명']
+    name: 'ledger',
+    displayName: '계장별원장',
+    description: 'Merged from 61 islands',
+    rowCount: 6685,
+    columnCount: 16,
+    columns: ['id', '일자_no_', '적요', '계정코드', '계정명', '거래처명', '거래처코드', '부서명', '담당자코드', '차변금액', '대변금액', '잔액', '회사명', '기간', '계정코드_메타', '계정명_메타']
   } as TableDefinition,
   table2: {
     name: 'purchases',
@@ -99,7 +98,7 @@ export function getTableByName(tableName: string): TableDefinition | undefined {
 
 // Export table names for easy access
 export const TABLE_NAMES = {
-  table1: 'expenses',
+  table1: 'ledger',
   table2: 'purchases',
   table3: 'sales',
   table4: 'inventory_transfers',

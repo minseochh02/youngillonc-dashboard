@@ -104,3 +104,21 @@ Based on official internal reporting rules for outflows:
 ### 7.2 Funds Flow Integration
 - **Total Decrease**: Calculated as the sum of all amounts in the `expenses` table for the selected date.
 - **Ordinary Deposit (보통예금)**: Calculated by taking the baseline balance and applying real-time increases from `deposits` and decreases from `expenses`.
+
+## 8. Ledger (원장 / 현금 시재금) — 자금현황
+
+Used for **자금현황** (Funds Status) to show real account balances and daily flow.
+
+### 8.1 Table: `ledger`
+- **Date column**: `일자_no_` — format `YYYY/MM/DD -n` (e.g. `2026/01/05 -29`). Filter by `일자_no_ LIKE 'YYYY/MM/DD%'` (convert request date `YYYY-MM-DD` to `YYYY/MM/DD`).
+- **Branch/Account**: `계정명` (e.g. 현금 시재금-창원, 현금 시재금-화성), `부서명` (창원사업소, 화성사업소).
+- **Amounts** (apply §3 cleaning: `REPLACE(column, ',', '')`, then `CAST(... AS NUMERIC)`):
+  - `차변금액` — debit (당일증가)
+  - `대변금액` — credit (당일감소)
+  - `잔액` — running balance per row; use **latest per 계정명** (e.g. max `id` per account for that date) for "금일잔액", and same for previous day for "전일잔액".
+- **Other**: `적요`, `거래처명`, `거래처코드`, `회사명`, `기간`, `계정코드_메타`, `계정명_메타`.
+
+### 8.2 Funds (자금현황) aggregation
+- **현금 시재금**: From `ledger` — 전일잔액 = sum of latest 잔액 per 계정명 for previous day; 금일잔액 = sum of latest 잔액 per 계정명 for selected date; 당일증가/당일감소 = sum of 차변금액/대변금액 for selected date.
+- **보통예금 (당일)**: `deposits` (계정명 = '외상매출금') − `expenses` (§5, §7).
+- **받을어음 (당일)**: `promissory_notes` where 증감구분 = '증가' (§5.2).

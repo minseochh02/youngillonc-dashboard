@@ -1,5 +1,3 @@
-import { EGDESK_CONFIG } from './egdesk.config';
-
 /**
  * EGDesk User Data Helper Functions for Next.js
  *
@@ -12,34 +10,23 @@ import { EGDESK_CONFIG } from './egdesk.config';
 /**
  * Call EGDesk user-data MCP tool
  *
- * Server: calls EGDesk API directly (so API routes work without going through the proxy).
- * Client: uses /__user_data_proxy so CORS and tunnel base path work.
+ * Uses a proxy endpoint to work in both local and tunneled environments.
+ * The Next.js middleware intercepts these requests and forwards them to localhost:8080.
  */
 export async function callUserDataTool(
   toolName: string,
   args: Record<string, any> = {}
 ): Promise<any> {
-  const isServer = typeof window === 'undefined';
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   };
 
-  let url: string;
-  const body = JSON.stringify({ tool: toolName, arguments: args });
-
-  if (isServer) {
-    url = `${EGDESK_CONFIG.apiUrl}/user-data/tools/call`;
-    if (EGDESK_CONFIG.apiKey) {
-      headers['X-Api-Key'] = EGDESK_CONFIG.apiKey;
-    }
-  } else {
-    url = '/__user_data_proxy';
-  }
-
-  const response = await fetch(url, {
+  // Use proxy endpoint - works in both local and tunneled environments
+  // Absolute URL with leading slash to ensure correct resolution from any route
+  const response = await fetch('/__user_data_proxy', {
     method: 'POST',
     headers,
-    body
+    body: JSON.stringify({ tool: toolName, arguments: args })
   });
 
   if (!response.ok) {
