@@ -92,10 +92,10 @@ export default function FundsTable({ data }: FundsTableProps) {
 
       <DataLogicInfo 
         title="자금현황"
-        description="전사 계좌별 잔액 이동을 집계합니다. 현금 시재금(ledger), 보통예금·받을어음(deposits/expenses/promissory_notes) 반영."
+        description="전사 계좌별 잔액 이동을 집계합니다. 현금 시재금(ledger), 보통예금·받을어음(deposits, promissory_notes) 반영."
         steps={[
           "잔액 흐름: '전일잔액 + 당일증가 - 당일감소 = 금일잔액'. 현금 시재금은 ledger 테이블(계정별 최종 잔액·차변/대변)에서 집계합니다.",
-          "보통예금 (당일): deposits(외상매출금 입금) − expenses(지출). 받을어음 (당일): promissory_notes 증감구분=증가 (DB_KNOWLEDGE §5, §7).",
+          "보통예금 (당일): deposits(외상매출금 입금). 받을어음 (당일): promissory_notes 증감구분=증가 (DB_KNOWLEDGE §5).",
           "금액 컬럼은 DB_KNOWLEDGE §3에 따라 쉼표 제거 후 NUMERIC으로 집계합니다."
         ]}
         footnote="※ 외화 자산·차입금은 데이터 연동 후 표시됩니다."

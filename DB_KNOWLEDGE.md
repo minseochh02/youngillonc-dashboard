@@ -89,21 +89,9 @@ Based on Mobil Korea purchase tracking:
     - **MBK (Specialized)**: `품목그룹1코드 IN ('MB', 'AVI')` (Mobil-MB, Mobil-항공기유)
 - **Primary Group**: The "산업군" displayed in the report is dynamically determined by the highest payment volume category among IL, AUTO, and MBK for each branch.
 
-## 7. Expense (지출결의서) Business Logic
+## 7. Expense (지출결의서) — Deprecated
 
-Based on official internal reporting rules for outflows:
-
-### 7.1 Daily Cash Flow (Outflow)
-- **Table**: `expenses`
-- **Mapping**:
-    - **구분**: `계정명` (Category)
-    - **지출처**: `거래처명` (Recipient)
-    - **금액**: `금액` (cleaned of commas)
-    - **지출내역**: `적요` (Description)
-
-### 7.2 Funds Flow Integration
-- **Total Decrease**: Calculated as the sum of all amounts in the `expenses` table for the selected date.
-- **Ordinary Deposit (보통예금)**: Calculated by taking the baseline balance and applying real-time increases from `deposits` and decreases from `expenses`.
+The `expenses` table is **no longer available**. 입출금현황 withdrawals and 자금현황 지출 are not sourced from DB; ledger/deposits only.
 
 ## 8. Ledger (원장 / 현금 시재금) — 자금현황
 
@@ -120,5 +108,8 @@ Used for **자금현황** (Funds Status) to show real account balances and daily
 
 ### 8.2 Funds (자금현황) aggregation
 - **현금 시재금**: From `ledger` — 전일잔액 = sum of latest 잔액 per 계정명 for previous day; 금일잔액 = sum of latest 잔액 per 계정명 for selected date; 당일증가/당일감소 = sum of 차변금액/대변금액 for selected date.
-- **보통예금 (당일)**: `deposits` (계정명 = '외상매출금') − `expenses` (§5, §7).
+- **보통예금 (당일)**: `deposits` (계정명 = '외상매출금') only (§5). No expenses table.
 - **받을어음 (당일)**: `promissory_notes` where 증감구분 = '증가' (§5.2).
+
+### 8.3 입출금현황 — 지출 내역 (Payments)
+- **Withdrawals** (지출): From `ledger` — rows where `대변금액` > 0 for the selected date (`일자_no_ LIKE 'YYYY/MM/DD%'`). Map: type = 계정명, source = 거래처명, amount = 대변금액 (cleaned §3), detail = 적요.

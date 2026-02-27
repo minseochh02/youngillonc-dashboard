@@ -22,12 +22,16 @@ const formatNumber = (num: number) => {
   return num.toLocaleString();
 };
 
+const toNum = (v: unknown) => (typeof v === 'number' && !Number.isNaN(v) ? v : Number(v) || 0);
+
 export default function InOutTable({ data }: InOutTableProps) {
-  const totalIn = data.deposits.reduce((sum, item) => sum + item.amount, 0);
-  const totalOut = data.withdrawals.reduce((sum, item) => sum + item.amount, 0);
+  const totalIn = (data.deposits || []).reduce((sum, item) => sum + toNum(item.amount), 0);
+  const totalOut = (data.withdrawals || []).reduce((sum, item) => sum + toNum(item.amount), 0);
   const netFlow = totalIn - totalOut;
 
-  const renderPanel = (title: string, items: InOutItem[], isDeposit: boolean) => (
+  const renderPanel = (title: string, items: InOutItem[], isDeposit: boolean) => {
+    const list = items || [];
+    return (
     <div className="flex-1 flex flex-col gap-4">
       <div className={`flex items-center justify-between px-4 py-3 rounded-xl border ${isDeposit ? 'bg-blue-50/50 border-blue-100 dark:bg-blue-900/10 dark:border-blue-800' : 'bg-red-50/50 border-red-100 dark:bg-red-900/10 dark:border-red-800'}`}>
         <div className="flex items-center gap-2">
@@ -40,6 +44,9 @@ export default function InOutTable({ data }: InOutTableProps) {
       </div>
 
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
+        {list.length === 0 ? (
+          <div className="px-4 py-8 text-center text-zinc-400 dark:text-zinc-500 text-sm">해당 날짜 내역 없음</div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
@@ -51,34 +58,36 @@ export default function InOutTable({ data }: InOutTableProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {items.map((item, idx) => (
+              {list.map((item, idx) => (
                 <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors group">
                   <td className="px-4 py-3 align-top">
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${
-                      item.type.includes('외상') ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' :
-                      item.type.includes('미수금') ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400' :
+                      (item.type || '').includes('외상') ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' :
+                      (item.type || '').includes('미수금') ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400' :
                       'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
                     }`}>
-                      {item.type}
+                      {item.type || '-'}
                     </span>
                   </td>
                   <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100 align-top">
-                    {item.source}
+                    {item.source || '-'}
                   </td>
                   <td className={`px-4 py-3 text-right font-bold tabular-nums align-top ${isDeposit ? 'text-zinc-900 dark:text-zinc-100' : 'text-red-600 dark:text-red-400'}`}>
-                    {formatNumber(item.amount)}
+                    {formatNumber(toNum(item.amount))}
                   </td>
                   <td className="px-4 py-3 text-zinc-400 dark:text-zinc-500 leading-relaxed max-w-[150px] truncate group-hover:whitespace-normal group-hover:overflow-visible group-hover:max-w-none transition-all duration-300">
-                    {item.detail}
+                    {item.detail || '-'}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );
+};
 
   return (
     <div className="space-y-8">
@@ -120,9 +129,7 @@ export default function InOutTable({ data }: InOutTableProps) {
           "상세 내역 매핑: 단순 금액 외에도 입금 계좌 정보나 지출 사유(윤활유대, 용차운임 등)를 함께 표시하여 전표의 실체를 증명합니다.",
           "일일 수지 정산: 당일 발생한 모든 입금과 출금의 차액(Net Flow)을 계산하여 자금 유동성을 즉시 확인합니다."
         ]}
-        footnote={`※ 현재 데이터 안내:
-입금 내역(Receipts)은 데이터베이스의 'deposits' 테이블과 실시간 연동되어 실제 전표 데이터를 반영하고 있습니다.
-지출 내역(Payments)은 현재 데이터베이스에 출금 관련 테이블이 부재하여, 제공해주신 레포트 이미지를 기반으로 한 고정 데이터(Mock Data)로 표시됩니다. 추후 출금 테이블 연동 시 자동화될 예정입니다.`}
+        footnote="※ 입금 내역: deposits. 지출 내역: ledger 테이블(대변금액 > 0) 실데이터 연동 (DB_KNOWLEDGE §8.3)."
       />
     </div>
   );

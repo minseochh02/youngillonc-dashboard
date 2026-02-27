@@ -41,7 +41,7 @@ function aggregateLedgerDay(rows: { id: number; 계정명: string; 차변금액:
 
 /**
  * API Endpoint to fetch Daily Funds Status (자금현황)
- * Sources: ledger (현금 시재금 balance + flow), deposits, expenses, promissory_notes (DB_KNOWLEDGE §5, §7)
+ * Sources: ledger (현금 시재금), deposits (외상매출금), promissory_notes. No expenses table.
  */
 export async function GET(request: Request) {
   try {
@@ -65,18 +65,16 @@ export async function GET(request: Request) {
     const curLedger = aggregateLedgerDay(curRows);
     const prevLedger = aggregateLedgerDay(prevRows);
 
-    // 2. Deposits (외상매출금), expenses, promissory_notes per DB_KNOWLEDGE §5, §6, §7
+    // 2. Deposits (외상매출금), promissory_notes. No expenses table.
     const krwQuery = `
       SELECT 
         (SELECT SUM(CAST(REPLACE(COALESCE(금액,'0'), ',', '') AS NUMERIC)) FROM deposits WHERE 전표번호 = '${date}' AND 계정명 = '외상매출금') as ordinaryInc,
-        (SELECT SUM(CAST(REPLACE(COALESCE(금액,'0'), ',', '') AS NUMERIC)) FROM expenses WHERE 전표번호 = '${date}') as totalDec,
         (SELECT SUM(COALESCE(증가금액,0)) FROM promissory_notes WHERE 일자 = '${date}' AND 증감구분 = '증가') as notesInc
     `;
     const krwResult = await executeSQL(krwQuery);
-    const flow = krwResult?.rows?.[0] || { ordinaryInc: 0, totalDec: 0, notesInc: 0 };
+    const flow = krwResult?.rows?.[0] || { ordinaryInc: 0, notesInc: 0 };
 
     const ordinaryInc = Number(flow.ordinaryInc) || 0;
-    const totalDec = Number(flow.totalDec) || 0;
     const notesInc = Number(flow.notesInc) || 0;
 
     const data = {
@@ -92,8 +90,8 @@ export async function GET(request: Request) {
           category: "보통예금 (당일)",
           prev: 0,
           inc: ordinaryInc,
-          dec: totalDec,
-          current: ordinaryInc - totalDec,
+          dec: 0,
+          current: ordinaryInc,
         },
         {
           category: "받을어음 (당일)",
