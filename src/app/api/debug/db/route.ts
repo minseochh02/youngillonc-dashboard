@@ -1,12 +1,22 @@
 import { NextResponse } from 'next/server';
 import { executeSQL, listTables } from '@/egdesk-helpers';
-import { TABLE_NAMES } from '@/egdesk.config';
 
 /**
- * Debug API: run queries directly against the DB.
- * GET ?action=tables  -> list all table names (to find e.g. 발주서현황DB-1)
- * GET ?action=mobil&date=YYYY-MM-DD -> run the mobil-payments query
- * GET ?action=raw&query=URL_ENCODED_SELECT -> run a raw SELECT (for debugging)
+ * Debug API: run queries against the DB. Table names per DB_KNOWLEDGE.md and egdesk.config.ts.
+ *
+ * CURL examples (dev server on port 3000; use apiFetch basePath in EGDesk per EGDESK-README.md):
+ *
+ *   # List tables (EGDesk user_data_list_tables)
+ *   curl -s "http://localhost:3000/api/debug/db?action=tables"
+ *
+ *   # Raw SELECT (query URL-encoded). DB_KNOWLEDGE §6: 발주서현황 = purchase_orders (egdesk.config TABLES.table6).
+ *   curl -s -G "http://localhost:3000/api/debug/db" \
+ *     --data-urlencode "action=raw" \
+ *     --data-urlencode "query=SELECT * FROM purchase_orders LIMIT 2"
+ *
+ * GET ?action=tables  -> list table names
+ * GET ?action=mobil&date=YYYY-MM-DD -> same query as mobil-payments (purchase_orders per DB_KNOWLEDGE §6)
+ * GET ?action=raw&query=URL_ENCODED_SELECT -> run raw SELECT
  */
 export async function GET(request: Request) {
   try {
@@ -20,7 +30,6 @@ export async function GET(request: Request) {
     }
 
     if (action === 'mobil') {
-      const tableName = TABLE_NAMES.table6;
       const query = `
         SELECT 
           branch,
@@ -40,7 +49,7 @@ export async function GET(request: Request) {
             SUM(CASE WHEN 품목그룹1코드 = 'IL' THEN 합계 ELSE 0 END) as il,
             SUM(CASE WHEN 품목그룹1코드 IN ('PVL', 'CVL') THEN 합계 ELSE 0 END) as auto,
             SUM(CASE WHEN 품목그룹1코드 IN ('MB', 'AVI') THEN 합계 ELSE 0 END) as mbk
-          FROM ${tableName}
+          FROM purchase_orders
           WHERE 월_일 = '${date}'
             AND 거래처명 LIKE '%모빌%'
             AND (창고명 LIKE '%사업소%' OR 창고명 LIKE '%지사%' OR 창고명 = 'MB')
@@ -53,7 +62,6 @@ export async function GET(request: Request) {
         success: true,
         action: 'mobil',
         date,
-        tableUsed: tableName,
         data: result?.rows || [],
         raw: result,
       });
