@@ -88,3 +88,19 @@ Based on Mobil Korea purchase tracking:
     - **AUTO (Automotive)**: `품목그룹1코드 IN ('PVL', 'CVL')` (Mobil-자동차, Mobil-대형차)
     - **MBK (Specialized)**: `품목그룹1코드 IN ('MB', 'AVI')` (Mobil-MB, Mobil-항공기유)
 - **Primary Group**: The "산업군" displayed in the report is dynamically determined by the highest payment volume category among IL, AUTO, and MBK for each branch.
+
+## 7. Expense (지출결의서) Business Logic
+
+Based on official internal reporting rules for outflows:
+
+### 7.1 Daily Cash Flow (Outflow)
+- **Table**: `expenses`
+- **Mapping**:
+    - **구분**: `계정명` (Category)
+    - **지출처**: `거래처명` (Recipient)
+    - **금액**: `금액` (cleaned of commas)
+    - **지출내역**: `적요` (Description)
+
+### 7.2 Funds Flow Integration
+- **Total Decrease**: Calculated as the sum of all amounts in the `expenses` table for the selected date.
+- **Ordinary Deposit (보통예금)**: Calculated by taking the baseline balance and applying real-time increases from `deposits` and decreases from `expenses`.

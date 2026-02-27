@@ -86,9 +86,9 @@ export default function FundsTable({ data }: FundsTableProps) {
 
   return (
     <div className="space-y-10">
-      {renderFundSection("현금 및 예금 (Local)", data.krw, <Wallet className="w-5 h-5 text-blue-500" />, "bg-blue-500")}
-      {renderFundSection("외화 자산 (Foreign)", data.foreign, <Globe className="w-5 h-5 text-purple-500" />, "bg-purple-500")}
-      {renderFundSection("차입금 및 부채 (Liabilities)", data.loans, <Landmark className="w-5 h-5 text-amber-500" />, "bg-amber-500")}
+      {data.krw.length > 0 && renderFundSection("현금 및 예금 (당일 실데이터)", data.krw, <Wallet className="w-5 h-5 text-blue-500" />, "bg-blue-500")}
+      {data.foreign.length > 0 && renderFundSection("외화 자산 (Foreign)", data.foreign, <Globe className="w-5 h-5 text-purple-500" />, "bg-purple-500")}
+      {data.loans.length > 0 && renderFundSection("차입금 및 부채 (Liabilities)", data.loans, <Landmark className="w-5 h-5 text-amber-500" />, "bg-amber-500")}
 
       <DataLogicInfo 
         title="자금현황"

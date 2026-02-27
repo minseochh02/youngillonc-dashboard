@@ -1,37 +1,50 @@
 import { NextResponse } from 'next/server';
+import { executeSQL } from '@/egdesk-helpers';
 
 /**
  * API Endpoint to fetch Daily Funds Status (자금현황)
- * Current implementation uses data from the provided image.
- * This can be connected to specific database tables once their mapping is confirmed.
+ * Combines data from deposits (inc) and expenses (dec)
  */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || '2026-02-04';
 
-    // Mock data based on the provided image-ea5c5f15-eaaf-46a7-9c44-77512cf7520a.png
-    // In a real implementation, this would aggregate data from several account tables.
+    // 1. Calculate KRW flow from deposits (inc) and expenses (dec)
+    // We categorize the flows to match the treasury report structure
+    const krwQuery = `
+      SELECT 
+        (SELECT SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) FROM deposits WHERE 전표번호 = '${date}' AND 계정명 = '외상매출금') as ordinaryInc,
+        (SELECT SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) FROM expenses WHERE 전표번호 = '${date}') as totalDec,
+        (SELECT SUM(증가금액) FROM promissory_notes WHERE 일자 = '${date}' AND 증감구분 = '증가') as notesInc
+    `;
+    const krwResult = await executeSQL(krwQuery);
+    const flow = krwResult?.rows?.[0] || { ordinaryInc: 0, totalDec: 0, notesInc: 0 };
+
+    const ordinaryInc = Number(flow.ordinaryInc) || 0;
+    const totalDec = Number(flow.totalDec) || 0;
+    const notesInc = Number(flow.notesInc) || 0;
+
+    // Only DB-driven categories: no baseline/mock. prev=0 so "current" = 당일 순변동.
     const data = {
       krw: [
-        { category: "보통예금", prev: 890272593, inc: 165499936, dec: 216479394, current: 839293135 },
-        { category: "받을어음", prev: 1010472355, inc: 23276000, dec: 0, current: 1033748355 },
-        { category: "적금", prev: 700000000, inc: 0, dec: 0, current: 700000000 },
-        { category: "보험", prev: 284928000, inc: 0, dec: 0, current: 284928000 },
-        { category: "기타단기금융상품", prev: 3570587122, inc: 0, dec: 0, current: 3570587122 },
-        { category: "퇴직연금", prev: 891061296, inc: 0, dec: 0, current: 891061296 },
+        {
+          category: "보통예금 (당일)",
+          prev: 0,
+          inc: ordinaryInc,
+          dec: totalDec,
+          current: ordinaryInc - totalDec,
+        },
+        {
+          category: "받을어음 (당일)",
+          prev: 0,
+          inc: notesInc,
+          dec: 0,
+          current: notesInc,
+        },
       ],
-      foreign: [
-        { category: "외화예금 (USD)", prev: 211342.00, inc: 0, dec: 0, current: 211342.00, currency: "USD" },
-        { category: "외화예금 (EUR)", prev: 41150.00, inc: 0, dec: 0, current: 41150.00, currency: "EUR" },
-        { category: "외화예금 (JPY)", prev: 530620.00, inc: 0, dec: 0, current: 530620.00, currency: "JPY" },
-        { category: "외화정기예금 (USD)", prev: 102502.00, inc: 0, dec: 0, current: 102502.00, currency: "USD" },
-      ],
-      loans: [
-        { category: "한도대출잔액", prev: 490000000, inc: 0, dec: 0, current: 490000000 },
-        { category: "단기차입금", prev: 9300000000, inc: 0, dec: 0, current: 9300000000 },
-        { category: "장기차입금", prev: 0, inc: 0, dec: 0, current: 0 },
-      ]
+      foreign: [],
+      loans: [],
     };
 
     return NextResponse.json({

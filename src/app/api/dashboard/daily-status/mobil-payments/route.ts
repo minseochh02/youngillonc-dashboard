@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { TABLE_NAMES } from '@/egdesk.config';
 
 /**
  * API Endpoint to fetch Daily Mobil Payment Details (모빌결제내역)
- * Dynamically aggregates purchase data from Mobil Korea suppliers
+ * Data source: 발주서현황 (purchase_orders)
  */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || '2026-01-02';
 
-    // SQL to aggregate purchase data from Mobil Korea (ONLY using purchase_orders table)
+    const tableName = TABLE_NAMES.table6;
+
     const query = `
       SELECT 
         branch,
@@ -30,7 +32,7 @@ export async function GET(request: Request) {
           SUM(CASE WHEN 품목그룹1코드 = 'IL' THEN 합계 ELSE 0 END) as il,
           SUM(CASE WHEN 품목그룹1코드 IN ('PVL', 'CVL') THEN 합계 ELSE 0 END) as auto,
           SUM(CASE WHEN 품목그룹1코드 IN ('MB', 'AVI') THEN 합계 ELSE 0 END) as mbk
-        FROM purchase_orders
+        FROM ${tableName}
         WHERE 월_일 = '${date}'
           AND 거래처명 LIKE '%모빌%'
           AND (창고명 LIKE '%사업소%' OR 창고명 LIKE '%지사%' OR 창고명 = 'MB')
