@@ -26,15 +26,14 @@ export async function GET(request: Request) {
         (il + auto + mbk) as total
       FROM (
         SELECT 
-          REPLACE(REPLACE(COALESCE(창고명, '기타'), '사업소', ''), '지사', '') as branch,
+          COALESCE(창고명, '기타') as branch,
           SUM(CASE WHEN 품목그룹1코드 = 'IL' THEN CAST(REPLACE(COALESCE(합계,'0'), ',', '') AS NUMERIC) ELSE 0 END) as il,
           SUM(CASE WHEN 품목그룹1코드 IN ('PVL', 'CVL') THEN CAST(REPLACE(COALESCE(합계,'0'), ',', '') AS NUMERIC) ELSE 0 END) as auto,
           SUM(CASE WHEN 품목그룹1코드 IN ('MB', 'AVI') THEN CAST(REPLACE(COALESCE(합계,'0'), ',', '') AS NUMERIC) ELSE 0 END) as mbk
         FROM purchase_orders
         WHERE 월_일 = '${date}'
           AND 거래처명 LIKE '%모빌%'
-          AND (창고명 LIKE '%사업소%' OR 창고명 LIKE '%지사%' OR 창고명 = 'MB')
-        GROUP BY REPLACE(REPLACE(COALESCE(창고명, '기타'), '사업소', ''), '지사', '')
+        GROUP BY COALESCE(창고명, '기타')
       )
       ORDER BY total DESC
     `;

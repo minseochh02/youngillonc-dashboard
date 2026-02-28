@@ -1,21 +1,28 @@
 import { NextResponse } from 'next/server';
 import { executeSQL, listTables } from '@/egdesk-helpers';
 
+const BASE = '/t/vicky-cha4/p/youngillonc';
+
 /**
  * Debug API: run queries against the DB. Table names per DB_KNOWLEDGE.md and egdesk.config.ts.
  *
- * CURL examples (dev server on port 3000; use apiFetch basePath in EGDesk per EGDESK-README.md):
+ * CURL examples (dev server on port 3000; include base path):
  *
  *   # List tables (EGDesk user_data_list_tables)
- *   curl -s "http://localhost:3000/api/debug/db?action=tables"
+ *   curl -s "http://localhost:3000${BASE}/api/debug/db?action=tables"
  *
  *   # Raw SELECT (query URL-encoded). DB_KNOWLEDGE §6: 발주서현황 = purchase_orders (egdesk.config TABLES.table6).
- *   curl -s -G "http://localhost:3000/api/debug/db" \
+ *   curl -s -G "http://localhost:3000${BASE}/api/debug/db" \
  *     --data-urlencode "action=raw" \
  *     --data-urlencode "query=SELECT * FROM purchase_orders LIMIT 2"
  *
+ *   # Ledger metadata (회사명, 기간, 계정별 보통예금 등)
+ *   curl -s "http://localhost:3000${BASE}/api/debug/db?action=ledger_meta"
+ *
  * GET ?action=tables  -> list table names
  * GET ?action=ledger&limit=N -> SELECT * FROM ledger LIMIT N (default 10)
+ * GET ?action=ledger_meta -> distinct 회사명, 기간, 계정코드, 계정명, 계정코드_메타, 계정명_메타 + rows containing 보통예금
+ * GET ?action=ledger_accounts -> distinct 계정명 from ledger (unique account names)
  * GET ?action=mobil&date=YYYY-MM-DD -> same query as mobil-payments (purchase_orders per DB_KNOWLEDGE §6)
  * GET ?action=raw&query=URL_ENCODED_SELECT -> run raw SELECT
  */
@@ -40,6 +47,53 @@ export async function GET(request: Request) {
         limit,
         data: result?.rows ?? result,
         raw: result,
+      });
+    }
+
+    if (action === 'ledger_meta') {
+      const distinctQuery = `
+        SELECT DISTINCT 회사명, 기간, 계정코드, 계정명, 계정코드_메타, 계정명_메타
+        FROM ledger
+        ORDER BY 계정명, 계정명_메타
+        LIMIT 500
+      `;
+      const boguQuery = `
+        SELECT id, 일자_no_, 회사명, 기간, 계정코드, 계정명, 계정코드_메타, 계정명_메타, 차변금액, 대변금액, 잔액
+        FROM ledger
+        WHERE (계정명 LIKE '%보통예금%' OR 계정명_메타 LIKE '%보통예금%' OR 계정코드_메타 LIKE '%보통예금%'
+               OR 계정명 LIKE '%1039%' OR 계정명_메타 LIKE '%1039%' OR 계정코드_메타 LIKE '%1039%')
+        ORDER BY id DESC
+        LIMIT 50
+      `;
+      const [distinctRes, boguRes] = await Promise.all([
+        executeSQL(distinctQuery),
+        executeSQL(boguQuery),
+      ]);
+      const distinctRows = distinctRes?.rows ?? [];
+      const boguRows = boguRes?.rows ?? [];
+      return NextResponse.json({
+        success: true,
+        action: 'ledger_meta',
+        distinct_meta_count: Array.isArray(distinctRows) ? distinctRows.length : 0,
+        distinct_meta: distinctRows,
+        보통예금_행_수: Array.isArray(boguRows) ? boguRows.length : 0,
+        보통예금_행: boguRows,
+        summary: boguRows.length > 0
+          ? 'Found ledger rows with 보통예금 or 1039 in 계정명/계정명_메타/계정코드_메타.'
+          : 'No ledger rows found with 보통예금 or 1039 in metadata. DB may be missing this for 보통예금 calculation.',
+      });
+    }
+
+    if (action === 'ledger_accounts') {
+      const query = `SELECT DISTINCT 계정명 FROM ledger ORDER BY 계정명`;
+      const result = await executeSQL(query);
+      const rows = result?.rows ?? [];
+      return NextResponse.json({
+        success: true,
+        action: 'ledger_accounts',
+        count: Array.isArray(rows) ? rows.length : 0,
+        계정명_list: Array.isArray(rows) ? rows.map((r: any) => r?.계정명 ?? r).filter(Boolean) : [],
+        raw: rows,
       });
     }
 

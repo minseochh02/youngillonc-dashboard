@@ -12,6 +12,7 @@ The "Branch" dimension is identified by different columns in different tables. F
 | **Purchases** | `거래처그룹1명` | 창원사업소, 화성사업소, 서부사업소, 동부사업소, 부산사업소, 제주사업소, 남부지사, 매입처 | 창원, 화성, 서부, 동부, 부산, 제주, 남부 |
 | **Deposits** | `부서명` | 창원, 화성, 서부, etc. | 창원, 화성, 서부, etc. |
 | **Notes** | `부서명` | 창원, 화성, 서부, etc. | 창원, 화성, 서부, etc. |
+| **Ledger** | `부서명` | 창원사업소, 화성사업소, etc. | 창원, 화성, etc. |
 
 > **Note**: Always use `COALESCE` or `REPLACE` in SQL to normalize these names when joining tables.
 
@@ -81,8 +82,8 @@ Based on Mobil Korea purchase tracking:
 ### 6.1 Industry Group Classification
 - **Table**: `purchase_orders` (발주서현황) - **Exclusive Source**
 - **Supplier Filter**: `거래처명 LIKE '%모빌%'`
-- **Date Filter**: `월_일` column
-- **Branch Column**: `창고명`
+- **Date Filter**: `월_일` column (format: `YYYY-MM-DD`)
+- **Branch Column**: `창고명` — actual values: 창원, 화성, 부산, 중부(화성auto), 화성(B2B), 본사직송. No '사업소'/'지사' suffix.
 - **Categorization Logic**:
     - **IL (Industrial)**: `품목그룹1코드 = 'IL'` (Mobil-산업유)
     - **AUTO (Automotive)**: `품목그룹1코드 IN ('PVL', 'CVL')` (Mobil-자동차, Mobil-대형차)
@@ -93,23 +94,58 @@ Based on Mobil Korea purchase tracking:
 
 The `expenses` table is **no longer available**. 입출금현황 withdrawals and 자금현황 지출 are not sourced from DB; ledger/deposits only.
 
-## 8. Ledger (원장 / 현금 시재금) — 자금현황
+## 8. Ledger (원장 / 계정별원장) — 자금현황
 
-Used for **자금현황** (Funds Status) to show real account balances and daily flow.
+Used for **자금현황** (Funds Status) to show real account balances and daily flow. The ledger table contains **all** account types (cash, deposits, receivables, expenses, P&amp;L, etc.); for funds we **must filter by `계정명`** and never aggregate all rows into one figure.
 
 ### 8.1 Table: `ledger`
 - **Date column**: `일자_no_` — format `YYYY/MM/DD -n` (e.g. `2026/01/05 -29`). Filter by `일자_no_ LIKE 'YYYY/MM/DD%'` (convert request date `YYYY-MM-DD` to `YYYY/MM/DD`).
-- **Branch/Account**: `계정명` (e.g. 현금 시재금-창원, 현금 시재금-화성), `부서명` (창원사업소, 화성사업소).
+- **Account**: `계정명` — exact account name per row. Use for filtering; do not sum across all accounts.
+- **Branch**: `부서명` — department/branch (e.g. 창원사업소, 화성사업소). Ledger has column `부서명` for branch dimension.
 - **Amounts** (apply §3 cleaning: `REPLACE(column, ',', '')`, then `CAST(... AS NUMERIC)`):
   - `차변금액` — debit (당일증가)
   - `대변금액` — credit (당일감소)
-  - `잔액` — running balance per row; use **latest per 계정명** (e.g. max `id` per account for that date) for "금일잔액", and same for previous day for "전일잔액".
-- **Other**: `적요`, `거래처명`, `거래처코드`, `회사명`, `기간`, `계정코드_메타`, `계정명_메타`.
+  - `잔액` — running balance per row; use **latest per 계정명** (max `id` per account for that date) for "금일잔액", and same for previous day for "전일잔액".
+- **Metadata**: `회사명` (e.g. (주)영일오엔씨), `기간` (e.g. 01 ~ 2026), `계정코드`, `계정코드_메타`, `계정명_메타` — map 계정코드 1039 → 보통예금, 1040 → 외화예금, 1023/1024/1025 → 현금 시재금-창원/화성/서울.
+- **Other**: `적요`, `거래처명`, `거래처코드`.
 
-### 8.2 Funds (자금현황) aggregation
-- **현금 시재금**: From `ledger` — 전일잔액 = sum of latest 잔액 per 계정명 for previous day; 금일잔액 = sum of latest 잔액 per 계정명 for selected date; 당일증가/당일감소 = sum of 차변금액/대변금액 for selected date.
-- **보통예금 (당일)**: `deposits` (계정명 = '외상매출금') only (§5). No expenses table.
-- **받을어음 (당일)**: `promissory_notes` where 증감구분 = '증가' (§5.2).
+### 8.2 Ledger account names (계정명) — funds-relevant
 
-### 8.3 입출금현황 — 지출 내역 (Payments)
-- **Withdrawals** (지출): From `ledger` — rows where `대변금액` > 0 for the selected date (`일자_no_ LIKE 'YYYY/MM/DD%'`). Map: type = 계정명, source = 거래처명, amount = 대변금액 (cleaned §3), detail = 적요.
+Ledger has **many** distinct `계정명` values (61+). For 자금현황, filter rows by `계정명` as follows.
+
+**KRW (현금 및 예금):**
+
+| Funds category   | Filter (계정명) | Notes |
+| :---             | :---            | :---  |
+| **현금 시재금**  | `계정명 LIKE '현금 시재금%'` | 현금 시재금-서울, 현금 시재금-창원, 현금 시재금-화성 only. |
+| **보통예금**     | `계정명 = '보통예금'` | Single account. |
+| **퇴직연금**     | `계정명 = '퇴직연금운용자산'` | |
+| **받을어음**     | `계정명 = '받을어음'` (balance); 당일 flow from `promissory_notes` (§5.2). | |
+| **단기차입금**   | `계정명 = '단기차입금'` | |
+| **장기차입금**   | `계정명 = '장기차입금'` | |
+
+**Foreign (외화 자산) — exact match:**
+
+- `외화예금`
+- `외환차익`
+
+**Loans / Liabilities (차입금·부채) — exact match:**
+
+- `단기차입금`, `장기차입금`
+- (Temporarily excluded: `미지급금`, `미지급비용`, `외상매입금`, `예수금`, `부가세예수금`)
+
+All other 계정명 (e.g. 미수금, 외상매출금, expenses, P&amp;L) must be excluded when computing funds.
+
+### 8.3 Funds (자금현황) aggregation
+- **Currency Convention**: All values (including foreign assets and loans) are reported in **KRW (₩)**. The `ledger` table already stores the converted Won value for foreign accounts based on the exchange rate at the time of entry.
+- **현금 시재금**: From `ledger` where `계정명 LIKE '현금 시재금%'` only — 전일잔액 = sum of latest 잔액 per 계정명 for previous day; 금일잔액 = sum of latest 잔액 per 계정명 for selected date; 당일증가/당일감소 = sum of 차변금액/대변금액 for that date.
+- **보통예금**: From `ledger` where `계정명 = '보통예금'` — same aggregation (전일/금일 잔액, 당일 차변/대변).
+- **외화예금**: From `ledger` where `계정명 = '외화예금'` — same aggregation.
+- **받을어음 (당일 flow)**: `promissory_notes` where 증감구분 = '증가' (§5.2). Balance can also be taken from ledger `계정명 = '받을어음'`.
+
+### 8.4 입출금현황 — 일일 입출금 (In-Out Flow)
+
+Sourced **entirely from the `ledger` table** for the account `보통예금` only.
+
+- **Deposits (입금)**: Rows where `차변금액` (debit) > 0 AND `계정명 = '보통예금'`.
+- **Withdrawals (출금)**: Rows where `대변금액` (credit) > 0 AND `계정명 = '보통예금'`.

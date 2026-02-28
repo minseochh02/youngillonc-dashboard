@@ -35,7 +35,6 @@ export default function MobilPaymentsTable({ data }: MobilPaymentsTableProps) {
             <thead>
               <tr className="bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-bold">
                 <th className="px-6 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 w-24 sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900">사업소</th>
-                <th className="px-6 py-4 border-r border-b border-zinc-200 dark:border-zinc-800">산업군</th>
                 <th className="px-6 py-4 border-r border-b border-zinc-200 dark:border-zinc-800">IL</th>
                 <th className="px-6 py-4 border-r border-b border-zinc-200 dark:border-zinc-800">AUTO</th>
                 <th className="px-6 py-4 border-r border-b border-zinc-200 dark:border-zinc-800">MBK</th>
@@ -47,9 +46,6 @@ export default function MobilPaymentsTable({ data }: MobilPaymentsTableProps) {
                 <tr key={row.branch || idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors group">
                   <td className="px-6 py-4 border-r border-zinc-200 dark:border-zinc-800 font-bold text-zinc-900 dark:text-zinc-100 sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40">
                     {row.branch}
-                  </td>
-                  <td className="px-6 py-4 border-r border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400">
-                    {row.industryGroup || "-"}
                   </td>
                   <td className="px-6 py-4 border-r border-zinc-200 dark:border-zinc-800 tabular-nums text-right font-medium">
                     {formatNumber(row.il)}
@@ -69,7 +65,6 @@ export default function MobilPaymentsTable({ data }: MobilPaymentsTableProps) {
             <tfoot className="bg-zinc-50/50 dark:bg-zinc-800/30 font-bold border-t-2 border-zinc-200 dark:border-zinc-700">
               <tr>
                 <td className="px-6 py-5 border-r border-zinc-200 dark:border-zinc-800 sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-800/50">합계</td>
-                <td className="px-6 py-5 border-r border-zinc-200 dark:border-zinc-800"></td>
                 <td className="px-6 py-5 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">
                   {formatNumber(totals.il)}
                 </td>

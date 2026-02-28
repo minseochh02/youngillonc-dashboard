@@ -20,6 +20,17 @@ interface FundsTableProps {
   data: FundsData;
 }
 
+const getCurrencySymbol = (currency: string = "KRW") => {
+  switch (currency.toUpperCase()) {
+    case "USD": return "$";
+    case "EUR": return "€";
+    case "JPY": return "¥";
+    case "GBP": return "£";
+    case "KRW": return "₩";
+    default: return currency + " ";
+  }
+};
+
 const formatValue = (num: number, currency: string = "KRW") => {
   if (num === 0) return "-";
   if (currency === "KRW") {
@@ -42,6 +53,7 @@ export default function FundsTable({ data }: FundsTableProps) {
         {items.map((item) => {
           const isPositive = item.inc > item.dec;
           const changePercent = item.prev > 0 ? ((item.inc - item.dec) / item.prev) * 100 : 0;
+          const symbol = getCurrencySymbol(item.currency);
           
           return (
             <div key={item.category} className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md transition-all group">
@@ -57,13 +69,13 @@ export default function FundsTable({ data }: FundsTableProps) {
               
               <div className="space-y-1">
                 <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100 tabular-nums">
-                  {item.currency ? `${item.currency} ` : "₩"}{formatValue(item.current, item.currency)}
+                  {symbol}{formatValue(item.current, item.currency)}
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                  <span>전일: {formatValue(item.prev, item.currency)}</span>
+                  <span>전일: {symbol}{formatValue(item.prev, item.currency)}</span>
                   <div className="flex gap-2">
-                    {item.inc > 0 && <span className="text-green-500 font-medium">+{formatValue(item.inc, item.currency)}</span>}
-                    {item.dec > 0 && <span className="text-red-500 font-medium">-{formatValue(item.dec, item.currency)}</span>}
+                    {item.inc > 0 && <span className="text-green-500 font-medium">+{symbol}{formatValue(item.inc, item.currency)}</span>}
+                    {item.dec > 0 && <span className="text-red-500 font-medium">-{symbol}{formatValue(item.dec, item.currency)}</span>}
                   </div>
                 </div>
               </div>
@@ -92,13 +104,14 @@ export default function FundsTable({ data }: FundsTableProps) {
 
       <DataLogicInfo 
         title="자금현황"
-        description="전사 계좌별 잔액 이동을 집계합니다. 현금 시재금(ledger), 보통예금·받을어음(deposits, promissory_notes) 반영."
+        description="전사 계좌별 잔액 이동을 집계합니다. 현금 시재금, 보통예금, 받을어음, 외화예금(ledger) 반영."
         steps={[
-          "잔액 흐름: '전일잔액 + 당일증가 - 당일감소 = 금일잔액'. 현금 시재금은 ledger 테이블(계정별 최종 잔액·차변/대변)에서 집계합니다.",
-          "보통예금 (당일): deposits(외상매출금 입금). 받을어음 (당일): promissory_notes 증감구분=증가 (DB_KNOWLEDGE §5).",
+          "잔액 흐름: '전일잔액 + 당일증가 - 당일감소 = 금일잔액'. 모든 데이터는 ledger 테이블의 계정별 최종 잔액 및 차변/대변 금액에서 집계합니다.",
+          "외화 자산: 외화예금 계정의 거래처명에서 통화(USD, JPY, EUR, GBP)를 자동 판별하여 구분 표시합니다.",
+          "받을어음: ledger의 받을어음 계정 잔액을 기반으로 하며, 당일 증가는 promissory_notes와 교차 검증합니다.",
           "금액 컬럼은 DB_KNOWLEDGE §3에 따라 쉼표 제거 후 NUMERIC으로 집계합니다."
         ]}
-        footnote="※ 외화 자산·차입금은 데이터 연동 후 표시됩니다."
+        footnote="※ 차입금 및 부채 항목은 실시간 연동된 계정별원장 데이터를 표시합니다."
       />
     </div>
   );

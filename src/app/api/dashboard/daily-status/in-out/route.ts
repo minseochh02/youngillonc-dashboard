@@ -16,16 +16,18 @@ export async function GET(request: Request) {
     const date = searchParams.get('date') || '2026-02-04';
     const ledgerDate = toLedgerDate(date);
 
-    // 1. Inflow from deposits
+    // 1. Inflow (입금) from ledger: 차변금액 = debit = inflow
     const depositQuery = `
       SELECT 
         계정명 as type,
         거래처명 as source,
-        CAST(REPLACE(COALESCE(금액,'0'), ',', '') AS NUMERIC) as amount,
-        계좌 as detail
-      FROM deposits
-      WHERE 전표번호 = '${date}'
-      ORDER BY amount DESC
+        CAST(REPLACE(REPLACE(COALESCE(차변금액,'0'), ',', ''), ' ', '') AS NUMERIC) as amount,
+        적요 as detail
+      FROM ledger
+      WHERE 일자_no_ LIKE '${ledgerDate}%'
+        AND 계정명 = '보통예금'
+        AND CAST(REPLACE(REPLACE(COALESCE(차변금액,'0'), ',', ''), ' ', '') AS NUMERIC) > 0
+      ORDER BY 3 DESC
     `;
     const depositResult = await executeSQL(depositQuery);
     const realDeposits = depositResult?.rows || [];
@@ -39,6 +41,7 @@ export async function GET(request: Request) {
         적요 as detail
       FROM ledger
       WHERE 일자_no_ LIKE '${ledgerDate}%'
+        AND 계정명 = '보통예금'
         AND CAST(REPLACE(REPLACE(COALESCE(대변금액,'0'), ',', ''), ' ', '') AS NUMERIC) > 0
       ORDER BY 3 DESC
     `;
