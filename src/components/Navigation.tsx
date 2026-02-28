@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LayoutDashboard, ClipboardList, Receipt } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart } from "lucide-react";
 
 const Navigation = () => {
   const navItems = [
@@ -17,6 +17,21 @@ const Navigation = () => {
       name: "일일매출수금현황",
       href: "/dashboard/daily-sales",
       icon: <Receipt className="w-5 h-5" />,
+    },
+    {
+      name: "판매현황",
+      href: "/dashboard/sales-inventory",
+      icon: <ShoppingCart className="w-5 h-5" />,
+    },
+    {
+      name: "재고현황",
+      href: "/dashboard/inventory",
+      icon: <Package className="w-5 h-5" />,
+    },
+    {
+      name: "일일재고파악시트",
+      href: "/dashboard/daily-inventory",
+      icon: <Calculator className="w-5 h-5" />,
     },
   ];
 

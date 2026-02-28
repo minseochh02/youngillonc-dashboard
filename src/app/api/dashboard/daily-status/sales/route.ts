@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     // Refined Mobil product categorization based on 품목그룹1코드
     const query = `
       SELECT 
-        branch,
+        COALESCE(s.branch, p.branch) as branch,
         COALESCE(s.totalSales, 0) as totalSales,
         COALESCE(s.mobileSalesAmount, 0) as mobileSalesAmount,
         COALESCE(s.mobileSalesWeight, 0) as mobileSalesWeight,
