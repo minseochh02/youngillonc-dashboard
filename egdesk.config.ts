@@ -1,13 +1,13 @@
 /**
  * EGDesk User Data Configuration
- * Generated at: 2026-02-27T11:24:39.740Z
+ * Generated at: 2026-02-28T05:45:16.063Z
  *
  * This file contains type-safe definitions for your EGDesk tables.
  */
 
 export const EGDESK_CONFIG = {
   apiUrl: 'http://localhost:8080',
-  apiKey: '10d8fc35-eb53-4f54-aa59-dd00f4132b82',
+  apiKey: 'bae1647d-8f1a-44aa-a925-0f937391b406',
 } as const;
 
 export interface TableDefinition {
@@ -22,7 +22,7 @@ export interface TableDefinition {
 export const TABLES = {
   table1: {
     name: 'ledger',
-    displayName: '계장별원장',
+    displayName: '계정별원장',
     description: 'Merged from 61 islands',
     rowCount: 6685,
     columnCount: 16,

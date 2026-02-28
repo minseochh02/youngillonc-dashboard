@@ -96,7 +96,7 @@ The `expenses` table is **no longer available**. 입출금현황 withdrawals and
 
 ## 8. Ledger (원장 / 계정별원장) — 자금현황
 
-Used for **자금현황** (Funds Status) to show real account balances and daily flow. The ledger table contains **all** account types (cash, deposits, receivables, expenses, P&amp;L, etc.); for funds we **must filter by `계정명`** and never aggregate all rows into one figure.
+Used for **자금현황** (Funds Status) to show real account balances and daily flow. The ledger table contains **all** account types (cash, deposits, receivables, expenses, P&L, etc.); for funds we **must filter by `계정명`** and never aggregate all rows into one figure.
 
 ### 8.1 Table: `ledger`
 - **Date column**: `일자_no_` — format `YYYY/MM/DD -n` (e.g. `2026/01/05 -29`). Filter by `일자_no_ LIKE 'YYYY/MM/DD%'` (convert request date `YYYY-MM-DD` to `YYYY/MM/DD`).
@@ -115,14 +115,14 @@ Ledger has **many** distinct `계정명` values (61+). For 자금현황, filter 
 
 **KRW (현금 및 예금):**
 
-| Funds category   | Filter (계정명) | Notes |
-| :---             | :---            | :---  |
-| **현금 시재금**  | `계정명 LIKE '현금 시재금%'` | 현금 시재금-서울, 현금 시재금-창원, 현금 시재금-화성 only. |
-| **보통예금**     | `계정명 = '보통예금'` | Single account. |
-| **퇴직연금**     | `계정명 = '퇴직연금운용자산'` | |
-| **받을어음**     | `계정명 = '받을어음'` (balance); 당일 flow from `promissory_notes` (§5.2). | |
-| **단기차입금**   | `계정명 = '단기차입금'` | |
-| **장기차입금**   | `계정명 = '장기차입금'` | |
+| Funds category | Filter (계정명) | Notes |
+| :--- | :--- | :--- |
+| **현금 시재금** | `계정명 LIKE '현금 시재금%'` | 현금 시재금-서울, 현금 시재금-창원, 현금 시재금-화성 only. |
+| **보통예금** | `계정명 = '보통예금'` | Single account. |
+| **퇴직연금** | `계정명 = '퇴직연금운용자산'` | |
+| **받을어음** | `계정명 = '받을어음'` (balance); 당일 flow from `promissory_notes` (§5.2). | |
+| **단기차입금** | `계정명 = '단기차입금'` | |
+| **장기차입금** | `계정명 = '장기차입금'` | |
 
 **Foreign (외화 자산) — exact match:**
 
@@ -134,7 +134,7 @@ Ledger has **many** distinct `계정명` values (61+). For 자금현황, filter 
 - `단기차입금`, `장기차입금`
 - (Temporarily excluded: `미지급금`, `미지급비용`, `외상매입금`, `예수금`, `부가세예수금`)
 
-All other 계정명 (e.g. 미수금, 외상매출금, expenses, P&amp;L) must be excluded when computing funds.
+All other 계정명 (e.g. 미수금, 외상매출금, expenses, P&L) must be excluded when computing funds.
 
 ### 8.3 Funds (자금현황) aggregation
 - **Currency Convention**: All values (including foreign assets and loans) are reported in **KRW (₩)**. The `ledger` table already stores the converted Won value for foreign accounts based on the exchange rate at the time of entry.
@@ -149,3 +149,39 @@ Sourced **entirely from the `ledger` table** for the account `보통예금` only
 
 - **Deposits (입금)**: Rows where `차변금액` (debit) > 0 AND `계정명 = '보통예금'`.
 - **Withdrawals (출금)**: Rows where `대변금액` (credit) > 0 AND `계정명 = '보통예금'`.
+
+## 9. Daily Closing Status (마감현황) Business Logic
+
+Used for the Excel-rendition report that aggregates daily sales, collections, and inventory by division.
+
+### 9.1 Measurement Conversion (Weight to D/M)
+The official reporting unit for lubricants is the **Drum (D/M)**.
+- **Conversion Factor**: `1 D/M = 200 kg` (or 200 Liters).
+- **Formula**: `Units (D/M) = CAST(중량 AS NUMERIC) / 200.0`.
+
+### 9.2 Product Classification
+
+| Report Category | Identification Logic |
+| :--- | :--- |
+| **Mobil** | `품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI')` |
+| **Mobil-MB** | `품목그룹1코드 = 'MB'` OR `판매처명 LIKE '메르세데스벤츠%'` |
+| **블라자 (Blaser)** | `품목그룹1코드 = 'BL'` |
+| **훅스 (Fuchs)** | `품목그룹1코드 = 'FU'` |
+| **기타** | All other `품목그룹1코드` |
+
+> **Note**: For `Mobil-MB` (Mercedes-Benz), the sales amount is often reported as `0` in the closing summary, but the weight (D/M) is tracked.
+
+### 9.3 Inventory Calculation (Running Total)
+- **Inflow**: `purchases` table where `일자 = [Selected Date]`.
+- **Outflow**: `sales` table where `일자 = [Selected Date]`.
+- **Stock**: Sum of historical `Purchases` - historical `Sales` up to the selected date.
+
+### 9.4 Division Mapping (Cross-Warehouse)
+The report division (e.g., Changwon) includes sales fulfilled from warehouses outside its primary location.
+- **Changwon Division** includes: 
+    - All sales where `창고명 = '창원'`.
+    - Sales to **'테크젠 주식회사'** regardless of warehouse (often fulfilled from '화성').
+
+### 9.5 Flagship (IL)
+- Identified by `품목그룹3코드 = 'FLA'`.
+- Report tracks volume in **Liters (L)**, not D/M.
