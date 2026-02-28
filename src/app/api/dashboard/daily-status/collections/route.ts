@@ -23,7 +23,18 @@ export async function GET(request: Request) {
         0 as other2  -- Placeholder for other2 as per UI
       FROM (
         SELECT 
-          REPLACE(REPLACE(부서명, '사업소', ''), '지사', '') as branch,
+          CASE 
+            WHEN 부서명 = 'MB' THEN 'MB'
+            WHEN 부서명 LIKE '%화성%' THEN '화성'
+            WHEN 부서명 LIKE '%창원%' THEN '창원'
+            WHEN 부서명 LIKE '%남부%' THEN '남부'
+            WHEN 부서명 LIKE '%중부%' THEN '중부'
+            WHEN 부서명 LIKE '%서부%' THEN '서부'
+            WHEN 부서명 LIKE '%동부%' THEN '동부'
+            WHEN 부서명 LIKE '%제주%' THEN '제주'
+            WHEN 부서명 LIKE '%부산%' THEN '부산'
+            ELSE REPLACE(REPLACE(부서명, '사업소', ''), '지사', '')
+          END as branch,
           SUM(CASE 
             WHEN (계좌 NOT LIKE '%카드%' AND 계좌 NOT LIKE '%이니시스%') 
               OR (계좌 LIKE '%우리-%' OR 계좌 LIKE '%기업-%' OR 계좌 LIKE '%국민-%' OR 계좌 LIKE '%신한-%' OR 계좌 LIKE '%농협-%' OR 계좌 LIKE '%하나-%')
@@ -36,16 +47,27 @@ export async function GET(request: Request) {
         WHERE 전표번호 = '${date}'
           AND 계정명 = '외상매출금' -- Rule: Only include Accounts Receivable (Ignore 미수금, 잡이익)
           AND (부서명 LIKE '%사업소%' OR 부서명 LIKE '%지사%' OR 부서명 = 'MB')
-        GROUP BY REPLACE(REPLACE(부서명, '사업소', ''), '지사', '')
+        GROUP BY 1
       ) d
       FULL OUTER JOIN (
         SELECT 
-          REPLACE(REPLACE(부서명, '사업소', ''), '지사', '') as branch,
+          CASE 
+            WHEN 부서명 = 'MB' THEN 'MB'
+            WHEN 부서명 LIKE '%화성%' THEN '화성'
+            WHEN 부서명 LIKE '%창원%' THEN '창원'
+            WHEN 부서명 LIKE '%남부%' THEN '남부'
+            WHEN 부서명 LIKE '%중부%' THEN '중부'
+            WHEN 부서명 LIKE '%서부%' THEN '서부'
+            WHEN 부서명 LIKE '%동부%' THEN '동부'
+            WHEN 부서명 LIKE '%제주%' THEN '제주'
+            WHEN 부서명 LIKE '%부산%' THEN '부산'
+            ELSE REPLACE(REPLACE(부서명, '사업소', ''), '지사', '')
+          END as branch,
           SUM(증가금액) as notes
         FROM promissory_notes
         WHERE 일자 = '${date}' AND 증감구분 = '증가'
           AND (부서명 LIKE '%사업소%' OR 부서명 LIKE '%지사%' OR 부서명 = 'MB')
-        GROUP BY REPLACE(REPLACE(부서명, '사업소', ''), '지사', '')
+        GROUP BY 1
       ) n ON d.branch = n.branch
       ORDER BY totalCollection DESC
     `;

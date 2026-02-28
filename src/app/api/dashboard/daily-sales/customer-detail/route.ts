@@ -14,11 +14,13 @@ export async function GET(request: Request) {
     const getSalesBranchFilter = () => {
       if (division === '전체') return "(거래처그룹1코드명 LIKE '%사업소%' OR 거래처그룹1코드명 LIKE '%지사%')";
       if (division === '창원') return "(창고명 = '창원' OR 판매처명 = '테크젠 주식회사')";
-      return `창고명 LIKE '%${division}%'`;
+      if (division === 'MB') return "거래처그룹1코드명 = 'MB'";
+      return `(거래처그룹1코드명 LIKE '%${division}%' OR 창고명 LIKE '%${division}%')`;
     };
 
     const getDepBranchFilter = () => {
       if (division === '전체') return "(부서명 LIKE '%사업소%' OR 부서명 LIKE '%지사%')";
+      if (division === 'MB') return "부서명 = 'MB'";
       return `부서명 LIKE '%${division}%'`;
     };
 

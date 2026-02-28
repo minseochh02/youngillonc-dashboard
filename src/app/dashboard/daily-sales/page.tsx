@@ -9,8 +9,15 @@ import { apiFetch } from "@/lib/api";
 const divisions = [
   { id: "all", label: "전체", icon: Building2 },
   { id: "changwon", label: "창원", icon: Building2 },
-  { id: "seoul", label: "서울", icon: Building2 },
   { id: "hwaseong", label: "화성", icon: Building2 },
+  { id: "seoul", label: "서울", icon: Building2 }, // Note: Seoul might be replaced by specific branch names later if requested
+  { id: "mb", label: "MB", icon: Building2 },
+  { id: "nambu", label: "남부", icon: Building2 },
+  { id: "jungbu", label: "중부", icon: Building2 },
+  { id: "seobu", label: "서부", icon: Building2 },
+  { id: "dongbu", label: "동부", icon: Building2 },
+  { id: "jeju", label: "제주", icon: Building2 },
+  { id: "busan", label: "부산", icon: Building2 },
 ];
 
 export default function DailySalesPage() {

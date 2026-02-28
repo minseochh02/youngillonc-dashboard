@@ -2,19 +2,23 @@
 
 This document maintains key discoveries about the database schema, column mappings, and data characteristics to ensure consistent dashboard development.
 
-## 1. Business Locations (사업소 / Branches)
+## 1. Business Locations (Standardized Branch Names)
 
-The "Branch" dimension is identified by different columns in different tables. For reporting, these should be mapped to short display names.
+The application uses a standardized set of branch names regardless of how they are stored in the raw database tables. 
 
-| Table | Primary Branch Column | Sample Values | Short Name |
-| :--- | :--- | :--- | :--- |
-| **Sales** | `거래처그룹1코드명` | 창원사업소, 화성사업소, MB, 서부사업소, 중부사업소, 부산사업소, 제주사업소, 동부사업소, 남부지사 | 창원, 화성, MB, 서부, 중부, 부산, 제주, 동부, 남부 |
-| **Purchases** | `거래처그룹1명` | 창원사업소, 화성사업소, 서부사업소, 동부사업소, 부산사업소, 제주사업소, 남부지사, 매입처 | 창원, 화성, 서부, 동부, 부산, 제주, 남부 |
-| **Deposits** | `부서명` | 창원, 화성, 서부, etc. | 창원, 화성, 서부, etc. |
-| **Notes** | `부서명` | 창원, 화성, 서부, etc. | 창원, 화성, 서부, etc. |
-| **Ledger** | `부서명` | 창원사업소, 화성사업소, etc. | 창원, 화성, etc. |
+**Standard Names**: `MB`, `화성`, `창원`, `남부`, `중부`, `서부`, `동부`, `제주`, `부산`
 
-> **Note**: Always use `COALESCE` or `REPLACE` in SQL to normalize these names when joining tables.
+### Table Mapping Logic:
+
+| Table | Primary Column | Mapping Rule (SQL CASE) |
+| :--- | :--- | :--- |
+| **Sales** | `거래처그룹1코드명` | MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산 |
+| **Purchases** | `거래처그룹1명` | MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산 |
+| **Deposits** | `부서명` | MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산 |
+| **Notes** | `부서명` | MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산 |
+| **Ledger** | `부서명` | MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산 |
+
+> **Implementation Note**: In SQL queries, use a `CASE` statement to map raw values like '창원사업소' or '남부지사' to the standard names. For the `daily-sales` dashboard, the `division` parameter passed to APIs should match these standard names exactly.
 
 ## 2. Product Categorization
 

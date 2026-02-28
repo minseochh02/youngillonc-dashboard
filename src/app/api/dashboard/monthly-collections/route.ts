@@ -21,7 +21,18 @@ export async function GET(request: Request) {
       FROM (
         SELECT 
           substr(전표번호, 1, 7) as month,
-          REPLACE(REPLACE(COALESCE(부서명, '기타'), '사업소', ''), '지사', '') as branch,
+          CASE 
+            WHEN 부서명 = 'MB' THEN 'MB'
+            WHEN 부서명 LIKE '%화성%' THEN '화성'
+            WHEN 부서명 LIKE '%창원%' THEN '창원'
+            WHEN 부서명 LIKE '%남부%' THEN '남부'
+            WHEN 부서명 LIKE '%중부%' THEN '중부'
+            WHEN 부서명 LIKE '%서부%' THEN '서부'
+            WHEN 부서명 LIKE '%동부%' THEN '동부'
+            WHEN 부서명 LIKE '%제주%' THEN '제주'
+            WHEN 부서명 LIKE '%부산%' THEN '부산'
+            ELSE REPLACE(REPLACE(COALESCE(부서명, '기타'), '사업소', ''), '지사', '')
+          END as branch,
           SUM(CASE 
             WHEN (계좌 NOT LIKE '%카드%' AND 계좌 NOT LIKE '%이니시스%') 
               OR (계좌 LIKE '%우리-%' OR 계좌 LIKE '%기업-%' OR 계좌 LIKE '%국민-%' OR 계좌 LIKE '%신한-%' OR 계좌 LIKE '%농협-%' OR 계좌 LIKE '%하나-%')
@@ -34,17 +45,28 @@ export async function GET(request: Request) {
         WHERE 전표번호 LIKE '${year}-%'
           AND 계정명 = '외상매출금'
           AND (부서명 LIKE '%사업소%' OR 부서명 LIKE '%지사%' OR 부서명 = 'MB')
-        GROUP BY substr(전표번호, 1, 7), REPLACE(REPLACE(COALESCE(부서명, '기타'), '사업소', ''), '지사', '')
+        GROUP BY 1, 2
       ) d
       FULL OUTER JOIN (
         SELECT 
           substr(일자, 1, 7) as month,
-          REPLACE(REPLACE(COALESCE(부서명, '기타'), '사업소', ''), '지사', '') as branch,
+          CASE 
+            WHEN 부서명 = 'MB' THEN 'MB'
+            WHEN 부서명 LIKE '%화성%' THEN '화성'
+            WHEN 부서명 LIKE '%창원%' THEN '창원'
+            WHEN 부서명 LIKE '%남부%' THEN '남부'
+            WHEN 부서명 LIKE '%중부%' THEN '중부'
+            WHEN 부서명 LIKE '%서부%' THEN '서부'
+            WHEN 부서명 LIKE '%동부%' THEN '동부'
+            WHEN 부서명 LIKE '%제주%' THEN '제주'
+            WHEN 부서명 LIKE '%부산%' THEN '부산'
+            ELSE REPLACE(REPLACE(COALESCE(부서명, '기타'), '사업소', ''), '지사', '')
+          END as branch,
           SUM(증가금액) as notes
         FROM promissory_notes
         WHERE 일자 LIKE '${year}-%' AND 증감구분 = '증가'
           AND (부서명 LIKE '%사업소%' OR 부서명 LIKE '%지사%' OR 부서명 = 'MB')
-        GROUP BY substr(일자, 1, 7), REPLACE(REPLACE(COALESCE(부서명, '기타'), '사업소', ''), '지사', '')
+        GROUP BY 1, 2
       ) n ON d.month = n.month AND d.branch = n.branch
       ORDER BY month ASC, totalCollection DESC
     `;
