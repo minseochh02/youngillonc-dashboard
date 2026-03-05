@@ -67,7 +67,9 @@ export default function DailySalesPage() {
   const totals = tableData.reduce((acc, curr) => ({
     sales: acc.sales + Number(curr.salesAmount),
     collection: acc.collection + Number(curr.collectionAmount),
-  }), { sales: 0, collection: 0 });
+    salesMTD: acc.salesMTD + Number(curr.salesMTD || 0),
+    collectionMTD: acc.collectionMTD + Number(curr.collectionMTD || 0),
+  }), { sales: 0, collection: 0, salesMTD: 0, collectionMTD: 0 });
 
   return (
     <div className="space-y-6">
@@ -141,17 +143,27 @@ export default function DailySalesPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 매출 (금일)</p>
+                <div>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 매출</p>
+                  <p className="text-2xl font-bold mt-2 text-blue-600 dark:text-blue-400">₩{totals.sales.toLocaleString()}</p>
+                </div>
                 <ArrowUpRight className="w-4 h-4 text-blue-500" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-blue-600 dark:text-blue-400">₩{totals.sales.toLocaleString()}</p>
+              <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                <p className="text-[10px] text-zinc-400 uppercase font-bold">월 누계: ₩{totals.salesMTD.toLocaleString()}</p>
+              </div>
             </div>
             <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 수금 (금일)</p>
+                <div>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 수금</p>
+                  <p className="text-2xl font-bold mt-2 text-emerald-600 dark:text-emerald-400">₩{totals.collection.toLocaleString()}</p>
+                </div>
                 <ArrowDownRight className="w-4 h-4 text-emerald-500" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-emerald-600 dark:text-emerald-400">₩{totals.collection.toLocaleString()}</p>
+              <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                <p className="text-[10px] text-zinc-400 uppercase font-bold">월 누계: ₩{totals.collectionMTD.toLocaleString()}</p>
+              </div>
             </div>
             <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
               <div className="flex items-center justify-between">
@@ -159,15 +171,21 @@ export default function DailySalesPage() {
                 <Users className="w-4 h-4 text-zinc-400" />
               </div>
               <p className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-100">{tableData.length}개</p>
+              <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                <p className="text-[10px] text-zinc-400 uppercase font-bold">실적 발생 업체 중심</p>
+              </div>
             </div>
             <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">수금율</p>
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">수금율 (월)</p>
                 <TrendingUp className="w-4 h-4 text-blue-500" />
               </div>
               <p className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-100">
-                {totals.sales > 0 ? ((totals.collection / totals.sales) * 100).toFixed(1) : "0.0"}%
+                {totals.salesMTD > 0 ? ((totals.collectionMTD / totals.salesMTD) * 100).toFixed(1) : "0.0"}%
               </p>
+              <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                <p className="text-[10px] text-zinc-400 uppercase font-bold">금일 수금율: {totals.sales > 0 ? ((totals.collection / totals.sales) * 100).toFixed(1) : "0.0"}%</p>
+              </div>
             </div>
           </div>
 
@@ -189,6 +207,7 @@ export default function DailySalesPage() {
             salesData={closingData.salesData}
             collectionData={closingData.collectionData}
             inventoryData={closingData.inventoryData}
+            flagship={closingData.flagship}
             keyStatus={[]}
             newCustomers={[]}
           />

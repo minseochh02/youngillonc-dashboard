@@ -1,0 +1,6 @@
+{
+  "tool": "user_data_sql_query",
+  "arguments": {
+    "query": "SELECT 일자, 판매처명, 품목명_규격_, 품목그룹3코드, 중량, 창고명 FROM sales WHERE 일자 = '2025-11-01' AND 품목그룹3코드 = 'FLA' ORDER BY 중량 DESC LIMIT 20"
+  }
+}

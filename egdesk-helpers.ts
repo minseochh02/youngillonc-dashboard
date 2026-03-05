@@ -124,7 +124,7 @@ export async function aggregateTable(
 }
 
 /**
- * Execute raw SQL query
+ * Execute raw SQL query (read-only, SELECT only)
  */
 export async function executeSQL(query: string) {
   return callUserDataTool('user_data_sql_query', { query });
@@ -142,4 +142,98 @@ export async function listTables() {
  */
 export async function getTableSchema(tableName: string) {
   return callUserDataTool('user_data_get_schema', { tableName });
+}
+
+/**
+ * Create a new table
+ */
+export async function createTable(
+  displayName: string,
+  schema: Array<{
+    name: string;
+    type: 'TEXT' | 'INTEGER' | 'REAL' | 'DATE';
+    notNull?: boolean;
+    defaultValue?: any;
+  }>,
+  options?: {
+    description?: string;
+    tableName?: string;
+    uniqueKeyColumns?: string[];
+    duplicateAction?: 'skip' | 'update' | 'allow' | 'replace-date-range';
+  }
+) {
+  return callUserDataTool('user_data_create_table', {
+    displayName,
+    schema,
+    ...options
+  });
+}
+
+/**
+ * Insert rows into a table
+ */
+export async function insertRows(
+  tableName: string,
+  rows: Array<Record<string, any>>
+) {
+  return callUserDataTool('user_data_insert_rows', {
+    tableName,
+    rows
+  });
+}
+
+/**
+ * Update rows in a table
+ */
+export async function updateRows(
+  tableName: string,
+  updates: Record<string, any>,
+  options: {
+    ids?: number[];
+    filters?: Record<string, string>;
+  }
+) {
+  return callUserDataTool('user_data_update_rows', {
+    tableName,
+    updates,
+    ...options
+  });
+}
+
+/**
+ * Delete rows from a table
+ */
+export async function deleteRows(
+  tableName: string,
+  options: {
+    ids?: number[];
+    filters?: Record<string, string>;
+  }
+) {
+  return callUserDataTool('user_data_delete_rows', {
+    tableName,
+    ...options
+  });
+}
+
+/**
+ * Delete a table
+ */
+export async function deleteTable(tableName: string) {
+  return callUserDataTool('user_data_delete_table', { tableName });
+}
+
+/**
+ * Rename a table
+ */
+export async function renameTable(
+  tableName: string,
+  newTableName: string,
+  newDisplayName?: string
+) {
+  return callUserDataTool('user_data_rename_table', {
+    tableName,
+    newTableName,
+    newDisplayName
+  });
 }

@@ -11,6 +11,9 @@ export async function GET(request: Request) {
     const date = searchParams.get('date') || '2025-11-01';
     const division = searchParams.get('division') || '창원';
 
+    // Calculate the start of the month for the given date
+    const startDate = `${date.substring(0, 7)}-01`;
+
     const getSalesBranchFilter = () => {
       if (division === '전체') return "(거래처그룹1코드명 LIKE '%사업소%' OR 거래처그룹1코드명 LIKE '%지사%')";
       if (division === '창원') return "(창고명 = '창원' OR 판매처명 = '테크젠 주식회사')";
@@ -31,67 +34,81 @@ export async function GET(request: Request) {
 
     // 1. Sales Status Aggregation
     const salesQuery = `
-      SELECT 
+      SELECT
         category,
         SUM(CASE WHEN 일자 < '${date}' THEN amount ELSE 0 END) as prevTotal,
         SUM(CASE WHEN 일자 = '${date}' THEN amount ELSE 0 END) as today,
         SUM(amount) as total,
         SUM(CASE WHEN 일자 = '${date}' THEN weight ELSE 0 END) / 200.0 as weightDM
       FROM (
-        SELECT 
-          CASE 
+        SELECT
+          CASE
             WHEN 판매처명 LIKE '메르세데스벤츠%' OR 품목그룹1코드 = 'MB' THEN 'Mobil-MB'
             WHEN 판매처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR 품목그룹1코드 = 'FU' THEN '훅스'
             WHEN 품목그룹1코드 = 'BL' THEN '블라자'
             WHEN 품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI') OR (품목그룹1코드 IS NULL AND (판매처명 = '테크젠 주식회사' OR 창고명 = '창원')) THEN 'Mobil'
             ELSE '기타(셸 외 타사제품)'
           END as category,
-          CASE 
-            WHEN 판매처명 LIKE '메르세데스벤츠%' OR 품목그룹1코드 = 'MB' THEN 0 
-            ELSE CAST(REPLACE(합_계, ',', '') AS NUMERIC) 
+          CASE
+            WHEN 판매처명 LIKE '메르세데스벤츠%' OR 품목그룹1코드 = 'MB' THEN 0
+            ELSE CAST(REPLACE(합_계, ',', '') AS NUMERIC)
           END as amount,
           CAST(REPLACE(중량, ',', '') AS NUMERIC) as weight,
           일자
         FROM sales
         WHERE ${getSalesBranchFilter()}
+          AND 일자 >= '${startDate}' AND 일자 <= '${date}'
       )
-      WHERE 일자 <= '${date}'
       GROUP BY category
     `;
 
-    // 2. Collection Status Aggregation
+    // 2. Collection Status Aggregation (using ledger for daily granularity)
     const collectionQuery = `
-      SELECT 
+      SELECT
         method,
-        SUM(CASE WHEN date < '${date}' THEN amount ELSE 0 END) as prevTotal,
-        SUM(CASE WHEN date = '${date}' THEN amount ELSE 0 END) as today,
+        SUM(CASE WHEN 일자 < '${date}' THEN amount ELSE 0 END) as prevTotal,
+        SUM(CASE WHEN 일자 = '${date}' THEN amount ELSE 0 END) as today,
         SUM(amount) as total
       FROM (
-        SELECT 
-          CASE 
-            WHEN 계좌 LIKE '%카드%' OR 계좌 LIKE '%이니시스%' THEN '카드'
+        SELECT
+          CASE
+            WHEN 적요 LIKE '%이니시스%' THEN '카드'
             ELSE 'Cash'
           END as method,
-          CAST(REPLACE(금액, ',', '') AS NUMERIC) as amount,
-          전표번호 as date
-        FROM deposits
-        WHERE 계정명 = '외상매출금' AND ${getDepBranchFilter()}
+          CAST(REPLACE(대변금액, ',', '') AS NUMERIC) as amount,
+          일자
+        FROM ledger
+        WHERE 계정명 = '외상매출금'
+          AND ${getDepBranchFilter()}
+          AND CAST(REPLACE(대변금액, ',', '') AS NUMERIC) > 0
+          AND 일자 >= '${startDate}' AND 일자 <= '${date}'
+
+        UNION ALL
+
+        SELECT
+          '어음' as method,
+          CAST(REPLACE(대변금액, ',', '') AS NUMERIC) as amount,
+          일자
+        FROM ledger
+        WHERE 계정명 = '받을어음'
+          AND ${getDepBranchFilter()}
+          AND CAST(REPLACE(대변금액, ',', '') AS NUMERIC) > 0
+          AND 일자 >= '${startDate}' AND 일자 <= '${date}'
       )
-      WHERE date <= '${date}'
       GROUP BY method
     `;
 
-    // 3. Inventory Status Aggregation
+    // 3. Inventory Status Aggregation (Inventory always needs historical data for beginning stock)
     const inventoryQuery = `
-      SELECT 
+      SELECT
         category,
         SUM(CASE WHEN 일자 < '${date}' AND type = 'in' THEN amount WHEN 일자 < '${date}' AND type = 'out' THEN -amount ELSE 0 END) as prevStock,
         SUM(CASE WHEN 일자 = '${date}' AND type = 'in' THEN amount ELSE 0 END) as inflow,
         SUM(CASE WHEN 일자 = '${date}' AND type = 'out' THEN amount ELSE 0 END) as outflow,
         SUM(CASE WHEN type = 'in' THEN amount ELSE -amount END) as stock
       FROM (
-        SELECT 
-          CASE 
+        SELECT
+          CASE
             WHEN 구매처명 LIKE '메르세데스벤츠%' OR 품목그룹1코드 = 'MB' THEN 'Mobil-MB'
             WHEN 구매처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR 품목그룹1코드 = 'FU' THEN '훅스'
             WHEN 품목그룹1코드 = 'BL' THEN '블라자'
@@ -102,12 +119,12 @@ export async function GET(request: Request) {
           'in' as type,
           일자
         FROM purchases
-        WHERE ${getPurchBranchFilter()}
-        
+        WHERE ${getPurchBranchFilter()} AND 일자 >= '${startDate}' AND 일자 <= '${date}'
+
         UNION ALL
-        
-        SELECT 
-          CASE 
+
+        SELECT
+          CASE
             WHEN 판매처명 LIKE '메르세데스벤츠%' OR 품목그룹1코드 = 'MB' THEN 'Mobil-MB'
             WHEN 판매처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR 품목그룹1코드 = 'FU' THEN '훅스'
             WHEN 품목그룹1코드 = 'BL' THEN '블라자'
@@ -118,25 +135,26 @@ export async function GET(request: Request) {
           'out' as type,
           일자
         FROM sales
-        WHERE ${getSalesBranchFilter()}
+        WHERE ${getSalesBranchFilter()} AND 일자 >= '${startDate}' AND 일자 <= '${date}'
       )
-      WHERE 일자 <= '${date}'
       GROUP BY category
     `;
 
     // 4. Flagship IL Metrics
     const flagshipQuery = `
-      SELECT 
-        SUM(CASE WHEN type = 'sales' THEN volume ELSE 0 END) as salesVol,
-        SUM(CASE WHEN type = 'purchase' THEN volume ELSE 0 END) as purchaseVol
+      SELECT
+        SUM(CASE WHEN type = 'sales' AND 일자 = '${date}' THEN volume ELSE 0 END) as salesToday,
+        SUM(CASE WHEN type = 'purchase' AND 일자 = '${date}' THEN volume ELSE 0 END) as purchaseToday,
+        SUM(CASE WHEN type = 'sales' THEN volume ELSE 0 END) as salesMTD,
+        SUM(CASE WHEN type = 'purchase' THEN volume ELSE 0 END) as purchaseMTD
       FROM (
-        SELECT CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume, 'sales' as type
-        FROM sales 
-        WHERE 일자 = '${date}' AND 품목그룹3코드 = 'FLA' AND ${getSalesBranchFilter()}
+        SELECT CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume, 'sales' as type, 일자
+        FROM sales
+        WHERE 일자 >= '${startDate}' AND 일자 <= '${date}' AND 품목그룹3코드 = 'FLA' AND 품목그룹1코드 = 'IL' AND ${getSalesBranchFilter()}
         UNION ALL
-        SELECT CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume, 'purchase' as type
-        FROM purchases 
-        WHERE 일자 = '${date}' AND 품목그룹3코드 = 'FLA' AND ${getPurchBranchFilter()}
+        SELECT CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume, 'purchase' as type, 일자
+        FROM purchases
+        WHERE 일자 >= '${startDate}' AND 일자 <= '${date}' AND 품목그룹3코드 = 'FLA' AND 품목그룹1코드 = 'IL' AND ${getPurchBranchFilter()}
       )
     `;
 
@@ -186,7 +204,7 @@ export async function GET(request: Request) {
       };
     });
 
-    const flagship = flagRes?.rows?.[0] || { salesVol: 0, purchaseVol: 0 };
+    const flagship = flagRes?.rows?.[0] || { salesToday: 0, purchaseToday: 0, salesMTD: 0, purchaseMTD: 0 };
 
     return NextResponse.json({
       success: true,
@@ -194,8 +212,10 @@ export async function GET(request: Request) {
       collectionData,
       inventoryData,
       flagship: {
-        salesVol: Number(flagship.salesVol) || 0,
-        purchaseVol: Number(flagship.purchaseVol) || 0
+        salesVol: Number(flagship.salesToday) || 0,
+        purchaseVol: Number(flagship.purchaseToday) || 0,
+        salesMTD: Number(flagship.salesMTD) || 0,
+        purchaseMTD: Number(flagship.purchaseMTD) || 0
       },
       date,
       division

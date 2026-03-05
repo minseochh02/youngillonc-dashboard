@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart, AlertTriangle } from "lucide-react";
 
 const Navigation = () => {
   const navItems = [
@@ -32,6 +32,11 @@ const Navigation = () => {
       name: "일일재고파악시트",
       href: "/dashboard/daily-inventory",
       icon: <Calculator className="w-5 h-5" />,
+    },
+    {
+      name: "사업소별 장기재고 현황",
+      href: "/dashboard/long-term-inventory",
+      icon: <AlertTriangle className="w-5 h-5" />,
     },
   ];
 

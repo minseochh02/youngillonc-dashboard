@@ -6,13 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "rebuild-ledger": "tsx scripts/rebuild-ledger.ts",
+    "rebuild-sales": "tsx scripts/rebuild-sales.ts"
   },
   "dependencies": {
     "lucide-react": "^0.575.0",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@egdesk/next-api-plugin": "file:../Taesung/EGDesk-scratch/egdesk-scratch/packages/next-api-plugin",
@@ -23,6 +26,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

@@ -33,6 +33,12 @@ interface DailyClosingStatusProps {
   inventoryData: InventoryRow[];
   keyStatus: any[];
   newCustomers: any[];
+  flagship?: {
+    salesVol: number;
+    purchaseVol: number;
+    salesMTD: number;
+    purchaseMTD: number;
+  };
 }
 
 const formatNumber = (num: number) => {
@@ -48,6 +54,7 @@ export default function DailyClosingStatus({
   inventoryData,
   keyStatus,
   newCustomers,
+  flagship = { salesVol: 0, purchaseVol: 0, salesMTD: 0, purchaseMTD: 0 }
 }: DailyClosingStatusProps) {
   const totalSales = salesData.reduce((acc, curr) => ({
     prevTotal: acc.prevTotal + curr.prevTotal,
@@ -135,7 +142,8 @@ export default function DailyClosingStatus({
                 "브랜드 분류: 품목그룹1코드(IL, PVL, CVL, AVI, MB, BL, FU)를 기준으로 실적을 자동 분류합니다.",
                 "지사 필터링: 창고명 매칭 및 특정 예외 업체(예: 창원의 경우 테크젠 주식회사)를 포함하여 정확한 지사 실적을 도출합니다.",
                 "특이사항 처리: Mobil-MB(벤츠) 실적은 중량(D/M) 위주로 관리하며, 매출액 합산 시 0으로 처리하는 공식 마감 규칙을 따릅니다.",
-                "단위 환산: 비고란의 D/M 수치는 판매 중량(kg)을 200kg으로 나눈 환산값입니다."
+                "단위 환산: 비고란의 D/M 수치는 판매 중량(kg)을 200kg으로 나눈 환산값입니다.",
+                "누계 산출: 선택한 날짜가 속한 월의 1일부터 해당일까지의 합계를 산출합니다."
               ]}
             />
           </div>
@@ -178,14 +186,17 @@ export default function DailyClosingStatus({
                 </table>
               </div>
             </div>
-            <DataLogicInfo 
+            <DataLogicInfo
               title="수금현황"
               description="외상매출금 회수 실적을 수단별로 분류하여 집계합니다."
               steps={[
-                "외상매출금 필터: 입금보고서(deposits)에서 계정명이 '외상매출금'인 항목만 추출하여 순수 매출 수금을 계산합니다.",
-                "수단 식별: 계좌명에 '카드' 또는 '이니시스' 키워드가 포함된 경우 카드 실적으로, 그 외는 현금(Cash)으로 자동 분류합니다.",
-                "부서 매칭: 입금보고서의 부서 필드를 기반으로 각 사업소별 수금 실적을 할당합니다."
+                "데이터 소스: 계정별원장(ledger) 테이블을 사용하여 일별 세부 수금 데이터를 추출합니다.",
+                "현금/카드 분류: 계정명이 '외상매출금'인 대변금액(수금) 중 적요에 '이니시스'가 포함되면 카드, 그 외는 현금으로 분류합니다.",
+                "받을어음: 계정명이 '받을어음'인 대변금액(만기입금)을 어음 수금 실적으로 집계합니다.",
+                "부서 매칭: 원장의 부서명 필드를 기반으로 각 사업소별 수금 실적을 할당합니다.",
+                "누계 산출: 선택한 날짜가 속한 월의 1일부터 해당일까지의 합계를 일별 데이터 기반으로 정확하게 산출합니다."
               ]}
+              footnote="※ 참고: 나머지는 현금, 받을어음, 카드결제실시 - 영일오엔씨 마감 기준서 발췌\n※ 입금보고서(deposits) 대신 계정별원장(ledger)을 사용하여 일별 정확도를 개선하였습니다."
             />
           </div>
         </div>
@@ -236,52 +247,71 @@ export default function DailyClosingStatus({
                 </table>
               </div>
             </div>
-            <DataLogicInfo 
+            <DataLogicInfo
               title="재고현황"
               description="사업소별 브랜드 제품 재고를 실시간 입출고 기반으로 산출합니다."
               steps={[
                 "기초 재고: 선택한 날짜 전일까지의 모든 매입 중량에서 모든 매출 중량을 차감하여 기초 재고를 계산합니다.",
-                "당일 입고: 당일 발생한 구매현황(purchases) 데이터의 중량을 합산합니다.",
+                "당일 입고: 당일 발생한 구매현황(purchases) 데이터의 중량을 합산합니다. 창고(창고명) 필드를 기준으로 사업소별 실적을 분류합니다.",
                 "당일 출고: 당일 발생한 판매현황(sales) 데이터의 중량을 합산합니다.",
                 "기말 재고: 기초 재고 + 당일 입고 - 당일 출고 수식을 실시간 적용합니다.",
                 "단위 변환: 모든 재고 수치는 kg 단위를 200으로 나눈 Drum(D/M) 단위로 통일하여 표시합니다."
               ]}
+              footnote="※ 구매현황은 창고를 기준으로 산출되며, 모빌 제품군의 경우 부가세 포함 금액을 사용합니다."
             />
           </div>
         </div>
       </div>
 
       {/* Special Sections: Flagship & Purchases */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="p-5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl text-white shadow-lg shadow-indigo-500/20">
-          <div className="flex items-center gap-2 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="p-6 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl text-white shadow-lg shadow-indigo-500/20">
+          <div className="flex items-center gap-2 mb-6">
             <Star className="w-5 h-5 text-yellow-300 fill-yellow-300" />
-            <h4 className="font-bold">IL (Flagship) 실적</h4>
+            <h4 className="font-bold text-lg">IL (Flagship) 실적</h4>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white/10 rounded-xl p-3 border border-white/10">
-              <p className="text-[10px] uppercase tracking-widest text-white/60 mb-1">매출 Vol(L)</p>
-              <p className="text-xl font-bold">18 L</p>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <p className="text-[11px] uppercase tracking-widest text-white/60 font-bold">매출 실적 (L)</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white/10 rounded-xl p-3 border border-white/10">
+                  <p className="text-[10px] text-white/50 mb-1">당일</p>
+                  <p className="text-xl font-bold">{flagship.salesVol} L</p>
+                </div>
+                <div className="bg-white/10 rounded-xl p-3 border border-white/10">
+                  <p className="text-[10px] text-white/50 mb-1">누계</p>
+                  <p className="text-xl font-bold">{flagship.salesMTD} L</p>
+                </div>
+              </div>
             </div>
-            <div className="bg-white/10 rounded-xl p-3 border border-white/10">
-              <p className="text-[10px] uppercase tracking-widest text-white/60 mb-1">매입 Vol(L)</p>
-              <p className="text-xl font-bold">0 L</p>
+            <div className="space-y-4">
+              <p className="text-[11px] uppercase tracking-widest text-white/60 font-bold">매입 실적 (L)</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white/10 rounded-xl p-3 border border-white/10">
+                  <p className="text-[10px] text-white/50 mb-1">당일</p>
+                  <p className="text-xl font-bold">{flagship.purchaseVol} L</p>
+                </div>
+                <div className="bg-white/10 rounded-xl p-3 border border-white/10">
+                  <p className="text-[10px] text-white/50 mb-1">누계</p>
+                  <p className="text-xl font-bold">{flagship.purchaseMTD} L</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-        <div className="p-5 bg-zinc-900 dark:bg-zinc-800 rounded-2xl text-white shadow-lg border border-zinc-800">
-          <div className="flex items-center gap-2 mb-4">
+        <div className="p-6 bg-zinc-900 dark:bg-zinc-800 rounded-2xl text-white shadow-lg border border-zinc-800">
+          <div className="flex items-center gap-2 mb-6">
             <PlusCircle className="w-5 h-5 text-blue-400" />
-            <h4 className="font-bold">매입/발주 현황 (Mobil)</h4>
+            <h4 className="font-bold text-lg">매입/발주 현황 (Mobil)</h4>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-zinc-800 dark:bg-zinc-700/50 rounded-xl p-3 border border-zinc-700">
-              <p className="text-[10px] uppercase tracking-widest text-zinc-400 mb-1">Vol(L)</p>
-              <p className="text-xl font-bold">0 L</p>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="bg-zinc-800 dark:bg-zinc-700/50 rounded-xl p-4 border border-zinc-700">
+              <p className="text-[11px] uppercase tracking-widest text-zinc-400 mb-2 font-bold">당일 입고량</p>
+              <p className="text-2xl font-bold">0 L</p>
             </div>
-            <div className="bg-zinc-800 dark:bg-zinc-700/50 rounded-xl p-3 border border-zinc-700">
-              <p className="text-[10px] uppercase tracking-widest text-zinc-400 mb-1">금액</p>
-              <p className="text-xl font-bold">₩0</p>
+            <div className="bg-zinc-800 dark:bg-zinc-700/50 rounded-xl p-4 border border-zinc-700">
+              <p className="text-[11px] uppercase tracking-widest text-zinc-400 mb-2 font-bold">당일 매입액</p>
+              <p className="text-2xl font-bold">₩0</p>
             </div>
           </div>
         </div>

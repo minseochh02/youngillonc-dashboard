@@ -117,9 +117,9 @@ export async function GET(request: Request) {
             ELSE 'Others'
           END as tier
         FROM (
-          SELECT 품목코드, 품목그룹1코드, 품목그룹3코드 FROM sales
+          SELECT 품목코드, 품목그룹1코드, 품목그룹3코드 FROM sales WHERE 일자 >= '${date.substring(0, 7)}-01' AND 일자 <= '${date}'
           UNION
-          SELECT 품목코드, 품목그룹1코드, 품목그룹3코드 FROM purchases
+          SELECT 품목코드, 품목그룹1코드, 품목그룹3코드 FROM purchases WHERE 일자 >= '${date.substring(0, 7)}-01' AND 일자 <= '${date}'
         )
       ) p ON r.품목코드 = p.품목코드
       GROUP BY 1, 2, 3
