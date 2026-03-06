@@ -217,7 +217,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-          대시보드
+          템플릿 추가
         </h2>
         <p className="text-zinc-500 dark:text-zinc-400 mt-1">
           AI에게 무엇이든 물어보세요
@@ -334,16 +334,13 @@ export default function DashboardPage() {
           <div className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
             {(metadata.rowCount ?? 0).toLocaleString()}개 결과
           </div>
-          <div className="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-            {metadata.method === 'template' ? '템플릿' : 'AI 생성'}
-          </div>
-          <div className="text-xs text-zinc-500 dark:text-zinc-500">
+          {/* <div className="text-xs text-zinc-500 dark:text-zinc-500">
             남은 쿼리: {metadata.remaining}
-          </div>
+          </div> */}
         </div>
       )}
 
-      {/* Star Query Button */}
+      {/* Save as Template Button */}
       {currentQueryData && (
         <div className="flex justify-end">
           <button
@@ -351,7 +348,7 @@ export default function DashboardPage() {
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white transition-colors shadow-sm hover:shadow-md"
           >
             <Star className="w-4 h-4" />
-            <span className="font-medium">즐겨찾기 추가</span>
+            <span className="font-medium">템플릿 추가</span>
           </button>
         </div>
       )}
@@ -397,7 +394,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Star Query Modal */}
+      {/* Template Modal */}
       {showStarModal && currentQueryData && (
         <StarQueryModal
           isOpen={showStarModal}

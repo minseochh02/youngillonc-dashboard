@@ -34,7 +34,7 @@ export default function StarQueryModal({
 
   const handleSave = () => {
     if (!queryName.trim()) {
-      setError('쿼리 이름을 입력해주세요');
+      setError('템플릿 이름을 입력해주세요');
       return;
     }
 
@@ -71,7 +71,7 @@ export default function StarQueryModal({
           <div className="flex items-center gap-2">
             <Star className="w-5 h-5 text-yellow-500" />
             <h2 className="text-lg font-semibold text-zinc-100">
-              즐겨찾기 추가
+              템플릿 추가
             </h2>
           </div>
           <button
@@ -84,10 +84,10 @@ export default function StarQueryModal({
 
         {/* Content */}
         <div className="px-6 py-4 space-y-4">
-          {/* Query Name Input */}
+          {/* Template Name Input */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-zinc-300">
-              쿼리 이름 <span className="text-red-400">*</span>
+              템플릿 이름 <span className="text-red-400">*</span>
             </label>
             <input
               type="text"

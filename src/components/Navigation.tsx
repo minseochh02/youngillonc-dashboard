@@ -30,11 +30,6 @@ const Navigation = () => {
   };
   const navItems = [
     {
-      name: "대시보드",
-      href: "/dashboard",
-      icon: <LayoutDashboard className="w-5 h-5" />,
-    },
-    {
       name: "일일현황",
       href: "/dashboard/daily-status",
       icon: <ClipboardList className="w-5 h-5" />,
@@ -88,7 +83,7 @@ const Navigation = () => {
         ))}
       </div>
 
-      {/* Starred Queries Section */}
+      {/* Templates Section */}
       <div className="mt-8 pt-4 border-t border-zinc-800">
         <button
           onClick={() => setIsStarredExpanded(!isStarredExpanded)}
@@ -96,7 +91,7 @@ const Navigation = () => {
         >
           <div className="flex items-center gap-2">
             <Star className="w-4 h-4 text-yellow-500" />
-            <span className="text-sm font-medium">즐겨찾기</span>
+            <span className="text-sm font-medium">템플릿</span>
             <span className="text-xs text-zinc-500">({starredQueries.length})</span>
           </div>
           <ChevronDown
@@ -108,6 +103,13 @@ const Navigation = () => {
 
         {isStarredExpanded && (
           <div className="mt-2 space-y-1 max-h-96 overflow-y-auto">
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-2 px-3 py-2 text-sm text-blue-400 hover:text-blue-300 hover:bg-zinc-800 rounded-lg transition-colors font-medium"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              <span>템플릿 추가</span>
+            </Link>
             {starredQueries.map((query) => (
               <div key={query.id} className="relative group">
                 <Link
@@ -160,7 +162,7 @@ const Navigation = () => {
             ))}
             {starredQueries.length === 0 && (
               <p className="px-3 py-2 text-xs text-zinc-500">
-                즐겨찾기한 쿼리가 없습니다
+                저장된 템플릿이 없습니다
               </p>
             )}
           </div>
