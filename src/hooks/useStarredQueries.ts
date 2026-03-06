@@ -12,9 +12,27 @@ export interface StarredQuery {
   createdAt: string;
   lastExecutedAt?: string;
   executionCount: number;
+  relativeDateType?: 'today' | 'yesterday' | 'this_month' | 'last_month' | 'absolute';
 }
 
 const STORAGE_KEY = 'starred_queries';
+
+/**
+ * Detect date pattern from query text
+ */
+function detectDatePattern(queryText: string): 'today' | 'yesterday' | 'this_month' | 'last_month' | 'absolute' {
+  const text = queryText.toLowerCase();
+
+  if (text.includes('오늘')) return 'today';
+  if (text.includes('어제')) return 'yesterday';
+  if (text.includes('이번 달') || text.includes('이번달')) return 'this_month';
+  if (text.includes('지난 달') || text.includes('지난달') || text.includes('저번 달') || text.includes('전달') || text.includes('전전달')) return 'last_month';
+
+  // Check for specific months like "1월", "2월", etc.
+  if (/\d+월/.test(text)) return 'absolute';
+
+  return 'absolute'; // default to absolute if no pattern detected
+}
 
 export function useStarredQueries() {
   const [queries, setQueries] = useState<StarredQuery[]>([]);
@@ -62,6 +80,8 @@ export function useStarredQueries() {
     sql: string;
     intent: string;
   }) => {
+    const relativeDateType = detectDatePattern(data.queryText);
+
     const newQuery: StarredQuery = {
       id: crypto.randomUUID(),
       queryText: data.queryText,
@@ -71,6 +91,7 @@ export function useStarredQueries() {
       intent: data.intent,
       createdAt: new Date().toISOString(),
       executionCount: 0,
+      relativeDateType,
     };
 
     const updated = [...queries, newQuery];

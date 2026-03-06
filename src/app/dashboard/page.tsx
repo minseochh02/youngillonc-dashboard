@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Search, Loader2, ChevronDown, ChevronUp, Clock, Star } from 'lucide-react';
+import { Search, Loader2, ChevronDown, ChevronUp, Clock, Star, Calendar } from 'lucide-react';
 import GenericResultTable from '@/components/GenericResultTable';
 import SalesTable from '@/components/SalesTable';
 import StarQueryModal from '@/components/StarQueryModal';
 import { selectComponent } from '@/lib/component-router';
 import { apiFetch } from '@/lib/api';
 import { useStarredQueries, type StarredQuery } from '@/hooks/useStarredQueries';
+import { regenerateSQLDates } from '@/lib/date-regenerator';
+import { extractDatesFromSQL, formatDateRangeDisplay } from '@/lib/date-extractor';
 
 interface QueryResult {
   rows: any[];
@@ -50,6 +52,9 @@ export default function DashboardPage() {
     sql: string;
     intent: string;
   } | null>(null);
+  const [currentDateRange, setCurrentDateRange] = useState<string | null>(null);
+  const [baseDate, setBaseDate] = useState<string>(''); // Base date for relative calculations
+  const [lastExecutedStarredQuery, setLastExecutedStarredQuery] = useState<StarredQuery | null>(null);
 
   // Auto-execute starred queries from URL params
   useEffect(() => {
@@ -58,14 +63,24 @@ export default function DashboardPage() {
       const starredQuery = getQuery(executeStarredId);
       if (starredQuery) {
         setQuery(starredQuery.queryText);
+        setLastExecutedStarredQuery(starredQuery);
         executeStoredSQL(starredQuery);
         updateExecutionStats(executeStarredId);
       }
     }
   }, [searchParams]);
 
+  // Re-execute query when base date changes
+  useEffect(() => {
+    if (lastExecutedStarredQuery && result) {
+      // Re-execute the last starred query with new base date
+      executeStoredSQL(lastExecutedStarredQuery);
+    }
+  }, [baseDate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLastExecutedStarredQuery(null); // Clear starred query when manually executing
     await executeQuery(query);
   };
 
@@ -76,6 +91,7 @@ export default function DashboardPage() {
     setError(null);
     setResult(null);
     setMetadata(null);
+    setCurrentDateRange(null);
 
     try {
       const response = await apiFetch('/api/dashboard/nl-query', {
@@ -103,6 +119,14 @@ export default function DashboardPage() {
         intent: data.data.intent
       });
 
+      // Extract and display date range
+      const dates = extractDatesFromSQL(data.data.sql);
+      if (dates) {
+        setCurrentDateRange(formatDateRangeDisplay(dates.start, dates.end));
+      } else {
+        setCurrentDateRange(null);
+      }
+
     } catch (err: any) {
       console.error('Query execution error:', err);
       setError('서버와 통신 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
@@ -116,12 +140,14 @@ export default function DashboardPage() {
     setError(null);
     setResult(null);
     setMetadata(null);
+    setCurrentDateRange(null);
 
-    console.log('Executing stored SQL:', {
-      sqlLength: starredQuery.sql.length,
-      sql: starredQuery.sql,
-      intent: starredQuery.intent
-    });
+    // Regenerate dates based on the base date (or today if not set)
+    const updatedSQL = regenerateSQLDates(
+      starredQuery.sql,
+      starredQuery.relativeDateType,
+      baseDate || undefined
+    );
 
     try {
       const response = await apiFetch('/api/dashboard/nl-query', {
@@ -130,7 +156,7 @@ export default function DashboardPage() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          sql: starredQuery.sql,
+          sql: updatedSQL,
           intent: starredQuery.intent
         })
       });
@@ -145,12 +171,20 @@ export default function DashboardPage() {
       setResult(data.data);
       setMetadata(data.metadata);
 
-      // Store current query data (already has sql/intent from starred query)
+      // Store current query data with updated SQL
       setCurrentQueryData({
         queryText: starredQuery.queryText,
-        sql: starredQuery.sql,
+        sql: updatedSQL,
         intent: starredQuery.intent
       });
+
+      // Extract and display date range from updated SQL
+      const dates = extractDatesFromSQL(updatedSQL);
+      if (dates) {
+        setCurrentDateRange(formatDateRangeDisplay(dates.start, dates.end));
+      } else {
+        setCurrentDateRange(null);
+      }
 
     } catch (err: any) {
       console.error('Query execution error:', err);
@@ -162,6 +196,7 @@ export default function DashboardPage() {
 
   const handleExampleClick = (exampleQuery: string) => {
     setQuery(exampleQuery);
+    setLastExecutedStarredQuery(null); // Clear starred query when executing example
     executeQuery(exampleQuery);
   };
 
@@ -187,6 +222,40 @@ export default function DashboardPage() {
         <p className="text-zinc-500 dark:text-zinc-400 mt-1">
           AI에게 무엇이든 물어보세요
         </p>
+      </div>
+
+      {/* Base Date Selector */}
+      <div className="flex items-center gap-3 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+        <Calendar className="w-4 h-4 text-zinc-400" />
+        <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
+          기준일:
+        </span>
+        <input
+          type="date"
+          value={baseDate}
+          onChange={(e) => setBaseDate(e.target.value)}
+          className="text-sm px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          disabled={loading}
+        />
+        {baseDate && (
+          <button
+            onClick={() => setBaseDate('')}
+            disabled={loading}
+            className="text-xs px-2 py-1 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            오늘로 초기화
+          </button>
+        )}
+        <span className="text-xs text-zinc-500">
+          {baseDate
+            ? `"오늘", "지난 달" 등이 ${baseDate}을 기준으로 계산됩니다`
+            : '"오늘", "지난 달" 등이 오늘을 기준으로 계산됩니다'}
+        </span>
+        {lastExecutedStarredQuery && (
+          <span className="text-xs text-blue-600 dark:text-blue-400">
+            • 기준일 변경 시 자동 재실행
+          </span>
+        )}
       </div>
 
       {/* Search Form */}
@@ -245,6 +314,19 @@ export default function DashboardPage() {
       {/* Metadata Display */}
       {metadata && (
         <div className="flex items-center gap-4 text-sm text-zinc-600 dark:text-zinc-400">
+          {currentDateRange && (
+            <div className={`flex items-center gap-1 px-2 py-0.5 rounded ${
+              baseDate
+                ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                : 'bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300'
+            }`}>
+              <Calendar className="w-4 h-4" />
+              <span>{currentDateRange}</span>
+              {baseDate && (
+                <span className="text-xs">(기준: {baseDate})</span>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-1">
             <Clock className="w-4 h-4" />
             <span>{metadata.executionTime}ms</span>

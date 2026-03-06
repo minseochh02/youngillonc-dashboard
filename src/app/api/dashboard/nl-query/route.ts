@@ -34,12 +34,6 @@ export async function POST(request: NextRequest) {
 
     // If SQL is provided, skip AI and execute directly (for starred queries)
     if (preGeneratedSQL && preGeneratedIntent) {
-      console.log('Received stored SQL:', {
-        sqlLength: preGeneratedSQL.length,
-        sql: preGeneratedSQL,
-        intent: preGeneratedIntent
-      });
-
       // Validate and sanitize the SQL
       const sanitized = sanitizeSQL(preGeneratedSQL);
       const validation = validateSQL(sanitized);
@@ -57,20 +51,9 @@ export async function POST(request: NextRequest) {
       // Execute the SQL directly (no AI needed)
       let rows;
       try {
-        console.log('About to execute SQL:', sanitized);
         const result = await executeSQL(sanitized);
-        console.log('Raw executeSQL result:', result);
-        console.log('Result type:', typeof result);
-        console.log('SQL execution result:', {
-          isArray: Array.isArray(result),
-          rowCount: result?.length,
-          firstRow: result?.[0],
-          keys: result ? Object.keys(result) : null
-        });
-
         // The result might be wrapped in an object
         rows = Array.isArray(result) ? result : (result?.rows || result?.data || []);
-        console.log('Final rows:', { isArray: Array.isArray(rows), count: rows.length });
       } catch (sqlError: any) {
         console.error('SQL execution error:', sqlError);
         return NextResponse.json(
@@ -83,7 +66,6 @@ export async function POST(request: NextRequest) {
       }
 
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
-      console.log('Final result:', { rowCount: rows.length, columns });
 
       // Determine component hint
       let componentHint = 'GenericResultTable';

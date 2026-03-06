@@ -2,12 +2,32 @@
 
 import { useState } from 'react';
 import Link from "next/link";
-import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart, AlertTriangle, Star, ChevronDown } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart, AlertTriangle, Star, ChevronDown, X, Clock, Calendar } from "lucide-react";
 import { useStarredQueries } from '@/hooks/useStarredQueries';
+import { regenerateSQLDates } from '@/lib/date-regenerator';
+import { extractDatesFromSQL, formatDateRangeDisplay } from '@/lib/date-extractor';
 
 const Navigation = () => {
-  const { queries: starredQueries } = useStarredQueries();
+  const { queries: starredQueries, removeQuery } = useStarredQueries();
   const [isStarredExpanded, setIsStarredExpanded] = useState(true);
+
+  const handleDeleteQuery = (e: React.MouseEvent, queryId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (confirm('이 즐겨찾기를 삭제하시겠습니까?')) {
+      removeQuery(queryId);
+    }
+  };
+
+  const getQueryDateRange = (query: any) => {
+    // Regenerate dates if it's a relative query
+    const sql = regenerateSQLDates(query.sql, query.relativeDateType);
+    const dates = extractDatesFromSQL(sql);
+
+    if (!dates) return null;
+
+    return formatDateRangeDisplay(dates.start, dates.end);
+  };
   const navItems = [
     {
       name: "대시보드",
@@ -89,32 +109,54 @@ const Navigation = () => {
         {isStarredExpanded && (
           <div className="mt-2 space-y-1 max-h-96 overflow-y-auto">
             {starredQueries.map((query) => (
-              <Link
-                key={query.id}
-                href={`/dashboard?executeStarred=${query.id}`}
-                className="block px-3 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="truncate flex-1">{query.queryName}</span>
-                  {query.executionCount > 0 && (
-                    <span className="text-xs text-zinc-500 ml-2 shrink-0">
-                      {query.executionCount}회
-                    </span>
-                  )}
-                </div>
-                {query.tags.length > 0 && (
-                  <div className="flex gap-1 mt-1 flex-wrap">
-                    {query.tags.slice(0, 3).map((tag) => (
-                      <span
-                        key={tag}
-                        className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400"
-                      >
-                        {tag}
+              <div key={query.id} className="relative group">
+                <Link
+                  href={`/dashboard?executeStarred=${query.id}`}
+                  className="block px-3 py-2 pr-8 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 truncate flex-1">
+                      {query.relativeDateType && query.relativeDateType !== 'absolute' && (
+                        <Clock className="w-3 h-3 text-blue-400 shrink-0" title="자동 날짜 업데이트" />
+                      )}
+                      <span className="truncate">{query.queryName}</span>
+                    </div>
+                    {query.executionCount > 0 && (
+                      <span className="text-xs text-zinc-500 ml-2 shrink-0">
+                        {query.executionCount}회
                       </span>
-                    ))}
+                    )}
                   </div>
-                )}
-              </Link>
+                  {query.tags.length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {query.tags.slice(0, 3).map((tag) => (
+                        <span
+                          key={tag}
+                          className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(() => {
+                    const dateRange = getQueryDateRange(query);
+                    return dateRange ? (
+                      <div className="flex items-center gap-1 mt-1 text-xs text-zinc-500">
+                        <Calendar className="w-3 h-3" />
+                        <span>{dateRange}</span>
+                      </div>
+                    ) : null;
+                  })()}
+                </Link>
+                <button
+                  onClick={(e) => handleDeleteQuery(e, query.id)}
+                  className="absolute right-2 top-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-zinc-700 text-zinc-500 hover:text-red-400 transition-all"
+                  title="삭제"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
             ))}
             {starredQueries.length === 0 && (
               <p className="px-3 py-2 text-xs text-zinc-500">
