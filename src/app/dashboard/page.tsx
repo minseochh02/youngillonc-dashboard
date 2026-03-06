@@ -67,6 +67,16 @@ export default function DashboardPage() {
         executeStoredSQL(starredQuery);
         updateExecutionStats(executeStarredId);
       }
+    } else {
+      // Reset page when navigating to /dashboard without template
+      setLastExecutedStarredQuery(null);
+      setQuery('');
+      setResult(null);
+      setMetadata(null);
+      setError(null);
+      setCurrentDateRange(null);
+      setCurrentQueryData(null);
+      setShowSQL(false);
     }
   }, [searchParams]);
 
@@ -217,10 +227,10 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-          템플릿 추가
+          {lastExecutedStarredQuery ? lastExecutedStarredQuery.queryName : '템플릿 추가'}
         </h2>
         <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-          AI에게 무엇이든 물어보세요
+          {lastExecutedStarredQuery ? lastExecutedStarredQuery.queryText : 'AI에게 무엇이든 물어보세요'}
         </p>
       </div>
 
