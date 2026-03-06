@@ -1,191 +1,392 @@
-# Database Knowledge Base - Youngil ONC
+# Database Knowledge - Youngil ONC
 
-This document maintains key discoveries about the database schema, column mappings, and data characteristics to ensure consistent dashboard development.
+## Overview
+This document contains essential knowledge about the Youngil ONC database structure, business rules, and calculation methods. Use this as a reference when building queries or implementing new features.
 
-## 1. Business Locations (Standardized Branch Names)
+---
 
-The application uses a standardized set of branch names regardless of how they are stored in the raw database tables. 
+## 1. Database Tables
 
-**Standard Names**: `MB`, `화성`, `창원`, `남부`, `중부`, `서부`, `동부`, `제주`, `부산`
+### Core Operational Tables
+| Table | Display Name | Row Count | Key Columns | Purpose |
+|-------|-------------|-----------|-------------|---------|
+| `sales` | 판매현황 | 7,694 | 일자, 품목코드, 거래처그룹1코드명, 수량, 중량 | Sales transactions |
+| `purchases` | 구매현황 | 2,026 | 일자, 품목코드, 거래처그룹1명, 수량, 중량 | Purchase transactions |
+| `inventory` | 창고별재고 | 758 | 품목코드, 창고명, 재고수량 | Current inventory by warehouse |
+| `inventory_transfers` | 창고이동현황 | 42 | 월_일, 출고창고, 입고창고, 품목코드, 수량 | Inter-warehouse transfers |
+| `ledger` | 계정별원장 | 12,080 | 일자, 계정명, 부서명, 차변금액, 대변금액, 잔액 | General ledger entries |
 
-### Table Mapping Logic:
+### Supporting Tables
+| Table | Display Name | Row Count | Purpose |
+|-------|-------------|-----------|---------|
+| `product_mapping` | 품목코드매핑 | 709 | Product categorization lookup (품목그룹1코드, 품목그룹3코드) |
+| `purchase_orders` | 발주서현황 | 819 | Purchase orders (발주서) |
+| `deposits` | 입금보고서집계 | 674 | Customer deposits and payments |
+| `promissory_notes` | 받을어음거래내역 | 83 | Promissory notes receivable |
+| `pending_purchases` | 미구매현황 | 30 | Unfulfilled purchase orders |
+| `pending_sales` | 미판매현황 | 5 | Unfulfilled sales orders |
+| `internal_uses` | 자가사용현황 | 45 | Internal usage/consumption |
 
-| Table | Primary Column | Mapping Rule (SQL CASE) |
-| :--- | :--- | :--- |
-| **Sales** | `거래처그룹1코드명` | MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산 |
-| **Purchases** | `거래처그룹1명` | MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산 |
-| **Deposits** | `부서명` | MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산 |
-| **Notes** | `부서명` | MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산 |
-| **Ledger** | `부서명` | MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산 |
+### Important Notes
+- **`inventory` table lacks 품목그룹1코드 and 품목그룹3코드**: Use `product_mapping` table to get category information
+- **Numeric values stored as TEXT**: Many columns contain comma-formatted numbers (e.g., "1,234,567")
+- **Date format varies**: Most tables use `YYYY-MM-DD`, but `ledger` uses `YYYY/MM/DD`
 
-> **Implementation Note**: In SQL queries, use a `CASE` statement to map raw values like '창원사업소' or '남부지사' to the standard names. For the `daily-sales` dashboard, the `division` parameter passed to APIs should match these standard names exactly.
+---
 
-## 2. Product Categorization
+## 2. Branch Names (사업소)
+**Standard**: MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산
 
-| Category | Identification Logic (SQL) | Description |
-| :--- | :--- | :--- |
-| **Mobil Products** | `품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')` | Mobil brand products identified by group codes. |
-| **Misc Mobil** | `품목명_규격_ LIKE 'MOBIL%' AND 품목그룹1코드 = 'AA'` | Mobil items straying in the Miscellaneous group. |
-| **Flagship Tier** | `품목그룹3코드 = 'FLA'` | High-end product category. |
+**Column by Table**:
+- `sales`: 거래처그룹1코드명
+- `purchases`: 거래처그룹1명
+- `deposits`, `promissory_notes`, `ledger`: 부서명
 
-### Mobil Product Group Codes:
-- **IL**: Mobil-산업유 (Industrial)
-- **PVL**: Mobil-자동차 (Passenger Vehicle)
-- **CVL**: Mobil-대형차 (Commercial Vehicle)
-- **AVI**: Mobil-항공기유 (Aviation)
-- **MAR**: Mobil-선박유 (Marine)
-- **MB**: Mobil-MB (Mercedes-Benz specialized)
-
-## 3. Data Types & Cleaning
-
-The database stores many numeric and financial fields as **formatted strings** (e.g., `"1,234,567"`). 
-
-### Required Cleaning Logic:
-Before performing aggregations (SUM, AVG), characters like commas must be removed and the value cast to a numeric type.
-
-**Standard Pattern:**
+**SQL Pattern**:
 ```sql
-SUM(CAST(REPLACE(column_name, ',', '') AS NUMERIC))
+CASE
+  WHEN column LIKE '%창원%' THEN '창원'
+  WHEN column LIKE '%화성%' THEN '화성'
+  WHEN column LIKE '%MB%' THEN 'MB'
+  WHEN column LIKE '%남부%' THEN '남부'
+  WHEN column LIKE '%중부%' THEN '중부'
+  WHEN column LIKE '%서부%' THEN '서부'
+  WHEN column LIKE '%동부%' THEN '동부'
+  WHEN column LIKE '%제주%' THEN '제주'
+  WHEN column LIKE '%부산%' THEN '부산'
+  ELSE column
+END
 ```
 
-### Key Columns Needing Cleaning:
-- `합_계` (Total with tax)
-- `공급가액` (Supply Amount)
-- `중량` (Weight)
+## 3. Product Categories (품목그룹)
 
-## 4. Measurement Units
-- **Currency**: KRW (₩)
-- **Weight**: KG (kg)
+### Category Hierarchy (품목그룹1코드)
+Products are categorized into three main industry groups:
 
-## 5. Collection (수금) Business Logic
+| Category | 품목그룹1코드 | Product Count | Description |
+|----------|---------------|---------------|-------------|
+| **Auto** | `PVL`, `CVL` | 145 | Automotive oils (Passenger Vehicle Lubricants + Commercial Vehicle Lubricants) |
+| **IL** | `IL` | 295 | Industrial oils |
+| **MB** | `MB`, `AVI` | 19 | Mercedes-Benz + Aviation oils |
+| **Others** | All other codes | 250 | Other brands (Fuchs, Shell, Blaser, GS, etc.) |
 
-Based on official internal reporting rules:
+### SQL Pattern for Categorization
+```sql
+CASE
+  WHEN 품목그룹1코드 IN ('PVL', 'CVL') THEN 'Auto'
+  WHEN 품목그룹1코드 = 'IL' THEN 'IL'
+  WHEN 품목그룹1코드 IN ('MB', 'AVI') THEN 'MB'
+  ELSE 'Others'
+END as category
+```
 
-### 5.1 Deposits (Cash/Card)
+### Tier Classification (품목그룹3코드)
+Products are also classified by tier:
+- **Flagship**: `품목그룹3코드='FLA'` (Premium products)
+- **Others**: All other tier codes (Standard/Premium/etc.)
+
+```sql
+CASE
+  WHEN 품목그룹3코드 = 'FLA' THEN 'Flagship'
+  ELSE 'Others'
+END as tier
+```
+
+### Brand-Specific Codes
+- **Mobil**: `품목그룹1코드 IN ('IL','PVL','MB','CVL','AVI','MAR')`
+- **Mobil-MB**: `품목그룹1코드='MB'` OR `판매처명 LIKE '메르세데스벤츠%'`
+- **Blaser**: `품목그룹1코드='BL'`
+- **Fuchs**: `품목그룹1코드='FU'`
+- **Shell**: `품목그룹1코드='SH'`
+- **GS Caltex**: `품목그룹1코드='GS'`
+- **Castrol**: `품목그룹1코드='CA'`
+
+## 4. Data Cleaning
+Many numeric columns stored as TEXT with commas: `"1,234,567"`
+
+**Always use**: `CAST(REPLACE(column,',','') AS NUMERIC)`
+
+**Apply to**: 합_계, 공급가액, 중량, 금액, 수량, 재고수량, 차변금액, 대변금액, 잔액
+
+## 5. Dates
+- **Standard Format**: `YYYY-MM-DD` (e.g., `2026-03-05`)
+- **Ledger Format**: `YYYY/MM/DD` (filter with `LIKE '2026/03/05%'`)
+- **Transfer Format**: `월_일` column uses `MM-DD` or `MM/DD` format (e.g., `02-03` or `02/03`)
+
+## 6. Collections (수금)
+
+### Deposits (입금)
 - **Table**: `deposits`
-- **Mandatory Filter**: `계정명 = '외상매출금'` (Accounts Receivable only).
-- **Excluded**: 미수금, 잡이익, etc.
-- **Categorization**: 
-    - **Card**: Account (`계좌`) contains '카드' or '이니시스' AND does not match specific bank branch names.
-    - **Cash**: Specific bank branch accounts or generic accounts not labeled as card.
+- **Date Column**: `전표번호` (NOT `일자`)
+- **Filter**: `계정명='외상매출금'` only
+- **Branch Column**: `부서명`
+- **Card**: `계좌 LIKE '%카드%' OR 계좌 LIKE '%이니시스%'`
+- **Cash**: All other accounts
 
-### 5.2 Notes (어음)
+### Promissory Notes (어음)
 - **Table**: `promissory_notes`
-- **Filter**: `증감구분 = '증가'` (New notes received).
-- **Branch Mapping Prefixes**: 
-    - **Y**: 화성
-    - **IC**: 서부
-    - **N**: 동부
-    - **C**: 창원
-    - **P**: 부산
+- **Filter**: `증감구분='증가'`
 
-## 6. Mobil Payment (모빌결제내역) Business Logic
+## 7. Mobil Purchases (모빌결제)
+- **Table**: `purchase_orders` only
+- **Filter**: `거래처명 LIKE '%모빌%'`
+- **Industry Groups**:
+  - IL (Industrial): `품목그룹1코드='IL'`
+  - AUTO: `품목그룹1코드 IN ('PVL','CVL')`
+  - MBK: `품목그룹1코드 IN ('MB','AVI')`
 
-Based on Mobil Korea purchase tracking:
+## 8. Ledger (원장) - Funds Status
 
-### 6.1 Industry Group Classification
-- **Table**: `purchase_orders` (발주서현황) - **Exclusive Source**
-- **Supplier Filter**: `거래처명 LIKE '%모빌%'`
-- **Date Filter**: `월_일` column (format: `YYYY-MM-DD`)
-- **Branch Column**: `창고명` — actual values: 창원, 화성, 부산, 중부(화성auto), 화성(B2B), 본사직송. No '사업소'/'지사' suffix.
-- **Categorization Logic**:
-    - **IL (Industrial)**: `품목그룹1코드 = 'IL'` (Mobil-산업유)
-    - **AUTO (Automotive)**: `품목그룹1코드 IN ('PVL', 'CVL')` (Mobil-자동차, Mobil-대형차)
-    - **MBK (Specialized)**: `품목그룹1코드 IN ('MB', 'AVI')` (Mobil-MB, Mobil-항공기유)
-- **Primary Group**: The "산업군" displayed in the report is dynamically determined by the highest payment volume category among IL, AUTO, and MBK for each branch.
+### Key Accounts (계정명)
+**KRW Assets**:
+- `현금 시재금%` (시재금-서울/창원/화성)
+- `보통예금`
+- `퇴직연금운용자산`
+- `받을어음`
 
-## 7. Expense (지출결의서) — Deprecated
-
-The `expenses` table is **no longer available**. 입출금현황 withdrawals and 자금현황 지출 are not sourced from DB; ledger/deposits only.
-
-## 8. Ledger (원장 / 계정별원장) — 자금현황
-
-Used for **자금현황** (Funds Status) to show real account balances and daily flow. The ledger table contains **all** account types (cash, deposits, receivables, expenses, P&L, etc.); for funds we **must filter by `계정명`** and never aggregate all rows into one figure.
-
-### 8.1 Table: `ledger`
-- **Date column**: `일자_no_` — format `YYYY/MM/DD -n` (e.g. `2026/01/05 -29`). Filter by `일자_no_ LIKE 'YYYY/MM/DD%'` (convert request date `YYYY-MM-DD` to `YYYY/MM/DD`).
-- **Account**: `계정명` — exact account name per row. Use for filtering; do not sum across all accounts.
-- **Branch**: `부서명` — department/branch (e.g. 창원사업소, 화성사업소). Ledger has column `부서명` for branch dimension.
-- **Amounts** (apply §3 cleaning: `REPLACE(column, ',', '')`, then `CAST(... AS NUMERIC)`):
-  - `차변금액` — debit (당일증가)
-  - `대변금액` — credit (당일감소)
-  - `잔액` — running balance per row; use **latest per 계정명** (max `id` per account for that date) for "금일잔액", and same for previous day for "전일잔액".
-- **Metadata**: `회사명` (e.g. (주)영일오엔씨), `기간` (e.g. 01 ~ 2026), `계정코드`, `계정코드_메타`, `계정명_메타` — map 계정코드 1039 → 보통예금, 1040 → 외화예금, 1023/1024/1025 → 현금 시재금-창원/화성/서울.
-- **Other**: `적요`, `거래처명`, `거래처코드`.
-
-### 8.2 Ledger account names (계정명) — funds-relevant
-
-Ledger has **many** distinct `계정명` values (61+). For 자금현황, filter rows by `계정명` as follows.
-
-**KRW (현금 및 예금):**
-
-| Funds category | Filter (계정명) | Notes |
-| :--- | :--- | :--- |
-| **현금 시재금** | `계정명 LIKE '현금 시재금%'` | 현금 시재금-서울, 현금 시재금-창원, 현금 시재금-화성 only. |
-| **보통예금** | `계정명 = '보통예금'` | Single account. |
-| **퇴직연금** | `계정명 = '퇴직연금운용자산'` | |
-| **받을어음** | `계정명 = '받을어음'` (balance); 당일 flow from `promissory_notes` (§5.2). | |
-| **단기차입금** | `계정명 = '단기차입금'` | |
-| **장기차입금** | `계정명 = '장기차입금'` | |
-
-**Foreign (외화 자산) — exact match:**
-
+**Foreign**:
 - `외화예금`
-- `외환차익`
 
-**Loans / Liabilities (차입금·부채) — exact match:**
+**Liabilities**:
+- `단기차입금`
+- `장기차입금`
 
-- `단기차입금`, `장기차입금`
-- (Temporarily excluded: `미지급금`, `미지급비용`, `외상매입금`, `예수금`, `부가세예수금`)
+### Balance Calculation
+- `일자_no_`: Date format `YYYY/MM/DD -n`
+- `차변금액`: Debit (increase)
+- `대변금액`: Credit (decrease)
+- `잔액`: Running balance (use latest `id` per account per date)
 
-All other 계정명 (e.g. 미수금, 외상매출금, expenses, P&L) must be excluded when computing funds.
+### Daily Flow (입출금현황)
+**Only from** `ledger` where `계정명='보통예금'`:
+- **Deposits**: `차변금액 > 0`
+- **Withdrawals**: `대변금액 > 0`
 
-### 8.3 Funds (자금현황) aggregation
-- **Currency Convention**: All values (including foreign assets and loans) are reported in **KRW (₩)**. The `ledger` table already stores the converted Won value for foreign accounts based on the exchange rate at the time of entry.
-- **현금 시재금**: From `ledger` where `계정명 LIKE '현금 시재금%'` only — 전일잔액 = sum of latest 잔액 per 계정명 for previous day; 금일잔액 = sum of latest 잔액 per 계정명 for selected date; 당일증가/당일감소 = sum of 차변금액/대변금액 for that date.
-- **보통예금**: From `ledger` where `계정명 = '보통예금'` — same aggregation (전일/금일 잔액, 당일 차변/대변).
-- **외화예금**: From `ledger` where `계정명 = '외화예금'` — same aggregation.
-- **받을어음 (당일 flow)**: `promissory_notes` where 증감구분 = '증가' (§5.2). Balance can also be taken from ledger `계정명 = '받을어음'`.
+## 9. Units
+- **Weight to D/M**: Divide by 200 (`중량/200.0`)
+- **Flagship**: Track in Liters (L), not D/M
+- **Currency**: KRW (₩)
+- **Default Unit**: Liters (L) for oil products
 
-### 8.4 입출금현황 — 일일 입출금 (In-Out Flow)
+## 10. Product Mapping Table
 
-Sourced **entirely from the `ledger` table** for the account `보통예금` only.
+### Overview
+The `product_mapping` table is a **critical reference table** that provides product categorization for the `inventory` table, which lacks 품목그룹 codes.
 
-- **Deposits (입금)**: Rows where `차변금액` (debit) > 0 AND `계정명 = '보통예금'`.
-- **Withdrawals (출금)**: Rows where `대변금액` (credit) > 0 AND `계정명 = '보통예금'`.
+### Schema
+```sql
+CREATE TABLE product_mapping (
+  id INTEGER PRIMARY KEY,
+  품목코드 TEXT UNIQUE,
+  품목명 TEXT,
+  품목그룹1코드 TEXT,
+  품목그룹1명 TEXT,
+  품목그룹2명 TEXT,
+  품목그룹3코드 TEXT,
+  last_seen_date TEXT
+)
+```
 
-## 9. Daily Closing Status (마감현황) Business Logic
+### Statistics
+- **Total Products**: 709
+- **Unique Group1 Codes**: 21 (IL, PVL, CVL, MB, AVI, FU, BL, SH, GS, etc.)
+- **Unique Group3 Codes**: 4 (FLA, STA, PRE, etc.)
+- **Top Category**: IL (Industrial) with 295 products
+- **Data Source**: Aggregated from `sales` and `purchases` tables
 
-Used for the Excel-rendition report that aggregates daily sales, collections, and inventory by division.
+### Rebuild Instructions
+When new products are added to sales/purchases:
+```bash
+npx tsx scripts/build-product-mapping.ts
+```
 
-### 9.1 Measurement Conversion (Weight to D/M)
-The official reporting unit for lubricants is the **Drum (D/M)**.
-- **Conversion Factor**: `1 D/M = 200 kg` (or 200 Liters).
-- **Formula**: `Units (D/M) = CAST(중량 AS NUMERIC) / 200.0`.
+This script:
+1. Drops existing `product_mapping` table
+2. Creates new table with proper schema
+3. Aggregates products from `sales` and `purchases`
+4. De-duplicates by 품목코드 (prefers non-null values)
+5. Inserts 700+ product mappings
 
-### 9.2 Product Classification
+### Usage Examples
 
-| Report Category | Identification Logic |
-| :--- | :--- |
-| **Mobil** | `품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI')` |
-| **Mobil-MB** | `품목그룹1코드 = 'MB'` OR `판매처명 LIKE '메르세데스벤츠%'` |
-| **블라자 (Blaser)** | `품목그룹1코드 = 'BL'` |
-| **훅스 (Fuchs)** | `품목그룹1코드 = 'FU'` |
-| **기타** | All other `품목그룹1코드` |
+**Join with inventory for categorization:**
+```sql
+SELECT
+  i.창고명,
+  i.품목코드,
+  i.재고수량,
+  p.품목그룹1코드,
+  p.품목그룹3코드,
+  CASE
+    WHEN p.품목그룹1코드 IN ('PVL', 'CVL') THEN 'Auto'
+    WHEN p.품목그룹1코드 = 'IL' THEN 'IL'
+    WHEN p.품목그룹1코드 IN ('MB', 'AVI') THEN 'MB'
+    ELSE 'Others'
+  END as category
+FROM inventory i
+LEFT JOIN product_mapping p ON i.품목코드 = p.품목코드
+```
 
-> **Note**: For `Mobil-MB` (Mercedes-Benz), the sales amount is often reported as `0` in the closing summary, but the weight (D/M) is tracked.
+**Check for unmapped products:**
+```sql
+SELECT i.*
+FROM inventory i
+LEFT JOIN product_mapping p ON i.품목코드 = p.품목코드
+WHERE p.품목코드 IS NULL
+```
 
-### 9.3 Inventory Calculation (Running Total)
-- **Inflow**: `purchases` table where `일자 = [Selected Date]`.
-- **Outflow**: `sales` table where `일자 = [Selected Date]`.
-- **Stock**: Sum of historical `Purchases` - historical `Sales` up to the selected date.
+## 11. Daily Inventory Calculation (일일재고파악시트)
 
-### 9.4 Division Mapping (Cross-Warehouse)
-The report division (e.g., Changwon) includes sales fulfilled from warehouses outside its primary location.
-- **Changwon Division** includes: 
-    - All sales where `창고명 = '창원'`.
-    - Sales to **'테크젠 주식회사'** regardless of warehouse (often fulfilled from '화성').
+### Formula
+The daily inventory sheet uses a **backwards calculation** from current inventory:
 
-### 9.5 Flagship (IL)
-- Identified by `품목그룹3코드 = 'FLA'`.
-- Report tracks volume in **Liters (L)**, not D/M.
+```
+Beginning Inventory = Ending Inventory - Purchases + Sales - Net Transfers
+```
+
+Where:
+- **Ending Inventory**: Current stock from `inventory` table (재고수량)
+- **Purchases**: Today's purchases from `purchases` table (수량)
+- **Sales**: Today's sales from `sales` table (수량)
+- **Net Transfers**: Transfer In - Transfer Out from `inventory_transfers` table (수량)
+
+### Data Sources
+The calculation consolidates data from 4 tables:
+1. **`inventory`**: Current ending inventory by warehouse and product
+2. **`sales`**: Daily sales transactions (outflow)
+3. **`purchases`**: Daily purchase transactions (inflow)
+4. **`inventory_transfers`**: Inter-warehouse movements
+
+### Implementation
+Location: `src/app/api/dashboard/daily-inventory/route.ts`
+
+The query:
+1. UNIONs data from all 4 tables with product codes
+2. JOINs with `product_mapping` for categorization
+3. Groups by branch, category, and tier
+4. Calculates beginning inventory using the formula above
+5. Returns stats for 8 category/tier combinations × N branches
+
+### Output Structure
+For each branch and category/tier combination:
+- **기초재고** (beginning): Calculated opening balance
+- **매입** (purchase): Today's purchases
+- **매출** (sales): Today's sales
+- **이동** (transfer): Net transfers (in - out)
+- **재고** (inventory): Current ending balance
+- **재고 D/M계**: Ending inventory ÷ 200
+
+## 12. Special Rules
+- **Changwon Division**: Includes `창고명='창원'` + sales to '테크젠 주식회사' from any warehouse
+- **Mobil-MB**: Sales amount often `0`, but weight tracked (quantity tracking more important than revenue)
+- **Ledger**: All values already in KRW (foreign accounts pre-converted)
+- **Branch Filtering**: Always filter using LIKE patterns (e.g., `LIKE '%창원%'`) to catch variations
+
+## 13. Common Query Patterns
+
+### Get Sales by Branch and Date
+```sql
+SELECT
+  CASE
+    WHEN 거래처그룹1코드명 LIKE '%창원%' THEN '창원'
+    WHEN 거래처그룹1코드명 LIKE '%화성%' THEN '화성'
+    -- ... other branches
+  END as branch,
+  SUM(CAST(REPLACE(중량, ',', '') AS NUMERIC)) as total_weight
+FROM sales
+WHERE 일자 = '2026-02-03'
+GROUP BY branch
+```
+
+### Get Current Inventory by Category
+```sql
+SELECT
+  CASE
+    WHEN p.품목그룹1코드 IN ('PVL', 'CVL') THEN 'Auto'
+    WHEN p.품목그룹1코드 = 'IL' THEN 'IL'
+    WHEN p.품목그룹1코드 IN ('MB', 'AVI') THEN 'MB'
+    ELSE 'Others'
+  END as category,
+  SUM(CAST(REPLACE(i.재고수량, ',', '') AS NUMERIC)) as total_inventory
+FROM inventory i
+LEFT JOIN product_mapping p ON i.품목코드 = p.품목코드
+GROUP BY category
+```
+
+### Get Daily Collections (Card vs Cash)
+```sql
+SELECT
+  부서명 as branch,
+  CASE
+    WHEN 계좌 LIKE '%카드%' OR 계좌 LIKE '%이니시스%' THEN 'Card'
+    ELSE 'Cash'
+  END as payment_type,
+  SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as total_amount
+FROM deposits
+WHERE 계정명 = '외상매출금'
+GROUP BY branch, payment_type
+```
+
+## 14. Performance Tips
+
+### Always Use Indexes
+- Join on `품목코드` (product code) is heavily used - ensure indexed
+- Filter by `일자` (date) frequently - consider index
+- Branch name filtering uses LIKE - less efficient, but necessary
+
+### Numeric Conversion
+- Pre-convert numeric columns at query time: `CAST(REPLACE(column, ',', '') AS NUMERIC)`
+- Do NOT convert in application layer - let database handle it
+
+### Use product_mapping Table
+- Always JOIN with `product_mapping` instead of scanning `sales`/`purchases` for categories
+- Much faster for inventory categorization
+
+### Batch Operations
+- When inserting to `product_mapping`, use batches of 100 rows
+- See `scripts/build-product-mapping.ts` for reference
+
+## 15. Troubleshooting
+
+### Inventory Categorization Not Working
+- **Check**: Does `product_mapping` table exist?
+- **Fix**: Run `npx tsx scripts/build-product-mapping.ts`
+
+### Daily Inventory Shows Zero
+- **Check**: Date format correct? (`YYYY-MM-DD`)
+- **Check**: Transfer date formats in `inventory_transfers` table (supports `MM-DD`, `MM/DD`, `YYYY-MM-DD`)
+- **Check**: Branch filtering - are you filtering the right column per table?
+
+### Missing Products in Mapping
+- **Cause**: New products added to `sales` or `purchases` after mapping table built
+- **Fix**: Rebuild product_mapping table
+- **Check**: Query for unmapped products:
+  ```sql
+  SELECT DISTINCT i.품목코드, i.품목명_규격_
+  FROM inventory i
+  LEFT JOIN product_mapping p ON i.품목코드 = p.품목코드
+  WHERE p.품목코드 IS NULL
+  ```
+
+### Numeric Values Incorrect
+- **Cause**: Forgot to strip commas before CAST
+- **Fix**: Always use `CAST(REPLACE(column, ',', '') AS NUMERIC)`
+
+---
+
+## Quick Reference Card
+
+| What | Where | Filter Column | Format |
+|------|-------|---------------|--------|
+| Sales by branch | `sales` | `거래처그룹1코드명` | LIKE '%창원%' |
+| Purchases by branch | `purchases` | `거래처그룹1명` | LIKE '%창원%' |
+| Inventory by warehouse | `inventory` | `창고명` | LIKE '%창원%' |
+| Collections by branch | `deposits`, `promissory_notes` | `부서명` | LIKE '%창원%' |
+| Product categories | `product_mapping` | `품목코드` | Exact match |
+| Daily transactions | All tables | `일자` | 'YYYY-MM-DD' |
+| Ledger entries | `ledger` | `일자` | LIKE 'YYYY/MM/DD%' |
+
+---
+
+**Last Updated**: 2026-03-06
+**Maintainer**: See `scripts/` directory for maintenance scripts

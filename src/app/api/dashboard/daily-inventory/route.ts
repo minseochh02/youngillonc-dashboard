@@ -4,6 +4,9 @@ import { executeSQL } from '@/egdesk-helpers';
 /**
  * API Endpoint for Daily Inventory Status Sheet (일일재고파악시트)
  * Consolidates data from inventory, sales, purchases, and transfers.
+ *
+ * Uses product_mapping table for categorization (품목그룹1코드, 품목그룹3코드)
+ * Run scripts/build-product-mapping.ts to rebuild the mapping table if needed.
  */
 export async function GET(request: Request) {
   try {
@@ -105,22 +108,19 @@ export async function GET(request: Request) {
           AND (입고창고 LIKE '%사업소%' OR 입고창고 LIKE '%지사%' OR 입고창고 = 'MB' OR 입고창고 LIKE '%화성%' OR 입고창고 LIKE '%창원%' OR 입고창고 LIKE '%남부%' OR 입고창고 LIKE '%중부%' OR 입고창고 LIKE '%서부%' OR 입고창고 LIKE '%동부%' OR 입고창고 LIKE '%제주%' OR 입고창고 LIKE '%부산%')
       ) r
       LEFT JOIN (
-        SELECT DISTINCT 품목코드, 
-          CASE 
+        SELECT
+          품목코드,
+          CASE
             WHEN 품목그룹1코드 IN ('PVL', 'CVL') THEN 'Auto'
             WHEN 품목그룹1코드 = 'IL' THEN 'IL'
             WHEN 품목그룹1코드 IN ('MB', 'AVI') THEN 'MB'
             ELSE 'Others'
           END as category,
-          CASE 
+          CASE
             WHEN 품목그룹3코드 = 'FLA' THEN 'Flagship'
             ELSE 'Others'
           END as tier
-        FROM (
-          SELECT 품목코드, 품목그룹1코드, 품목그룹3코드 FROM sales WHERE 일자 >= '${date.substring(0, 7)}-01' AND 일자 <= '${date}'
-          UNION
-          SELECT 품목코드, 품목그룹1코드, 품목그룹3코드 FROM purchases WHERE 일자 >= '${date.substring(0, 7)}-01' AND 일자 <= '${date}'
-        )
+        FROM product_mapping
       ) p ON r.품목코드 = p.품목코드
       GROUP BY 1, 2, 3
     `;
