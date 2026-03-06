@@ -59,11 +59,11 @@ const Navigation = () => {
       href: "/dashboard/daily-inventory",
       icon: <Calculator className="w-5 h-5" />,
     },
-    {
-      name: "사업소별 장기재고 현황",
-      href: "/dashboard/long-term-inventory",
-      icon: <AlertTriangle className="w-5 h-5" />,
-    },
+    // {
+    //   name: "사업소별 장기재고 현황",
+    //   href: "/dashboard/long-term-inventory",
+    //   icon: <AlertTriangle className="w-5 h-5" />,
+    // },
   ];
 
   return (

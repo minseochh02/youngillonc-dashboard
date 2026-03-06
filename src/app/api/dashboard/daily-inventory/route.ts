@@ -82,7 +82,7 @@ export async function GET(request: Request) {
         UNION ALL
 
         -- 4. Transfers Out (Negative movement)
-        SELECT 
+        SELECT
           ${branchCase('출고창고')} as branch,
           품목코드,
           0 as inv_qty,
@@ -91,12 +91,11 @@ export async function GET(request: Request) {
           -CAST(REPLACE(수량, ',', '') AS NUMERIC) as transfer_qty
         FROM inventory_transfers
         WHERE (월_일 = '${date}' OR 월_일 = SUBSTR('${date}', 6, 5) OR 월_일 = REPLACE(SUBSTR('${date}', 6, 5), '-', '/'))
-          AND (출고창고 LIKE '%사업소%' OR 출고창고 LIKE '%지사%' OR 출고창고 = 'MB' OR 출고창고 LIKE '%화성%' OR 출고창고 LIKE '%창원%' OR 출고창고 LIKE '%남부%' OR 출고창고 LIKE '%중부%' OR 출고창고 LIKE '%서부%' OR 출고창고 LIKE '%동부%' OR 출고창고 LIKE '%제주%' OR 출고창고 LIKE '%부산%')
 
         UNION ALL
 
         -- 5. Transfers In (Positive movement)
-        SELECT 
+        SELECT
           ${branchCase('입고창고')} as branch,
           품목코드,
           0 as inv_qty,
@@ -105,7 +104,6 @@ export async function GET(request: Request) {
           CAST(REPLACE(수량, ',', '') AS NUMERIC) as transfer_qty
         FROM inventory_transfers
         WHERE (월_일 = '${date}' OR 월_일 = SUBSTR('${date}', 6, 5) OR 월_일 = REPLACE(SUBSTR('${date}', 6, 5), '-', '/'))
-          AND (입고창고 LIKE '%사업소%' OR 입고창고 LIKE '%지사%' OR 입고창고 = 'MB' OR 입고창고 LIKE '%화성%' OR 입고창고 LIKE '%창원%' OR 입고창고 LIKE '%남부%' OR 입고창고 LIKE '%중부%' OR 입고창고 LIKE '%서부%' OR 입고창고 LIKE '%동부%' OR 입고창고 LIKE '%제주%' OR 입고창고 LIKE '%부산%')
       ) r
       LEFT JOIN (
         SELECT
