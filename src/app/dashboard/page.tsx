@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from 'react';
-import { Search, Loader2, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Search, Loader2, ChevronDown, ChevronUp, Clock, Star } from 'lucide-react';
 import GenericResultTable from '@/components/GenericResultTable';
 import SalesTable from '@/components/SalesTable';
+import StarQueryModal from '@/components/StarQueryModal';
 import { selectComponent } from '@/lib/component-router';
 import { apiFetch } from '@/lib/api';
+import { useStarredQueries, type StarredQuery } from '@/hooks/useStarredQueries';
 
 interface QueryResult {
   rows: any[];
@@ -32,12 +35,34 @@ const EXAMPLE_QUERIES = [
 ];
 
 export default function DashboardPage() {
+  const searchParams = useSearchParams();
+  const { saveQuery, updateExecutionStats, getQuery } = useStarredQueries();
+
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [metadata, setMetadata] = useState<QueryMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSQL, setShowSQL] = useState(false);
+  const [showStarModal, setShowStarModal] = useState(false);
+  const [currentQueryData, setCurrentQueryData] = useState<{
+    queryText: string;
+    sql: string;
+    intent: string;
+  } | null>(null);
+
+  // Auto-execute starred queries from URL params
+  useEffect(() => {
+    const executeStarredId = searchParams.get('executeStarred');
+    if (executeStarredId) {
+      const starredQuery = getQuery(executeStarredId);
+      if (starredQuery) {
+        setQuery(starredQuery.queryText);
+        executeStoredSQL(starredQuery);
+        updateExecutionStats(executeStarredId);
+      }
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +95,62 @@ export default function DashboardPage() {
 
       setResult(data.data);
       setMetadata(data.metadata);
+
+      // Store current query data for starring
+      setCurrentQueryData({
+        queryText,
+        sql: data.data.sql,
+        intent: data.data.intent
+      });
+
+    } catch (err: any) {
+      console.error('Query execution error:', err);
+      setError('서버와 통신 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const executeStoredSQL = async (starredQuery: StarredQuery) => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setMetadata(null);
+
+    console.log('Executing stored SQL:', {
+      sqlLength: starredQuery.sql.length,
+      sql: starredQuery.sql,
+      intent: starredQuery.intent
+    });
+
+    try {
+      const response = await apiFetch('/api/dashboard/nl-query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sql: starredQuery.sql,
+          intent: starredQuery.intent
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setError(data.error || '쿼리 실행 중 오류가 발생했습니다.');
+        return;
+      }
+
+      setResult(data.data);
+      setMetadata(data.metadata);
+
+      // Store current query data (already has sql/intent from starred query)
+      setCurrentQueryData({
+        queryText: starredQuery.queryText,
+        sql: starredQuery.sql,
+        intent: starredQuery.intent
+      });
 
     } catch (err: any) {
       console.error('Query execution error:', err);
@@ -169,7 +250,7 @@ export default function DashboardPage() {
             <span>{metadata.executionTime}ms</span>
           </div>
           <div className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
-            {metadata.rowCount.toLocaleString()}개 결과
+            {(metadata.rowCount ?? 0).toLocaleString()}개 결과
           </div>
           <div className="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
             {metadata.method === 'template' ? '템플릿' : 'AI 생성'}
@@ -177,6 +258,19 @@ export default function DashboardPage() {
           <div className="text-xs text-zinc-500 dark:text-zinc-500">
             남은 쿼리: {metadata.remaining}
           </div>
+        </div>
+      )}
+
+      {/* Star Query Button */}
+      {currentQueryData && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => setShowStarModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white transition-colors shadow-sm hover:shadow-md"
+          >
+            <Star className="w-4 h-4" />
+            <span className="font-medium">즐겨찾기 추가</span>
+          </button>
         </div>
       )}
 
@@ -219,6 +313,27 @@ export default function DashboardPage() {
             쿼리를 입력하거나 예시 쿼리를 클릭해보세요
           </p>
         </div>
+      )}
+
+      {/* Star Query Modal */}
+      {showStarModal && currentQueryData && (
+        <StarQueryModal
+          isOpen={showStarModal}
+          onClose={() => setShowStarModal(false)}
+          queryText={currentQueryData.queryText}
+          sql={currentQueryData.sql}
+          intent={currentQueryData.intent}
+          onSave={(name, tags) => {
+            saveQuery({
+              queryText: currentQueryData.queryText,
+              queryName: name,
+              tags,
+              sql: currentQueryData.sql,
+              intent: currentQueryData.intent,
+            });
+            setShowStarModal(false);
+          }}
+        />
       )}
     </div>
   );

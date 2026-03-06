@@ -39,6 +39,10 @@ interface DailyClosingStatusProps {
     salesMTD: number;
     purchaseMTD: number;
   };
+  purchaseData?: {
+    todayVolume: number;
+    todayAmount: number;
+  };
 }
 
 const formatNumber = (num: number) => {
@@ -54,7 +58,8 @@ export default function DailyClosingStatus({
   inventoryData,
   keyStatus,
   newCustomers,
-  flagship = { salesVol: 0, purchaseVol: 0, salesMTD: 0, purchaseMTD: 0 }
+  flagship = { salesVol: 0, purchaseVol: 0, salesMTD: 0, purchaseMTD: 0 },
+  purchaseData = { todayVolume: 0, todayAmount: 0 }
 }: DailyClosingStatusProps) {
   const totalSales = salesData.reduce((acc, curr) => ({
     prevTotal: acc.prevTotal + curr.prevTotal,
@@ -307,11 +312,11 @@ export default function DailyClosingStatus({
           <div className="grid grid-cols-2 gap-6">
             <div className="bg-zinc-800 dark:bg-zinc-700/50 rounded-xl p-4 border border-zinc-700">
               <p className="text-[11px] uppercase tracking-widest text-zinc-400 mb-2 font-bold">당일 입고량</p>
-              <p className="text-2xl font-bold">0 L</p>
+              <p className="text-2xl font-bold">{purchaseData.todayVolume.toLocaleString()} kg</p>
             </div>
             <div className="bg-zinc-800 dark:bg-zinc-700/50 rounded-xl p-4 border border-zinc-700">
               <p className="text-[11px] uppercase tracking-widest text-zinc-400 mb-2 font-bold">당일 매입액</p>
-              <p className="text-2xl font-bold">₩0</p>
+              <p className="text-2xl font-bold">₩{purchaseData.todayAmount.toLocaleString()}</p>
             </div>
           </div>
         </div>

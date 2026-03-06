@@ -54,14 +54,22 @@ export async function callUserDataTool(
     });
   }
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-
+  // Always parse the response to get detailed error messages
   const result = await response.json();
 
-  if (!result.success) {
-    throw new Error(result.error || 'Tool call failed');
+  if (!response.ok || !result.success) {
+    // Extract detailed error from response body
+    let errorMessage = result.error || result.message || response.statusText || 'Tool call failed';
+
+    // Extract the actual SQL error from nested error messages
+    // e.g., "Error: Failed to execute user_data_sql_query: Invalid SQL query: ..."
+    //       → "Invalid SQL query: ..."
+    const sqlErrorMatch = errorMessage.match(/Invalid SQL query: (.+)/);
+    if (sqlErrorMatch) {
+      errorMessage = `Invalid SQL query: ${sqlErrorMatch[1]}`;
+    }
+
+    throw new Error(errorMessage);
   }
 
   // Parse MCP response format

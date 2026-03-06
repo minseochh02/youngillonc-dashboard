@@ -47,7 +47,8 @@ export default function DailySalesPage() {
             salesData: result.salesData,
             collectionData: result.collectionData,
             inventoryData: result.inventoryData,
-            flagship: result.flagship
+            flagship: result.flagship,
+            purchaseData: result.purchaseData
           });
         }
       } else {
@@ -201,13 +202,14 @@ export default function DailySalesPage() {
         </div>
       ) : (
         closingData ? (
-          <DailyClosingStatus 
+          <DailyClosingStatus
             division={activeDivision.label}
             date={selectedDate}
             salesData={closingData.salesData}
             collectionData={closingData.collectionData}
             inventoryData={closingData.inventoryData}
             flagship={closingData.flagship}
+            purchaseData={closingData.purchaseData}
             keyStatus={[]}
             newCustomers={[]}
           />

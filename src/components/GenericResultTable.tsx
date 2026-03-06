@@ -37,6 +37,7 @@ const getColumnType = (columnName: string, values: any[]): 'amount' | 'date' | '
   // Amount columns
   if (lowerName.includes('금액') || lowerName.includes('매출') || lowerName.includes('수량') ||
       lowerName.includes('중량') || lowerName.includes('단가') || lowerName.includes('합계') ||
+      lowerName.includes('액') ||
       lowerName.includes('amount') || lowerName.includes('sales') || lowerName.includes('price')) {
     return 'amount';
   }

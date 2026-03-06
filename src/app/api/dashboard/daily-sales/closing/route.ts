@@ -158,11 +158,29 @@ export async function GET(request: Request) {
       )
     `;
 
-    const [salesRes, collRes, invRes, flagRes] = await Promise.all([
+    // 5. Mobil Purchase Metrics (당일 입고량 / 매입액)
+    const purchaseQuery = `
+      SELECT
+        SUM(CASE WHEN 일자 = '${date}' THEN volume ELSE 0 END) as todayVolume,
+        SUM(CASE WHEN 일자 = '${date}' THEN amount ELSE 0 END) as todayAmount
+      FROM (
+        SELECT
+          CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume,
+          CAST(REPLACE(합_계, ',', '') AS NUMERIC) as amount,
+          일자
+        FROM purchases
+        WHERE 일자 >= '${startDate}' AND 일자 <= '${date}'
+          AND 품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI', 'MB')
+          AND ${getPurchBranchFilter()}
+      )
+    `;
+
+    const [salesRes, collRes, invRes, flagRes, purchRes] = await Promise.all([
       executeSQL(salesQuery),
       executeSQL(collectionQuery),
       executeSQL(inventoryQuery),
-      executeSQL(flagshipQuery)
+      executeSQL(flagshipQuery),
+      executeSQL(purchaseQuery)
     ]);
 
     // Map Sales Results
@@ -205,6 +223,7 @@ export async function GET(request: Request) {
     });
 
     const flagship = flagRes?.rows?.[0] || { salesToday: 0, purchaseToday: 0, salesMTD: 0, purchaseMTD: 0 };
+    const purchaseMetrics = purchRes?.rows?.[0] || { todayVolume: 0, todayAmount: 0 };
 
     return NextResponse.json({
       success: true,
@@ -216,6 +235,10 @@ export async function GET(request: Request) {
         purchaseVol: Number(flagship.purchaseToday) || 0,
         salesMTD: Number(flagship.salesMTD) || 0,
         purchaseMTD: Number(flagship.purchaseMTD) || 0
+      },
+      purchaseData: {
+        todayVolume: Number(purchaseMetrics.todayVolume) || 0,
+        todayAmount: Number(purchaseMetrics.todayAmount) || 0
       },
       date,
       division

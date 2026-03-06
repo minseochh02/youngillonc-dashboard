@@ -1,7 +1,13 @@
+'use client';
+
+import { useState } from 'react';
 import Link from "next/link";
-import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart, AlertTriangle, Star, ChevronDown } from "lucide-react";
+import { useStarredQueries } from '@/hooks/useStarredQueries';
 
 const Navigation = () => {
+  const { queries: starredQueries } = useStarredQueries();
+  const [isStarredExpanded, setIsStarredExpanded] = useState(true);
   const navItems = [
     {
       name: "대시보드",
@@ -60,6 +66,63 @@ const Navigation = () => {
             <span className="text-sm font-medium">{item.name}</span>
           </Link>
         ))}
+      </div>
+
+      {/* Starred Queries Section */}
+      <div className="mt-8 pt-4 border-t border-zinc-800">
+        <button
+          onClick={() => setIsStarredExpanded(!isStarredExpanded)}
+          className="flex items-center justify-between w-full px-3 py-2 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Star className="w-4 h-4 text-yellow-500" />
+            <span className="text-sm font-medium">즐겨찾기</span>
+            <span className="text-xs text-zinc-500">({starredQueries.length})</span>
+          </div>
+          <ChevronDown
+            className={`w-4 h-4 transition-transform ${
+              isStarredExpanded ? 'rotate-180' : ''
+            }`}
+          />
+        </button>
+
+        {isStarredExpanded && (
+          <div className="mt-2 space-y-1 max-h-96 overflow-y-auto">
+            {starredQueries.map((query) => (
+              <Link
+                key={query.id}
+                href={`/dashboard?executeStarred=${query.id}`}
+                className="block px-3 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="truncate flex-1">{query.queryName}</span>
+                  {query.executionCount > 0 && (
+                    <span className="text-xs text-zinc-500 ml-2 shrink-0">
+                      {query.executionCount}회
+                    </span>
+                  )}
+                </div>
+                {query.tags.length > 0 && (
+                  <div className="flex gap-1 mt-1 flex-wrap">
+                    {query.tags.slice(0, 3).map((tag) => (
+                      <span
+                        key={tag}
+                        className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </Link>
+            ))}
+            {starredQueries.length === 0 && (
+              <p className="px-3 py-2 text-xs text-zinc-500">
+                즐겨찾기한 쿼리가 없습니다
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </nav>
   );

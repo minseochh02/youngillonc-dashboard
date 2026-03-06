@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from 'react';
-import { Search, Loader2, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Search, Loader2, ChevronDown, ChevronUp, Clock, Star } from 'lucide-react';
 import GenericResultTable from '@/components/GenericResultTable';
 import SalesTable from '@/components/SalesTable';
+import StarQueryModal from '@/components/StarQueryModal';
 import { selectComponent } from '@/lib/component-router';
 import { apiFetch } from '@/lib/api';
+import { useStarredQueries } from '@/hooks/useStarredQueries';
 
 interface QueryResult {
   rows: any[];
@@ -32,12 +35,34 @@ const EXAMPLE_QUERIES = [
 ];
 
 export default function QueryPage() {
+  const searchParams = useSearchParams();
+  const { saveQuery, updateExecutionStats, getQuery } = useStarredQueries();
+
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [metadata, setMetadata] = useState<QueryMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSQL, setShowSQL] = useState(false);
+  const [showStarModal, setShowStarModal] = useState(false);
+  const [currentQueryData, setCurrentQueryData] = useState<{
+    queryText: string;
+    sql: string;
+    intent: string;
+  } | null>(null);
+
+  // Auto-execute starred queries from URL params
+  useEffect(() => {
+    const executeStarredId = searchParams.get('executeStarred');
+    if (executeStarredId) {
+      const starredQuery = getQuery(executeStarredId);
+      if (starredQuery) {
+        setQuery(starredQuery.queryText);
+        executeQuery(starredQuery.queryText);
+        updateExecutionStats(executeStarredId);
+      }
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +95,13 @@ export default function QueryPage() {
 
       setResult(data.data);
       setMetadata(data.metadata);
+
+      // Store current query data for starring
+      setCurrentQueryData({
+        queryText,
+        sql: data.data.sql,
+        intent: data.data.intent
+      });
 
     } catch (err: any) {
       console.error('Query execution error:', err);
@@ -182,6 +214,19 @@ export default function QueryPage() {
           </div>
         )}
 
+        {/* Star Query Button */}
+        {currentQueryData && (
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowStarModal(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white transition-colors shadow-sm hover:shadow-md"
+            >
+              <Star className="w-4 h-4" />
+              <span className="font-medium">즐겨찾기 추가</span>
+            </button>
+          </div>
+        )}
+
         {/* SQL Display (Collapsible) */}
         {result && (
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -223,6 +268,27 @@ export default function QueryPage() {
           </div>
         )}
       </div>
+
+      {/* Star Query Modal */}
+      {showStarModal && currentQueryData && (
+        <StarQueryModal
+          isOpen={showStarModal}
+          onClose={() => setShowStarModal(false)}
+          queryText={currentQueryData.queryText}
+          sql={currentQueryData.sql}
+          intent={currentQueryData.intent}
+          onSave={(name, tags) => {
+            saveQuery({
+              queryText: currentQueryData.queryText,
+              queryName: name,
+              tags,
+              sql: currentQueryData.sql,
+              intent: currentQueryData.intent,
+            });
+            setShowStarModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }
