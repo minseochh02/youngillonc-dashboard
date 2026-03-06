@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 
-/** YYYY-MM-DD → YYYY/MM/DD for ledger 일자_no_ (DB_KNOWLEDGE §8.1) */
+/** Keep date in YYYY-MM-DD format for ledger 일자 column */
 function toLedgerDate(date: string): string {
-  return date.replace(/-/g, '/');
+  return date; // ledger.일자 uses YYYY-MM-DD format
 }
 
 /**
@@ -18,13 +18,13 @@ export async function GET(request: Request) {
 
     // 1. Inflow (입금) from ledger: 차변금액 = debit = inflow
     const depositQuery = `
-      SELECT 
+      SELECT
         계정명 as type,
         거래처명 as source,
         CAST(REPLACE(REPLACE(COALESCE(차변금액,'0'), ',', ''), ' ', '') AS NUMERIC) as amount,
         적요 as detail
       FROM ledger
-      WHERE 일자_no_ LIKE '${ledgerDate}%'
+      WHERE 일자 = '${ledgerDate}'
         AND 계정명 = '보통예금'
         AND CAST(REPLACE(REPLACE(COALESCE(차변금액,'0'), ',', ''), ' ', '') AS NUMERIC) > 0
       ORDER BY 3 DESC
@@ -34,13 +34,13 @@ export async function GET(request: Request) {
 
     // 2. 지출 내역 (payments) from ledger: 대변금액 = credit = outflow (DB_KNOWLEDGE §8.1)
     const withdrawalQuery = `
-      SELECT 
+      SELECT
         계정명 as type,
         거래처명 as source,
         CAST(REPLACE(REPLACE(COALESCE(대변금액,'0'), ',', ''), ' ', '') AS NUMERIC) as amount,
         적요 as detail
       FROM ledger
-      WHERE 일자_no_ LIKE '${ledgerDate}%'
+      WHERE 일자 = '${ledgerDate}'
         AND 계정명 = '보통예금'
         AND CAST(REPLACE(REPLACE(COALESCE(대변금액,'0'), ',', ''), ' ', '') AS NUMERIC) > 0
       ORDER BY 3 DESC

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 
-/** YYYY-MM-DD → YYYY/MM/DD for ledger 일자_no_ (e.g. 2026/01/05 -29) */
+/** Keep date in YYYY-MM-DD format for ledger 일자 column */
 function toLedgerDate(date: string): string {
-  return date.replace(/-/g, '/');
+  return date; // ledger.일자 uses YYYY-MM-DD format
 }
 
 /** Previous day in YYYY-MM-DD */
@@ -113,12 +113,11 @@ export async function GET(request: Request) {
     // 1. Ledger queries:
     //    - "flow" rows: only the selected/prev day (for 당일 inc/dec)
     //    - "balance as-of" rows: all rows up to selected/prev day (for running 잔액)
-    //    '~' (ASCII 126) is greater than ' ' (32) so LIKE 'YYYY/MM/DD~%' won't match;
-    //    using <= 'YYYY/MM/DD~' captures all rows whose date part is <= that date.
-    const ledgerCurFlowQuery   = `SELECT id, 계정명, 차변금액, 대변금액, 잔액 FROM ledger WHERE 일자_no_ LIKE '${ledgerDate}%'`;
-    const ledgerCurBalQuery    = `SELECT id, 계정명, 잔액 FROM ledger WHERE 일자_no_ <= '${ledgerDate}~'`;
-    const ledgerPrevFlowQuery  = `SELECT id, 계정명, 차변금액, 대변금액, 잔액 FROM ledger WHERE 일자_no_ LIKE '${ledgerPrevDate}%'`;
-    const ledgerPrevBalQuery   = `SELECT id, 계정명, 잔액 FROM ledger WHERE 일자_no_ <= '${ledgerPrevDate}~'`;
+    //    Using 일자 column which stores dates in YYYY-MM-DD format
+    const ledgerCurFlowQuery   = `SELECT id, 계정명, 거래처명, 차변금액, 대변금액, 잔액 FROM ledger WHERE 일자 = '${ledgerDate}'`;
+    const ledgerCurBalQuery    = `SELECT id, 계정명, 잔액 FROM ledger WHERE 일자 <= '${ledgerDate}'`;
+    const ledgerPrevFlowQuery  = `SELECT id, 계정명, 거래처명, 차변금액, 대변금액, 잔액 FROM ledger WHERE 일자 = '${ledgerPrevDate}'`;
+    const ledgerPrevBalQuery   = `SELECT id, 계정명, 잔액 FROM ledger WHERE 일자 <= '${ledgerPrevDate}'`;
 
     const [curFlowRes, curBalRes, prevFlowRes, prevBalRes] = await Promise.all([
       executeSQL(ledgerCurFlowQuery),
