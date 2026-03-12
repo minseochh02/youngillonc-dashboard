@@ -1,0 +1,6 @@
+{
+  "tool": "user_data_sql_query",
+  "arguments": {
+    "query": "SELECT 일자 FROM sales LIMIT 5"
+  }
+}
