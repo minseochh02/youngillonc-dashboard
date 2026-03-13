@@ -30,6 +30,11 @@ const Navigation = () => {
   };
   const navItems = [
     {
+      name: "직원별 현황",
+      href: "/employees",
+      icon: <Users className="w-5 h-5" />,
+    },
+    {
       name: "일일현황",
       href: "/dashboard/daily-status",
       icon: <ClipboardList className="w-5 h-5" />,

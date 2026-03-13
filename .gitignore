@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+*.eml
 
 # debug
 npm-debug.log*
@@ -39,3 +40,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+
+# backup files
+extraction-log-20260312-190750.txt
+backup-activity-log-2026-03-13.json
+backup-activity-log-source-tracking-2026-03-13.json
+extraction-backup-2024-03-11-to-2024-03-11.json
+extraction-backup-2024-03-12-to-2024-03-18.json

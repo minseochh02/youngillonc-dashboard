@@ -10,27 +10,33 @@ This document contains essential knowledge about the Youngil ONC database struct
 ### Core Operational Tables
 | Table | Display Name | Row Count | Key Columns | Purpose |
 |-------|-------------|-----------|-------------|---------|
-| `sales` | 판매현황 | 7,694 | 일자, 품목코드, 거래처그룹1코드명, 수량, 중량 | Sales transactions |
-| `purchases` | 구매현황 | 2,026 | 일자, 품목코드, 거래처그룹1명, 수량, 중량 | Purchase transactions |
-| `inventory` | 창고별재고 | 758 | 품목코드, 창고명, 재고수량 | Current inventory by warehouse |
-| `inventory_transfers` | 창고이동현황 | 42 | 월_일, 출고창고, 입고창고, 품목코드, 수량 | Inter-warehouse transfers |
-| `ledger` | 계정별원장 | 12,080 | 일자, 계정명, 부서명, 차변금액, 대변금액, 잔액 | General ledger entries |
+| `sales` | 판매현황 | 14,496 | 일자, 품목코드, 거래처그룹1코드명, 수량, 중량 | Sales transactions |
+| `purchases` | 구매현황 | 4,918 | 일자, 품목코드, 거래처그룹1명, 수량, 중량 | Purchase transactions |
+| `inventory` | 창고별재고 | 54,026 | 품목코드, 창고명, 재고수량 | Current inventory by warehouse |
+| `inventory_transfers` | 창고이동현황 | 122 | 일자, 출고창고명, 입고창고명, 품목명_규격, 수량 | Inter-warehouse transfers |
+| `ledger` | 계정별원장 | 20,209 | 일자, 계정명, 거래처명, 차변금액, 대변금액, 잔액 | General ledger entries |
 
 ### Supporting Tables
 | Table | Display Name | Row Count | Purpose |
 |-------|-------------|-----------|---------|
 | `product_mapping` | 품목코드매핑 | 709 | Product categorization lookup (품목그룹1코드, 품목그룹3코드) |
-| `purchase_orders` | 발주서현황 | 819 | Purchase orders (발주서) |
-| `deposits` | 입금보고서집계 | 674 | Customer deposits and payments |
-| `promissory_notes` | 받을어음거래내역 | 83 | Promissory notes receivable |
-| `pending_purchases` | 미구매현황 | 30 | Unfulfilled purchase orders |
-| `pending_sales` | 미판매현황 | 5 | Unfulfilled sales orders |
-| `internal_uses` | 자가사용현황 | 45 | Internal usage/consumption |
+| `purchase_orders` | 발주서현황 | 1,122 | Purchase orders (발주서) |
+| `deposits` | 입금보고서집계 | 1,410 | Customer deposits and payments |
+| `promissory_notes` | 받을어음거래내역 | 157 | Promissory notes receivable |
+| `pending_purchases` | 미구매현황 | 221 | Unfulfilled purchase orders |
+| `pending_sales` | 미판매현황 | 12 | Unfulfilled sales orders |
+| `internal_uses` | 자가사용현황 | 51 | Internal usage/consumption |
+| `kakaotalk_egdesk_pm` | 카카오톡 메시지 | 905 | Imported chat history |
+| `sync_activity_log` | 동기화 로그 | - | Activity logs for data sync operations |
+| `import_operations` | 임포트 작업 | 12 | Track status of data import tasks |
+| `user_data_embeddings` | 벡터 임베딩 | - | Vector representations for AI semantic search |
 
 ### Important Notes
 - **`inventory` table lacks 품목그룹1코드 and 품목그룹3코드**: Use `product_mapping` table to get category information
+- **`inventory_transfers` has 품목그룹 codes**: Unlike `inventory`, this table now contains categorization codes directly.
 - **Numeric values stored as TEXT**: Many columns contain comma-formatted numbers (e.g., "1,234,567")
-- **Date format varies**: Most tables use `YYYY-MM-DD`, but `ledger` uses `YYYY/MM/DD`
+- **Date format standardized**: Most tables use `YYYY-MM-DD`, including `inventory_transfers`. `ledger` uses `YYYY/MM/DD`.
+- **`inventory_transfers` no longer has 품목코드**: Use `품목명_규격` for reference if needed, but categorization is built-in.
 
 ---
 
@@ -41,6 +47,7 @@ This document contains essential knowledge about the Youngil ONC database struct
 - `sales`: 거래처그룹1코드명
 - `purchases`: 거래처그룹1명
 - `deposits`, `promissory_notes`, `ledger`: 부서명
+- `inventory_transfers`: `출고창고명`, `입고창고명`
 
 **SQL Pattern**:
 ```sql
@@ -111,7 +118,7 @@ Many numeric columns stored as TEXT with commas: `"1,234,567"`
 ## 5. Dates
 - **Standard Format**: `YYYY-MM-DD` (e.g., `2026-03-05`)
 - **Ledger Format**: `YYYY/MM/DD` (filter with `LIKE '2026/03/05%'`)
-- **Transfer Format**: `월_일` column uses `MM-DD` or `MM/DD` format (e.g., `02-03` or `02/03`)
+- **Transfer Format**: `일자` column uses standard `YYYY-MM-DD` format.
 
 ## 6. Collections (수금)
 
@@ -255,7 +262,7 @@ The calculation consolidates data from 4 tables:
 1. **`inventory`**: Current ending inventory by warehouse and product
 2. **`sales`**: Daily sales transactions (outflow)
 3. **`purchases`**: Daily purchase transactions (inflow)
-4. **`inventory_transfers`**: Inter-warehouse movements
+4. **`inventory_transfers`**: Inter-warehouse movements (using `일자` for date filtering)
 
 ### Implementation
 Location: `src/app/api/dashboard/daily-inventory/route.ts`
@@ -354,7 +361,7 @@ GROUP BY branch, payment_type
 
 ### Daily Inventory Shows Zero
 - **Check**: Date format correct? (`YYYY-MM-DD`)
-- **Check**: Transfer date formats in `inventory_transfers` table (supports `MM-DD`, `MM/DD`, `YYYY-MM-DD`)
+- **Check**: Transfer date formats in `inventory_transfers` table (now uses standard `YYYY-MM-DD`)
 - **Check**: Branch filtering - are you filtering the right column per table?
 
 ### Missing Products in Mapping
@@ -388,5 +395,5 @@ GROUP BY branch, payment_type
 
 ---
 
-**Last Updated**: 2026-03-06
+**Last Updated**: 2026-03-11
 **Maintainer**: See `scripts/` directory for maintenance scripts
