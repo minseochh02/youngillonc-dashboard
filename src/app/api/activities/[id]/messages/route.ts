@@ -3,9 +3,9 @@ import { executeSQL } from '@/egdesk-helpers';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const activityId = params.id;
+  const { id: activityId } = await params;
 
   if (!activityId) {
     return NextResponse.json({

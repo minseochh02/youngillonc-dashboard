@@ -1,21 +1,23 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { 
-  Users, 
-  CheckCircle2, 
-  XCircle, 
-  Clock, 
-  Building2, 
-  Package, 
-  ChevronRight, 
+import {
+  Users,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Building2,
+  Package,
+  ChevronRight,
   Search,
   Calendar,
   Filter,
   TrendingUp,
   Briefcase,
   ChevronLeft,
-  LayoutGrid
+  LayoutGrid,
+  MessageSquare,
+  X
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 
@@ -110,8 +112,14 @@ export default function EmployeesPage() {
   const [endDate, setEndDate] = useState('2026-12-31');
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'missed' | 'future'>('all');
 
+  // Source messages modal
+  const [showSourceModal, setShowSourceModal] = useState(false);
+  const [sourceMessages, setSourceMessages] = useState<any[]>([]);
+  const [selectedActivity, setSelectedActivity] = useState<any>(null);
+  const [loadingSource, setLoadingSource] = useState(false);
+
   // Follow-up Cycle Thresholds
-  const [thresholds, setThresholds] = useState({ good: 3, warning: 6 });
+  const [thresholds, setThresholds] = useState({ good: 1, warning: 7 });
 
   // Helper to calculate days between plan and target
   const getCycleDays = (plannedDate: string, targetDate: string) => {
@@ -207,6 +215,25 @@ export default function EmployeesPage() {
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const loadSourceMessages = async (activityId: number, activityData: any) => {
+    setLoadingSource(true);
+    setSelectedActivity(activityData);
+    setShowSourceModal(true);
+
+    try {
+      const response = await apiFetch(`/api/activities/${activityId}/messages`);
+      const data = await response.json();
+
+      if (data.success) {
+        setSourceMessages(data.data.messages);
+      }
+    } catch (error) {
+      console.error('Error loading source messages:', error);
+    } finally {
+      setLoadingSource(false);
+    }
   };
 
   const filteredMatches = trackerData.filter(match => {
@@ -604,6 +631,14 @@ export default function EmployeesPage() {
                                   </p>
                                 )}
                               </div>
+
+                              <button
+                                onClick={() => loadSourceMessages(match.planned.id, match.planned)}
+                                className="flex items-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors border border-blue-200 text-xs font-bold"
+                              >
+                                <MessageSquare className="w-4 h-4" />
+                                View Source
+                              </button>
                             </div>
                             {/* ... rest of the card content ... */}
 
@@ -726,6 +761,107 @@ export default function EmployeesPage() {
           </div>
         )}
       </div>
+
+      {/* Source Messages Modal */}
+      {showSourceModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full max-h-[80vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-gray-900 mb-1">원본 대화 내역</h2>
+                {selectedActivity && (
+                  <p className="text-sm text-gray-600">
+                    {selectedActivity.employee_name} - {formatDate(selectedActivity.activity_date)}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  setShowSourceModal(false);
+                  setSourceMessages([]);
+                  setSelectedActivity(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Activity Summary */}
+            {selectedActivity && (
+              <div className="px-6 py-4 bg-blue-50 border-b border-blue-100">
+                <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-1">추출된 활동 내용</p>
+                <p className="text-sm font-bold text-gray-900">{selectedActivity.next_action}</p>
+                {selectedActivity.customer_name && (
+                  <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+                    <Building2 className="w-3 h-3" />
+                    {selectedActivity.customer_name}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {loadingSource ? (
+                <div className="text-center py-12 text-gray-500">
+                  로딩 중...
+                </div>
+              ) : sourceMessages.length > 0 ? (
+                sourceMessages.map((msg, idx) => (
+                  <div key={idx} className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                        {msg.user_name?.[0] || '?'}
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-900 text-sm">{msg.user_name}</p>
+                        <p className="text-[10px] text-gray-500">
+                          {new Date(msg.chat_date).toLocaleString('ko-KR', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap pl-10">
+                      {msg.message}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <MessageSquare className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                  <p className="font-bold">원본 메시지를 찾을 수 없습니다.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-500">
+                  총 <span className="font-bold text-gray-900">{sourceMessages.length}</span>개의 메시지
+                </p>
+                <button
+                  onClick={() => {
+                    setShowSourceModal(false);
+                    setSourceMessages([]);
+                    setSelectedActivity(null);
+                  }}
+                  className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-bold transition-colors"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

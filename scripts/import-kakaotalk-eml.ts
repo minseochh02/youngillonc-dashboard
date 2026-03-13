@@ -11,7 +11,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import { createTable, insertRows, queryTable } from '../egdesk-helpers';
+import { createTable, insertRows, queryTable, deleteTable } from '../egdesk-helpers';
 
 interface ParsedMessage {
   chat_room: string;
@@ -45,7 +45,7 @@ function parseKoreanDateTime(dateStr: string): string {
 }
 
 /**
- * Parse a single .eml file
+ * Parse a single .eml file with support for multi-line messages
  */
 async function parseEmlFile(filePath: string): Promise<ParsedMessage[]> {
   const content = await fs.readFile(filePath, 'utf-8');
@@ -64,25 +64,35 @@ async function parseEmlFile(filePath: string): Promise<ParsedMessage[]> {
   // Regex to match system messages (user joined, etc.)
   const systemRegex = /^(\d+년 \d+월 \d+일 오(?:전|후) \d+:\d+),\s*(.+?님이.+)$/;
 
-  for (const line of lines) {
+  let currentMessage: ParsedMessage | null = null;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
     const trimmedLine = line.trim();
+
+    // Skip empty lines
     if (!trimmedLine) continue;
 
     // Try to match regular message
     const messageMatch = trimmedLine.match(messageRegex);
     if (messageMatch) {
+      // Save previous message if exists
+      if (currentMessage) {
+        messages.push(currentMessage);
+      }
+
       const [, dateStr, userName, message] = messageMatch;
       try {
         const isoDate = parseKoreanDateTime(dateStr);
-        messages.push({
+        currentMessage = {
           chat_room: chatRoom,
           chat_date: isoDate,
           user_name: userName.trim(),
           message: message.trim()
-        });
+        };
       } catch (e) {
         // Skip lines that can't be parsed
-        continue;
+        currentMessage = null;
       }
       continue;
     }
@@ -90,19 +100,35 @@ async function parseEmlFile(filePath: string): Promise<ParsedMessage[]> {
     // Try to match system message
     const systemMatch = trimmedLine.match(systemRegex);
     if (systemMatch) {
+      // Save previous message if exists
+      if (currentMessage) {
+        messages.push(currentMessage);
+      }
+
       const [, dateStr, systemMessage] = systemMatch;
       try {
         const isoDate = parseKoreanDateTime(dateStr);
-        messages.push({
+        currentMessage = {
           chat_room: chatRoom,
           chat_date: isoDate,
           user_name: 'SYSTEM',
           message: systemMessage.trim()
-        });
+        };
       } catch (e) {
-        continue;
+        currentMessage = null;
       }
+      continue;
     }
+
+    // If we reach here, this line is a continuation of the current message
+    if (currentMessage) {
+      currentMessage.message += '\n' + trimmedLine;
+    }
+  }
+
+  // Don't forget to add the last message
+  if (currentMessage) {
+    messages.push(currentMessage);
   }
 
   console.log(`✅ Parsed ${messages.length} messages from ${path.basename(filePath)}`);
@@ -110,36 +136,38 @@ async function parseEmlFile(filePath: string): Promise<ParsedMessage[]> {
 }
 
 /**
- * Create the kakaotalk_raw_messages table
+ * Drop and recreate the kakaotalk_raw_messages table
  */
 async function createMessagesTable() {
-  console.log('🔨 Creating kakaotalk_raw_messages table...');
+  console.log('🔨 Dropping and recreating kakaotalk_raw_messages table...');
 
+  // Drop the table first
   try {
-    const result = await createTable(
-      '카카오톡원본메시지',
-      [
-        { name: 'chat_room', type: 'TEXT', notNull: true },
-        { name: 'chat_date', type: 'TEXT', notNull: true },
-        { name: 'user_name', type: 'TEXT', notNull: true },
-        { name: 'message', type: 'TEXT', notNull: true },
-        { name: 'imported_at', type: 'TEXT', defaultValue: 'CURRENT_TIMESTAMP' }
-      ],
-      {
-        tableName: 'kakaotalk_raw_messages',
-        description: 'Raw KakaoTalk messages parsed from .eml export files',
-        uniqueKeyColumns: ['chat_room', 'chat_date', 'user_name', 'message'],
-        duplicateAction: 'skip' // Skip duplicates on re-import
-      }
-    );
-    console.log('✅ Table created successfully:', result);
+    console.log('  Dropping existing table...');
+    await deleteTable('kakaotalk_raw_messages');
+    console.log('  ✅ Table dropped');
   } catch (error: any) {
-    if (error.message?.includes('already exists')) {
-      console.log('ℹ️  Table already exists, skipping creation');
-    } else {
-      throw error;
-    }
+    console.log('  ⚠️  Could not drop table:', error.message);
   }
+
+  // Create new table
+  console.log('  Creating new table...');
+  const result = await createTable(
+    '카카오톡원본메시지',
+    [
+      { name: 'chat_room', type: 'TEXT', notNull: true },
+      { name: 'chat_date', type: 'TEXT', notNull: true },
+      { name: 'user_name', type: 'TEXT', notNull: true },
+      { name: 'message', type: 'TEXT', notNull: true }
+    ],
+    {
+      tableName: 'kakaotalk_raw_messages',
+      description: 'Raw KakaoTalk messages with multi-line support',
+      uniqueKeyColumns: ['chat_room', 'chat_date', 'user_name'],
+      duplicateAction: 'update'
+    }
+  );
+  console.log('✅ Table created successfully');
 }
 
 /**
@@ -180,7 +208,7 @@ async function insertMessages(messages: ParsedMessage[]) {
 async function main() {
   console.log('🚀 Starting KakaoTalk .eml import process\n');
 
-  // Step 1: Create table
+  // Step 1: Drop and recreate table
   await createMessagesTable();
   console.log();
 

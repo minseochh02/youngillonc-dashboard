@@ -350,7 +350,7 @@ const messages = await executeSQL(`
 - [x] Update extraction script to track message IDs as JSON array
 - [x] Create API endpoint `/api/activities/[id]/messages` to fetch source messages
 - [x] Document usage for UI integration
-- [ ] Add "View Source" button in UI (future enhancement)
+- [x] Add "View Source" button in UI with modal display
 
 ### Phase 4: UI Development (COMPLETED)
 - [x] Employee-focused dashboard (`/employees`)
@@ -429,6 +429,15 @@ A comprehensive employee-focused dashboard at `/employees` (default home page) t
 - Planned task details (date, action, customer)
 - If completed: Shows actual activity with summary
 - If missed: Shows warning message
+- **"View Source" button:** Opens modal showing original KakaoTalk messages
+
+**Source Messages Modal:**
+- Displays all original chat messages that contributed to the activity
+- Shows user avatar, name, timestamp for each message
+- Chat-like interface with message bubbles
+- Activity summary at top for context
+- Message count in footer
+- Full traceability from extraction back to source
 
 ##### Tab 2: Visit Calendar
 **API:** `/api/employees/activities?employee={name}`
