@@ -6,6 +6,8 @@ import {
   AlertTriangle, Filter, Building2, Calculator, Edit2, Check, X
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
+import { exportToExcel } from "@/lib/excel-export";
 
 // ── Types ──
 
@@ -289,7 +291,7 @@ export default function LongTermInventoryPage() {
 
   const filteredItems = useMemo(() => {
     if (!data?.savedItems) return [];
-    
+
     let filtered = data.savedItems;
 
     if (activeCategory !== "전체") {
@@ -298,15 +300,39 @@ export default function LongTermInventoryPage() {
 
     if (search) {
       const q = search.toLowerCase();
-      filtered = filtered.filter(item => 
-        item.itemCode.toLowerCase().includes(q) || 
+      filtered = filtered.filter(item =>
+        item.itemCode.toLowerCase().includes(q) ||
         item.itemName.toLowerCase().includes(q) ||
         item.warehouse.toLowerCase().includes(q)
       );
     }
-    
+
     return filtered;
   }, [data?.savedItems, search, activeCategory]);
+
+  const handleExcelDownload = () => {
+    if (filteredItems.length === 0) {
+      alert('다운로드할 데이터가 없습니다.');
+      return;
+    }
+
+    // Convert saved items to export format
+    const exportData = filteredItems.map(item => ({
+      '품목코드': item.itemCode,
+      '품목명': item.itemName,
+      '분류': item.category,
+      '규격': item.spec,
+      '사업소': item.warehouse,
+      '수량': item.quantity,
+      '단위': item.unit,
+      '비고': item.remarks,
+      '조치계획': item.actionPlan,
+      '대상월': item.targetMonth,
+    }));
+
+    const filename = `long-term-inventory-${selectedMonth}.xlsx`;
+    exportToExcel(exportData, filename);
+  };
 
   if (isLoading && !data) {
     return (
@@ -329,14 +355,21 @@ export default function LongTermInventoryPage() {
             사업소별로 과다 적치된 장기재고 품목을 입력하고 관리합니다
           </p>
         </div>
-        
-        <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2 shadow-sm">
-          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">조회 월:</label>
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="text-sm bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 font-bold cursor-pointer"
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2 shadow-sm">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">조회 월:</label>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="text-sm bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 font-bold cursor-pointer"
+            />
+          </div>
+
+          <ExcelDownloadButton
+            onClick={handleExcelDownload}
+            disabled={filteredItems.length === 0}
           />
         </div>
       </div>

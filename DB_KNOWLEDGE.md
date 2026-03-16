@@ -7,19 +7,44 @@ This document contains essential knowledge about the Youngil ONC database struct
 
 ## 1. Database Tables
 
-### Core Operational Tables
+### Core Operational Tables (Normalized)
 | Table | Display Name | Row Count | Key Columns | Purpose |
 |-------|-------------|-----------|-------------|---------|
-| `sales` | 판매현황 | 14,496 | 일자, 품목코드, 거래처그룹1코드명, 수량, 중량 | Sales transactions |
-| `purchases` | 구매현황 | 4,918 | 일자, 품목코드, 거래처그룹1명, 수량, 중량 | Purchase transactions |
-| `inventory` | 창고별재고 | 54,026 | 품목코드, 창고명, 재고수량 | Current inventory by warehouse |
-| `inventory_transfers` | 창고이동현황 | 122 | 일자, 출고창고명, 입고창고명, 품목명_규격, 수량 | Inter-warehouse transfers |
-| `ledger` | 계정별원장 | 20,209 | 일자, 계정명, 거래처명, 차변금액, 대변금액, 잔액 | General ledger entries |
+| `sales` | 판매현황 | ~6,500 | 일자, 거래처코드, 품목코드, 수량, 중량, 합계 | Sales transactions (NORMALIZED) |
+| `purchases` | 구매현황 | ~5,000 | 일자, 거래처코드, 품목코드, 수량, 중량, 합_계 | Purchase transactions (denormalized) |
+| `inventory` | 창고별재고 | ~54,000 | 품목코드, 창고코드, 재고수량 | Current inventory by warehouse |
+| `inventory_transfers` | 창고이동현황 | ~138 | 일자, 출고창고명, 입고창고명, 품목명_규격, 수량 | Inter-warehouse transfers |
+| `ledger` | 계정별원장 | ~20,600 | 일자, 계정명, 거래처명, 차변금액, 대변금액, 잔액 | General ledger entries |
+
+### Lookup Tables (NEW - for normalized schema)
+| Table | Display Name | Row Count | Key Columns | Purpose |
+|-------|-------------|-----------|-------------|---------|
+| `items` | 품목 | 3,317 | 품목코드, 품목그룹1코드, 품목그룹2코드, 품목그룹3코드, 품목명 | Product master data |
+| `clients` | 거래처리스트 | 10,755 | 거래처코드, 거래처명, 업종분류코드, 담당자코드, 지역코드 | Customer/vendor master |
+| `warehouses` | 창고 | 25 | 창고코드, 창고명 | Warehouse master |
+| `employees` | 사원 | 65 | 사원_담당_코드, 사원_담당_명 | Employee master |
+| `employee_category` | 사원분류 | 47 | 담당자, b2b사업소, 전체사업소 | Employee branch assignments |
+| `company_type_auto` | AUTO 업종분류기준 | 35 | 업종분류코드, 모빌_대시보드채널 | Customer industry classification |
+| `company_type` | 업종분류 | 116 | 업종분류코드, 모빌분류, 산업분류 | Industry type definitions |
+
+### Schema Changes (March 2026)
+**IMPORTANT**: The `sales` table was **normalized** from 27 denormalized columns to 17 columns:
+
+**OLD (deprecated)**: Sales had inline data like `거래처그룹1코드명`, `판매처명`, `품목그룹1코드`, `창고명`
+**NEW (current)**: Sales has foreign keys: `거래처코드`, `품목코드`, `출하창고코드`
+
+**Foreign Key Relationships**:
+- `sales.거래처코드` → `clients.거래처코드`
+- `sales.품목코드` → `items.품목코드`
+- `sales.출하창고코드` → `warehouses.창고코드`
+- `clients.담당자코드` → `employees.사원_담당_코드`
+- `employees.사원_담당_명` → `employee_category.담당자`
+
+**NOTE**: The `purchases` table is still denormalized (has inline `거래처그룹1명`, `품목그룹1코드`, etc.)
 
 ### Supporting Tables
 | Table | Display Name | Row Count | Purpose |
 |-------|-------------|-----------|---------|
-| `product_mapping` | 품목코드매핑 | 709 | Product categorization lookup (품목그룹1코드, 품목그룹3코드) |
 | `purchase_orders` | 발주서현황 | 1,122 | Purchase orders (발주서) |
 | `deposits` | 입금보고서집계 | 1,410 | Customer deposits and payments |
 | `promissory_notes` | 받을어음거래내역 | 157 | Promissory notes receivable |
@@ -32,7 +57,7 @@ This document contains essential knowledge about the Youngil ONC database struct
 | `user_data_embeddings` | 벡터 임베딩 | - | Vector representations for AI semantic search |
 
 ### Important Notes
-- **`inventory` table lacks 품목그룹1코드 and 품목그룹3코드**: Use `product_mapping` table to get category information
+- **`inventory` table lacks 품목그룹1코드 and 품목그룹3코드**: Use `items` table to get category information via JOIN on `품목코드`.
 - **`inventory_transfers` has 품목그룹 codes**: Unlike `inventory`, this table now contains categorization codes directly.
 - **Numeric values stored as TEXT**: Many columns contain comma-formatted numbers (e.g., "1,234,567")
 - **Date format standardized**: Most tables use `YYYY-MM-DD`, including `inventory_transfers`. `ledger` uses `YYYY/MM/DD`.
@@ -43,48 +68,79 @@ This document contains essential knowledge about the Youngil ONC database struct
 ## 2. Branch Names (사업소)
 **Standard**: MB, 화성, 창원, 남부, 중부, 서부, 동부, 제주, 부산
 
-**Column by Table**:
-- `sales`: 거래처그룹1코드명
-- `purchases`: 거래처그룹1명
+### Branch Mapping by Table
+
+**`sales` (NORMALIZED - requires JOINs)**:
+```sql
+-- Branch comes from employee_category.전체사업소 via JOIN chain:
+-- sales → clients → employees → employee_category
+SELECT
+  ec.전체사업소 as branch
+FROM sales s
+LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+```
+
+**Other tables**:
+- `purchases`: 거래처그룹1명 (still denormalized)
 - `deposits`, `promissory_notes`, `ledger`: 부서명
 - `inventory_transfers`: `출고창고명`, `입고창고명`
 
-**SQL Pattern**:
+### Branch Value Mapping
 ```sql
 CASE
-  WHEN column LIKE '%창원%' THEN '창원'
-  WHEN column LIKE '%화성%' THEN '화성'
-  WHEN column LIKE '%MB%' THEN 'MB'
-  WHEN column LIKE '%남부%' THEN '남부'
-  WHEN column LIKE '%중부%' THEN '중부'
-  WHEN column LIKE '%서부%' THEN '서부'
-  WHEN column LIKE '%동부%' THEN '동부'
-  WHEN column LIKE '%제주%' THEN '제주'
-  WHEN column LIKE '%부산%' THEN '부산'
-  ELSE column
+  WHEN ec.전체사업소 = '벤츠' THEN 'MB'
+  WHEN ec.전체사업소 = '경남사업소' THEN '창원'
+  WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
+  WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
+  WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
+  WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
+  WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
+  WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
+  WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
+  ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
 END
 ```
+
+**Actual branch values in employee_category**:
+- `벤츠` → Maps to "MB"
+- `경남사업소` → Maps to "창원"
+- `화성사업소`, `중부사업소`, `동부사업소`, `서부사업소`, `부산사업소`, `남부지사`, `제주사업소`, `별도`
 
 ## 3. Product Categories (품목그룹)
 
 ### Category Hierarchy (품목그룹1코드)
-Products are categorized into three main industry groups:
+Products are categorized by their technical group:
 
 | Category | 품목그룹1코드 | Product Count | Description |
 |----------|---------------|---------------|-------------|
-| **Auto** | `PVL`, `CVL` | 145 | Automotive oils (Passenger Vehicle Lubricants + Commercial Vehicle Lubricants) |
+| **PVL** | `PVL` | ~70 | Passenger Vehicle Lubricants |
+| **CVL** | `CVL` | ~75 | Commercial Vehicle Lubricants |
 | **IL** | `IL` | 295 | Industrial oils |
 | **MB** | `MB`, `AVI` | 19 | Mercedes-Benz + Aviation oils |
 | **Others** | All other codes | 250 | Other brands (Fuchs, Shell, Blaser, GS, etc.) |
 
-### SQL Pattern for Categorization
+### Business Classification (AUTO Channels)
+The term **"AUTO"** refers to specific business types/channels, not just the product type. These are defined in the `company_type_auto` table based on the customer's `업종분류코드`.
+
+**Key Channels (`모빌_대시보드채널`):**
+1. **Mobil 1 CCO** (`28110`)
+2. **Mobil Brand Shop** (`28120`)
+3. **IWS (Anycar/Bosch/etc.)** (`28230-28330`)
+4. **Fleet** (`28600-28710`)
+5. **Reseller** (`28500-28510`)
+
+### SQL Pattern for Business Classification
 ```sql
-CASE
-  WHEN 품목그룹1코드 IN ('PVL', 'CVL') THEN 'Auto'
-  WHEN 품목그룹1코드 = 'IL' THEN 'IL'
-  WHEN 품목그룹1코드 IN ('MB', 'AVI') THEN 'MB'
-  ELSE 'Others'
-END as category
+-- Identify "Auto" channel transactions
+SELECT
+  s.*,
+  ca.모빌_대시보드채널 as auto_channel
+FROM sales s
+JOIN clients c ON s.거래처코드 = c.거래처코드
+LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
+WHERE ca.업종분류코드 IS NOT NULL
 ```
 
 ### Tier Classification (품목그룹3코드)
@@ -175,73 +231,6 @@ Many numeric columns stored as TEXT with commas: `"1,234,567"`
 - **Currency**: KRW (₩)
 - **Default Unit**: Liters (L) for oil products
 
-## 10. Product Mapping Table
-
-### Overview
-The `product_mapping` table is a **critical reference table** that provides product categorization for the `inventory` table, which lacks 품목그룹 codes.
-
-### Schema
-```sql
-CREATE TABLE product_mapping (
-  id INTEGER PRIMARY KEY,
-  품목코드 TEXT UNIQUE,
-  품목명 TEXT,
-  품목그룹1코드 TEXT,
-  품목그룹1명 TEXT,
-  품목그룹2명 TEXT,
-  품목그룹3코드 TEXT,
-  last_seen_date TEXT
-)
-```
-
-### Statistics
-- **Total Products**: 709
-- **Unique Group1 Codes**: 21 (IL, PVL, CVL, MB, AVI, FU, BL, SH, GS, etc.)
-- **Unique Group3 Codes**: 4 (FLA, STA, PRE, etc.)
-- **Top Category**: IL (Industrial) with 295 products
-- **Data Source**: Aggregated from `sales` and `purchases` tables
-
-### Rebuild Instructions
-When new products are added to sales/purchases:
-```bash
-npx tsx scripts/build-product-mapping.ts
-```
-
-This script:
-1. Drops existing `product_mapping` table
-2. Creates new table with proper schema
-3. Aggregates products from `sales` and `purchases`
-4. De-duplicates by 품목코드 (prefers non-null values)
-5. Inserts 700+ product mappings
-
-### Usage Examples
-
-**Join with inventory for categorization:**
-```sql
-SELECT
-  i.창고명,
-  i.품목코드,
-  i.재고수량,
-  p.품목그룹1코드,
-  p.품목그룹3코드,
-  CASE
-    WHEN p.품목그룹1코드 IN ('PVL', 'CVL') THEN 'Auto'
-    WHEN p.품목그룹1코드 = 'IL' THEN 'IL'
-    WHEN p.품목그룹1코드 IN ('MB', 'AVI') THEN 'MB'
-    ELSE 'Others'
-  END as category
-FROM inventory i
-LEFT JOIN product_mapping p ON i.품목코드 = p.품목코드
-```
-
-**Check for unmapped products:**
-```sql
-SELECT i.*
-FROM inventory i
-LEFT JOIN product_mapping p ON i.품목코드 = p.품목코드
-WHERE p.품목코드 IS NULL
-```
-
 ## 11. Daily Inventory Calculation (일일재고파악시트)
 
 ### Formula
@@ -269,7 +258,7 @@ Location: `src/app/api/dashboard/daily-inventory/route.ts`
 
 The query:
 1. UNIONs data from all 4 tables with product codes
-2. JOINs with `product_mapping` for categorization
+2. JOINs with `items` for categorization
 3. Groups by branch, category, and tier
 4. Calculates beginning inventory using the formula above
 5. Returns stats for 8 category/tier combinations × N branches
@@ -291,17 +280,22 @@ For each branch and category/tier combination:
 
 ## 13. Common Query Patterns
 
-### Get Sales by Branch and Date
+### Get Sales by Branch and Date (NORMALIZED - requires JOINs)
 ```sql
 SELECT
   CASE
-    WHEN 거래처그룹1코드명 LIKE '%창원%' THEN '창원'
-    WHEN 거래처그룹1코드명 LIKE '%화성%' THEN '화성'
+    WHEN ec.전체사업소 = '벤츠' THEN 'MB'
+    WHEN ec.전체사업소 = '경남사업소' THEN '창원'
+    WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
     -- ... other branches
   END as branch,
-  SUM(CAST(REPLACE(중량, ',', '') AS NUMERIC)) as total_weight
-FROM sales
-WHERE 일자 = '2026-02-03'
+  SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
+FROM sales s
+LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+WHERE s.일자 = '2026-02-03'
+  AND (ec.전체사업소 LIKE '%사업소%' OR ec.전체사업소 LIKE '%지사%' OR ec.전체사업소 = '벤츠')
 GROUP BY branch
 ```
 
@@ -309,14 +303,15 @@ GROUP BY branch
 ```sql
 SELECT
   CASE
-    WHEN p.품목그룹1코드 IN ('PVL', 'CVL') THEN 'Auto'
     WHEN p.품목그룹1코드 = 'IL' THEN 'IL'
     WHEN p.품목그룹1코드 IN ('MB', 'AVI') THEN 'MB'
+    WHEN p.품목그룹1코드 = 'PVL' THEN 'PVL'
+    WHEN p.품목그룹1코드 = 'CVL' THEN 'CVL'
     ELSE 'Others'
   END as category,
-  SUM(CAST(REPLACE(i.재고수량, ',', '') AS NUMERIC)) as total_inventory
+  SUM(CAST(REPLACE(i.재고_수량, ',', '') AS NUMERIC)) as total_inventory
 FROM inventory i
-LEFT JOIN product_mapping p ON i.품목코드 = p.품목코드
+LEFT JOIN items p ON i.품목코드 = p.품목코드
 GROUP BY category
 ```
 
@@ -345,19 +340,14 @@ GROUP BY branch, payment_type
 - Pre-convert numeric columns at query time: `CAST(REPLACE(column, ',', '') AS NUMERIC)`
 - Do NOT convert in application layer - let database handle it
 
-### Use product_mapping Table
-- Always JOIN with `product_mapping` instead of scanning `sales`/`purchases` for categories
+### Use items Table
+- Always JOIN with `items` instead of scanning `sales`/`purchases` for categories
 - Much faster for inventory categorization
-
-### Batch Operations
-- When inserting to `product_mapping`, use batches of 100 rows
-- See `scripts/build-product-mapping.ts` for reference
 
 ## 15. Troubleshooting
 
 ### Inventory Categorization Not Working
-- **Check**: Does `product_mapping` table exist?
-- **Fix**: Run `npx tsx scripts/build-product-mapping.ts`
+- **Check**: Does `items` table have the product code?
 
 ### Daily Inventory Shows Zero
 - **Check**: Date format correct? (`YYYY-MM-DD`)
@@ -365,13 +355,11 @@ GROUP BY branch, payment_type
 - **Check**: Branch filtering - are you filtering the right column per table?
 
 ### Missing Products in Mapping
-- **Cause**: New products added to `sales` or `purchases` after mapping table built
-- **Fix**: Rebuild product_mapping table
 - **Check**: Query for unmapped products:
   ```sql
   SELECT DISTINCT i.품목코드, i.품목명_규격_
   FROM inventory i
-  LEFT JOIN product_mapping p ON i.품목코드 = p.품목코드
+  LEFT JOIN items p ON i.품목코드 = p.품목코드
   WHERE p.품목코드 IS NULL
   ```
 
@@ -385,15 +373,15 @@ GROUP BY branch, payment_type
 
 | What | Where | Filter Column | Format |
 |------|-------|---------------|--------|
-| Sales by branch | `sales` | `거래처그룹1코드명` | LIKE '%창원%' |
+| Sales by branch | `sales` (JOIN via clients→employees→employee_category) | `ec.전체사업소` | LIKE '%사업소%' OR = '벤츠' |
 | Purchases by branch | `purchases` | `거래처그룹1명` | LIKE '%창원%' |
 | Inventory by warehouse | `inventory` | `창고명` | LIKE '%창원%' |
 | Collections by branch | `deposits`, `promissory_notes` | `부서명` | LIKE '%창원%' |
-| Product categories | `product_mapping` | `품목코드` | Exact match |
+| Product categories | `items` table | `품목코드` | Exact match |
 | Daily transactions | All tables | `일자` | 'YYYY-MM-DD' |
 | Ledger entries | `ledger` | `일자` | LIKE 'YYYY/MM/DD%' |
 
 ---
 
-**Last Updated**: 2026-03-11
+**Last Updated**: 2026-03-16 (Removed product_mapping in favor of items table)
 **Maintainer**: See `scripts/` directory for maintenance scripts

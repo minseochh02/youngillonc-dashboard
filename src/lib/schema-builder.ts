@@ -95,7 +95,7 @@ export function buildSchemaContext(query?: string): string {
 # Database Tables
 
 ${Object.values(TABLES).map(table => `
-**${table.name}** (${table.displayName}) - ${table.rowCount.toLocaleString()} rows
+**${table.name}** (${table.displayName}) - ${table.rowCount !== undefined ? table.rowCount.toLocaleString() : 'Unknown'} rows
 Columns: ${table.columns.join(', ')}
 `).join('\n')}
 

@@ -5,6 +5,8 @@ import { Calendar, Building2, TrendingUp, Wallet, ArrowUpRight, ArrowDownRight, 
 import DailySalesCollectionsTable from "@/components/DailySalesCollectionsTable";
 import DailyClosingStatus from "@/components/DailyClosingStatus";
 import { apiFetch } from "@/lib/api";
+import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
+import { exportToExcel, exportIslandTables, type IslandTable } from "@/lib/excel-export";
 
 const divisions = [
   { id: "all", label: "전체", icon: Building2 },
@@ -72,6 +74,87 @@ export default function DailySalesPage() {
     collectionMTD: acc.collectionMTD + Number(curr.collectionMTD || 0),
   }), { sales: 0, collection: 0, salesMTD: 0, collectionMTD: 0 });
 
+  const handleExcelDownload = () => {
+    const divisionLabel = activeDivision.label;
+
+    if (viewMode === "table") {
+      // Table mode - export customer detail
+      if (tableData.length === 0) {
+        alert('다운로드할 데이터가 없습니다.');
+        return;
+      }
+
+      const exportData = tableData.map(row => ({
+        '거래처': row.customerName || '',
+        '매출금액': row.salesAmount || 0,
+        '수금금액': row.collectionAmount || 0,
+        '월 누계 매출': row.salesMTD || 0,
+        '월 누계 수금': row.collectionMTD || 0,
+        '비고': row.remarks || '',
+      }));
+
+      const filename = `daily-sales-table-${divisionLabel}-${selectedDate}.xlsx`;
+      exportToExcel(exportData, filename);
+
+    } else {
+      // Report mode - export closing status as island tables
+      if (!closingData) {
+        alert('다운로드할 데이터가 없습니다.');
+        return;
+      }
+
+      const islands: IslandTable[] = [];
+
+      // 1. Sales Data
+      if (closingData.salesData) {
+        const headers = ['항목', '금액'];
+        const rows = Object.entries(closingData.salesData).map(([key, value]) => [
+          key, Number(value) || 0
+        ]);
+        islands.push({ title: '매출현황', headers, data: rows });
+      }
+
+      // 2. Collection Data
+      if (closingData.collectionData) {
+        const headers = ['항목', '금액'];
+        const rows = Object.entries(closingData.collectionData).map(([key, value]) => [
+          key, Number(value) || 0
+        ]);
+        islands.push({ title: '수금현황', headers, data: rows });
+      }
+
+      // 3. Inventory Data
+      if (closingData.inventoryData) {
+        const headers = ['항목', '수량'];
+        const rows = Object.entries(closingData.inventoryData).map(([key, value]) => [
+          key, Number(value) || 0
+        ]);
+        islands.push({ title: '재고현황', headers, data: rows });
+      }
+
+      // 4. Flagship Data
+      if (closingData.flagship) {
+        const headers = ['항목', '값'];
+        const rows = Object.entries(closingData.flagship).map(([key, value]) => [
+          key, value || ''
+        ]);
+        islands.push({ title: '대표현황', headers, data: rows });
+      }
+
+      // 5. Purchase Data
+      if (closingData.purchaseData) {
+        const headers = ['항목', '금액'];
+        const rows = Object.entries(closingData.purchaseData).map(([key, value]) => [
+          key, Number(value) || 0
+        ]);
+        islands.push({ title: '매입현황', headers, data: rows });
+      }
+
+      const filename = `daily-sales-report-${divisionLabel}-${selectedDate}.xlsx`;
+      exportIslandTables(islands, filename);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -105,13 +188,18 @@ export default function DailySalesPage() {
           <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
             {isLoading ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Calendar className="w-4 h-4 text-zinc-400" />}
             <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300 mr-2">조회일</span>
-            <input 
-              type="date" 
+            <input
+              type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               className="text-sm bg-transparent border-none focus:ring-0 text-zinc-900 dark:text-zinc-100 outline-none cursor-pointer"
             />
           </div>
+
+          <ExcelDownloadButton
+            onClick={handleExcelDownload}
+            disabled={isLoading || (viewMode === "table" ? tableData.length === 0 : !closingData)}
+          />
         </div>
       </div>
 

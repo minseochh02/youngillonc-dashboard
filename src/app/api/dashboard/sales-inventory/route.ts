@@ -18,30 +18,34 @@ export async function GET(request: Request) {
     // 1. Sales by item × division (부서별 판매 현황)
     const salesByItem = await executeSQL(`
       SELECT
-        품목코드,
-        품목명_규격_ as item_name,
+        s.품목코드,
+        (i.품목명 || ' ' || COALESCE(i.규격정보, '')) as item_name,
         division,
-        SUM(CAST(REPLACE(수량, ',', '') AS NUMERIC)) as sold_qty,
-        SUM(CAST(REPLACE(COALESCE(합_계, '0'), ',', '') AS NUMERIC)) as sold_amount
+        SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as sold_qty,
+        SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC)) as sold_amount
       FROM (
-        SELECT *,
+        SELECT s.*,
           CASE
-            WHEN 거래처그룹1코드명 = 'MB' THEN 'MB'
-            WHEN 거래처그룹1코드명 LIKE '%화성%' THEN '화성'
-            WHEN 거래처그룹1코드명 LIKE '%창원%' THEN '창원'
-            WHEN 거래처그룹1코드명 LIKE '%남부%' THEN '남부'
-            WHEN 거래처그룹1코드명 LIKE '%중부%' THEN '중부'
-            WHEN 거래처그룹1코드명 LIKE '%서부%' THEN '서부'
-            WHEN 거래처그룹1코드명 LIKE '%동부%' THEN '동부'
-            WHEN 거래처그룹1코드명 LIKE '%제주%' THEN '제주'
-            WHEN 거래처그룹1코드명 LIKE '%부산%' THEN '부산'
-            ELSE REPLACE(REPLACE(거래처그룹1코드명, '사업소', ''), '지사', '')
+            WHEN ec.전체사업소 = '벤츠' THEN 'MB'
+            WHEN ec.전체사업소 = '경남사업소' THEN '창원'
+            WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
+            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
+            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
+            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
+            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
+            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
+            WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
+            ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
           END as division
-        FROM sales
+        FROM sales s
+        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE 1=1 ${monthFilter}
-      ) sub
+      ) s
+      LEFT JOIN items i ON s.품목코드 = i.품목코드
       WHERE 1=1 ${divisionFilter}
-      GROUP BY 품목코드, 품목명_규격_, division
+      GROUP BY s.품목코드, (i.품목명 || ' ' || COALESCE(i.규격정보, '')), division
       ORDER BY sold_qty DESC
     `);
 
@@ -93,19 +97,22 @@ export async function GET(request: Request) {
     const divisions = await executeSQL(`
       SELECT DISTINCT
         CASE
-          WHEN 거래처그룹1코드명 = 'MB' THEN 'MB'
-          WHEN 거래처그룹1코드명 LIKE '%화성%' THEN '화성'
-          WHEN 거래처그룹1코드명 LIKE '%창원%' THEN '창원'
-          WHEN 거래처그룹1코드명 LIKE '%남부%' THEN '남부'
-          WHEN 거래처그룹1코드명 LIKE '%중부%' THEN '중부'
-          WHEN 거래처그룹1코드명 LIKE '%서부%' THEN '서부'
-          WHEN 거래처그룹1코드명 LIKE '%동부%' THEN '동부'
-          WHEN 거래처그룹1코드명 LIKE '%제주%' THEN '제주'
-          WHEN 거래처그룹1코드명 LIKE '%부산%' THEN '부산'
-          ELSE REPLACE(REPLACE(거래처그룹1코드명, '사업소', ''), '지사', '')
+          WHEN ec.전체사업소 = '벤츠' THEN 'MB'
+          WHEN ec.전체사업소 = '경남사업소' THEN '창원'
+          WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
+          WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
+          WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
+          WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
+          WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
+          WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
+          WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
+          ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
         END as division
-      FROM sales
-      WHERE 거래처그룹1코드명 IS NOT NULL
+      FROM sales s
+      LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+      WHERE ec.전체사업소 IS NOT NULL
       ORDER BY 1
     `);
 

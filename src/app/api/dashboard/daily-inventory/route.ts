@@ -73,17 +73,29 @@ export async function GET(request: Request) {
         UNION ALL
 
         -- 2. Sales (Outflow)
-        SELECT 
-          ${branchCase('거래처그룹1코드명')} as branch,
-          ${categoryCase} as category,
-          ${tierCase} as tier,
+        SELECT
+          ${branchCase('ec.전체사업소')} as branch,
+          CASE
+            WHEN i.품목그룹1코드 IN ('PVL', 'CVL') THEN 'Auto'
+            WHEN i.품목그룹1코드 = 'IL' THEN 'IL'
+            WHEN i.품목그룹1코드 IN ('MB', 'AVI') THEN 'MB'
+            ELSE 'Others'
+          END as category,
+          CASE
+            WHEN i.품목그룹3코드 = 'FLA' THEN 'Flagship'
+            ELSE 'Others'
+          END as tier,
           0 as inv_qty,
-          CAST(REPLACE(수량, ',', '') AS NUMERIC) as sales_qty,
+          CAST(REPLACE(s.수량, ',', '') AS NUMERIC) as sales_qty,
           0 as purchase_qty,
           0 as transfer_qty
-        FROM sales
-        WHERE 일자 = '${date}'
-          AND (거래처그룹1코드명 LIKE '%사업소%' OR 거래처그룹1코드명 LIKE '%지사%' OR 거래처그룹1코드명 = 'MB' OR 거래처그룹1코드명 LIKE '%화성%' OR 거래처그룹1코드명 LIKE '%창원%' OR 거래처그룹1코드명 LIKE '%남부%' OR 거래처그룹1코드명 LIKE '%중부%' OR 거래처그룹1코드명 LIKE '%서부%' OR 거래처그룹1코드명 LIKE '%동부%' OR 거래처그룹1코드명 LIKE '%제주%' OR 거래처그룹1코드명 LIKE '%부산%')
+        FROM sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE s.일자 = '${date}'
+          AND (ec.전체사업소 LIKE '%사업소%' OR ec.전체사업소 LIKE '%지사%' OR ec.전체사업소 = '벤츠')
 
         UNION ALL
 

@@ -9,6 +9,8 @@ import StarQueryModal from '@/components/StarQueryModal';
 import { selectComponent } from '@/lib/component-router';
 import { apiFetch } from '@/lib/api';
 import { useStarredQueries } from '@/hooks/useStarredQueries';
+import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
+import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
 interface QueryResult {
   rows: any[];
@@ -116,6 +118,25 @@ export default function QueryPage() {
     executeQuery(exampleQuery);
   };
 
+  const handleExcelDownload = () => {
+    if (!result || !result.rows || result.rows.length === 0) {
+      alert('다운로드할 데이터가 없습니다.');
+      return;
+    }
+
+    // Convert rows to format with column headers
+    const exportData = result.rows.map(row => {
+      const formattedRow: Record<string, any> = {};
+      result.columns.forEach((col, index) => {
+        formattedRow[col] = row[index] ?? row[col];
+      });
+      return formattedRow;
+    });
+
+    const filename = generateFilename('query-result');
+    exportToExcel(exportData, filename);
+  };
+
   const renderResults = () => {
     if (!result) return null;
 
@@ -125,7 +146,7 @@ export default function QueryPage() {
     if (componentConfig.component === 'SalesTable') {
       return <SalesTable data={transformedData} />;
     } else {
-      return <GenericResultTable rows={result.rows} columns={result.columns} />;
+      return <GenericResultTable rows={result.rows} columns={result.columns} queryKey={result.intent} />;
     }
   };
 
@@ -197,20 +218,26 @@ export default function QueryPage() {
 
         {/* Metadata Display */}
         {metadata && (
-          <div className="flex items-center gap-4 text-sm text-zinc-600 dark:text-zinc-400">
-            <div className="flex items-center gap-1">
-              <Clock className="w-4 h-4" />
-              <span>{metadata.executionTime}ms</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4 text-sm text-zinc-600 dark:text-zinc-400">
+              <div className="flex items-center gap-1">
+                <Clock className="w-4 h-4" />
+                <span>{metadata.executionTime}ms</span>
+              </div>
+              <div className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                {metadata.rowCount.toLocaleString()}개 결과
+              </div>
+              <div className="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                {metadata.method === 'template' ? '템플릿' : 'AI 생성'}
+              </div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-500">
+                남은 쿼리: {metadata.remaining}
+              </div>
             </div>
-            <div className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
-              {metadata.rowCount.toLocaleString()}개 결과
-            </div>
-            <div className="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-              {metadata.method === 'template' ? '템플릿' : 'AI 생성'}
-            </div>
-            <div className="text-xs text-zinc-500 dark:text-zinc-500">
-              남은 쿼리: {metadata.remaining}
-            </div>
+            <ExcelDownloadButton
+              onClick={handleExcelDownload}
+              disabled={!result || !result.rows || result.rows.length === 0}
+            />
           </div>
         )}
 

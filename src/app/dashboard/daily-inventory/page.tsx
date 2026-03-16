@@ -7,6 +7,8 @@ import {
   Printer, AlertTriangle
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
+import { exportToExcel } from "@/lib/excel-export";
 
 // ── Types ──
 
@@ -103,9 +105,54 @@ export default function DailyInventorySheet() {
   }, [data, selectedBranches]);
 
   const toggleBranch = (branch: string) => {
-    setSelectedBranches(prev => 
+    setSelectedBranches(prev =>
       prev.includes(branch) ? prev.filter(b => b !== branch) : [...prev, branch]
     );
+  };
+
+  const handleExcelDownload = () => {
+    if (!data || branchesToShow.length === 0) {
+      alert('다운로드할 데이터가 없습니다. 부서를 선택해주세요.');
+      return;
+    }
+
+    // Create flattened rows for Excel export
+    const exportData: any[] = [];
+
+    METRICS.forEach(metric => {
+      CATEGORIES.forEach(cat => {
+        const row: Record<string, any> = {
+          '분류': metric.label,
+          '산업군': cat.label,
+          '티어': cat.subLabel,
+        };
+
+        // Add columns for each selected branch
+        branchesToShow.forEach(branch => {
+          const branchData = data.stats[branch];
+          if (branchData && branchData[cat.id]) {
+            const stats = branchData[cat.id];
+            let value = 0;
+
+            // Get the value based on metric
+            if (metric.id === 'inventoryDM' && stats.inventory !== undefined) {
+              value = metric.formula ? metric.formula(stats.inventory) : stats.inventory;
+            } else if (metric.id !== 'inventoryDM' && stats[metric.id as keyof InventoryStats] !== undefined) {
+              value = stats[metric.id as keyof InventoryStats] as number;
+            }
+
+            row[`${branch}`] = value;
+          } else {
+            row[`${branch}`] = 0;
+          }
+        });
+
+        exportData.push(row);
+      });
+    });
+
+    const filename = `daily-inventory-sheet-${date}.xlsx`;
+    exportToExcel(exportData, filename);
   };
 
   return (
@@ -132,7 +179,13 @@ export default function DailyInventorySheet() {
               className="pl-10 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
           </div>
-          <button 
+
+          <ExcelDownloadButton
+            onClick={handleExcelDownload}
+            disabled={!data || branchesToShow.length === 0}
+          />
+
+          <button
             onClick={() => window.print()}
             className="flex items-center gap-2 px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-sm font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all"
           >

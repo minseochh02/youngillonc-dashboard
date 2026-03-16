@@ -6,6 +6,8 @@ import {
   AlertTriangle, CheckCircle2, Clock, Filter,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
+import { exportToExcel } from "@/lib/excel-export";
 
 // ── Types ──
 
@@ -293,6 +295,50 @@ export default function SalesInventoryPage() {
     return { totalSales, totalStock, totalPendingOut, totalPendingIn, itemsWithPending };
   }, [mergedItems]);
 
+  const handleExcelDownload = () => {
+    if (filtered.length === 0) {
+      alert('다운로드할 데이터가 없습니다.');
+      return;
+    }
+
+    // Flatten the nested structure for Excel export
+    const exportData = filtered.map(item => {
+      // Create base row
+      const row: Record<string, any> = {
+        '품목코드': item.code,
+        '품목명': item.name,
+      };
+
+      // Add sales by division columns
+      divisionList.forEach(division => {
+        const salesData = item.salesByDiv[division];
+        row[`${division} 판매수량`] = salesData?.qty || 0;
+        row[`${division} 판매금액`] = salesData?.amount || 0;
+      });
+
+      // Add total sales
+      row['총 판매수량'] = item.totalSalesQty;
+      row['총 판매금액'] = item.totalSalesAmount;
+
+      // Add warehouse stock columns
+      warehouseList.forEach(warehouse => {
+        row[`${warehouse} 재고`] = item.stockByWarehouse[warehouse] || 0;
+      });
+
+      // Add total stock
+      row['총 재고'] = item.totalStock;
+      row['미판매 잔량'] = item.totalPendingSalesQty;
+      row['미구매 잔량'] = item.totalPendingPurchasesQty;
+
+      return row;
+    });
+
+    const monthPart = selectedMonth ? `-${selectedMonth}` : '';
+    const filename = `sales-inventory${monthPart}.xlsx`;
+
+    exportToExcel(exportData, filename);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -370,7 +416,14 @@ export default function SalesInventoryPage() {
           <span className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap">미판매/미구매만</span>
         </label>
 
-        {isLoading && <Loader2 className="w-4 h-4 text-blue-500 animate-spin ml-auto" />}
+        <div className="ml-auto" />
+
+        <ExcelDownloadButton
+          onClick={handleExcelDownload}
+          disabled={filtered.length === 0}
+        />
+
+        {isLoading && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
       </div>
 
       {/* ── Main Table ── */}

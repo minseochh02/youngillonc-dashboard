@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from "next/link";
-import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart, AlertTriangle, Star, ChevronDown, X, Clock, Calendar } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart, AlertTriangle, Star, ChevronDown, X, Clock, Calendar, Users } from "lucide-react";
 import { useStarredQueries } from '@/hooks/useStarredQueries';
 import { regenerateSQLDates } from '@/lib/date-regenerator';
 import { extractDatesFromSQL, formatDateRangeDisplay } from '@/lib/date-extractor';

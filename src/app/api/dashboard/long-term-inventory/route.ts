@@ -27,27 +27,33 @@ export async function GET(request: Request) {
 
     // Fetch items for selection with category and specification
     const items = await executeSQL(`
-      SELECT 
-        i.품목코드, 
-        i.품목명_규격_ as item_name,
+      SELECT
+        inv.품목코드,
+        inv.품목명_규격_ as item_name,
         COALESCE(MAX(spec_map.spec), '') as spec,
-        CASE 
+        CASE
           WHEN MAX(cat_map.품목그룹1코드) = 'IL' THEN 'IL'
           WHEN MAX(cat_map.품목그룹1코드) IN ('PVL', 'CVL') THEN 'AL'
           ELSE '기타'
         END as category
-      FROM inventory i
+      FROM inventory inv
       LEFT JOIN (
-        SELECT 품목코드, MAX(규격명) as spec FROM sales GROUP BY 품목코드
+        SELECT s.품목코드, MAX(s.규격명) as spec FROM sales s GROUP BY s.품목코드
         UNION ALL
         SELECT 품목코드, MAX(규격_규격명) as spec FROM purchases GROUP BY 품목코드
-      ) spec_map ON i.품목코드 = spec_map.품목코드
+      ) spec_map ON inv.품목코드 = spec_map.품목코드
       LEFT JOIN (
-        SELECT 품목코드, MAX(품목그룹1코드) as 품목그룹1코드 FROM sales GROUP BY 품목코드
+        SELECT s.품목코드, MAX(i.품목그룹1코드) as 품목그룹1코드
+        FROM sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        GROUP BY s.품목코드
         UNION ALL
-        SELECT 품목코드, MAX(품목그룹1코드) as 품목그룹1코드 FROM purchases GROUP BY 품목코드
-      ) cat_map ON i.품목코드 = cat_map.품목코드
-      GROUP BY i.품목코드, i.품목명_규격_
+        SELECT p.품목코드, MAX(i.품목그룹1코드) as 품목그룹1코드
+        FROM purchases p
+        LEFT JOIN items i ON p.품목코드 = i.품목코드
+        GROUP BY p.품목코드
+      ) cat_map ON inv.품목코드 = cat_map.품목코드
+      GROUP BY inv.품목코드, inv.품목명_규격_
       ORDER BY item_name
     `);
 

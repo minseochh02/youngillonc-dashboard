@@ -10,6 +10,8 @@ import InOutTable from "@/components/InOutTable";
 import MobilPaymentsTable from "@/components/MobilPaymentsTable";
 import { Calendar, Loader2, TrendingUp, Wallet, Landmark, Coins, ArrowLeftRight, CreditCard } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
+import { exportIslandTables, type IslandTable } from "@/lib/excel-export";
 
 const tabs = [
   { id: "sales", label: "매출현황" },
@@ -206,9 +208,152 @@ export default function DailyStatusPage() {
     ? ((totals.mobileSalesAmount / totals.totalSales) * 100).toFixed(1) 
     : "0.0";
 
-  const ytdMobileRatio = ytdTotals.totalSales > 0 
-    ? ((ytdTotals.mobileSalesAmount / ytdTotals.totalSales) * 100).toFixed(1) 
+  const ytdMobileRatio = ytdTotals.totalSales > 0
+    ? ((ytdTotals.mobileSalesAmount / ytdTotals.totalSales) * 100).toFixed(1)
     : "0.0";
+
+  const handleExcelDownload = async () => {
+    try {
+      setIsLoading(true);
+
+      // Fetch all data if not already loaded
+      const allDataPromises = [];
+
+      if (salesData.length === 0) {
+        allDataPromises.push(fetchSalesData());
+      }
+      if (monthlyData.length === 0) {
+        allDataPromises.push(fetchMonthlyData());
+      }
+      if (collectionsData.length === 0) {
+        allDataPromises.push(fetchCollectionsData());
+      }
+      if (monthlyCollectionsData.length === 0) {
+        allDataPromises.push(fetchMonthlyCollectionsData());
+      }
+      if (!fundsData) {
+        allDataPromises.push(fetchFundsData());
+      }
+      if (!inOutData) {
+        allDataPromises.push(fetchInOutData());
+      }
+      if (mobilPaymentsData.length === 0) {
+        allDataPromises.push(fetchMobilPaymentsData());
+      }
+
+      await Promise.all(allDataPromises);
+
+      // Wait a bit for state to update if we fetched data
+      if (allDataPromises.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Create island tables for export
+      const islands: IslandTable[] = [];
+
+      // 1. 매출현황
+      if (salesData.length > 0) {
+        const headers = ['사업소', '총매출', '모빌매출금액', '모빌매출중량', '대표매출중량', '모빌매입중량', '대표매입중량'];
+        const rows = salesData.map(row => [
+          row.branch || '',
+          row.totalSales || 0,
+          row.mobileSalesAmount || 0,
+          row.mobileSalesWeight || 0,
+          row.flagshipSalesWeight || 0,
+          row.mobilePurchaseWeight || 0,
+          row.flagshipPurchaseWeight || 0,
+        ]);
+        islands.push({ title: '매출현황', headers, data: rows });
+      }
+
+      // 2. 월별매출현황
+      if (monthlyData.length > 0) {
+        const headers = ['월', '총매출', '모빌매출금액', '모빌매출중량', '대표매출중량', '모빌매입중량', '대표매입중량'];
+        const rows = monthlyData.map(row => [
+          row.month || '',
+          row.totalSales || 0,
+          row.mobileSalesAmount || 0,
+          row.mobileSalesWeight || 0,
+          row.flagshipSalesWeight || 0,
+          row.mobilePurchaseWeight || 0,
+          row.flagshipPurchaseWeight || 0,
+        ]);
+        islands.push({ title: '월별매출현황', headers, data: rows });
+      }
+
+      // 3. 외상매출금현황
+      if (collectionsData.length > 0) {
+        const headers = ['사업소', '당월매출', '당월수금', '당월잔액', '전월이월', '당월말잔액'];
+        const rows = collectionsData.map(row => [
+          row.branch || '',
+          row.currentSales || 0,
+          row.currentCollections || 0,
+          row.currentBalance || 0,
+          row.previousBalance || 0,
+          row.endBalance || 0,
+        ]);
+        islands.push({ title: '외상매출금현황', headers, data: rows });
+      }
+
+      // 4. 월별외상매출금현황
+      if (monthlyCollectionsData.length > 0) {
+        const headers = ['월', '당월매출', '당월수금', '당월잔액', '전월이월', '당월말잔액'];
+        const rows = monthlyCollectionsData.map(row => [
+          row.month || '',
+          row.currentSales || 0,
+          row.currentCollections || 0,
+          row.currentBalance || 0,
+          row.previousBalance || 0,
+          row.endBalance || 0,
+        ]);
+        islands.push({ title: '월별외상매출금현황', headers, data: rows });
+      }
+
+      // 5. 자금현황
+      if (fundsData) {
+        const headers = ['항목', '금액'];
+        const rows = [
+          ['현금', fundsData.cash || 0],
+          ['예금', fundsData.deposit || 0],
+          ['차입금', fundsData.loan || 0],
+          ['순자산', fundsData.netAssets || 0],
+        ];
+        islands.push({ title: '자금현황', headers, data: rows });
+      }
+
+      // 6. 입출금현황
+      if (inOutData) {
+        const headers = ['항목', '금액'];
+        const rows = [
+          ['입금', inOutData.income || 0],
+          ['출금', inOutData.outcome || 0],
+          ['잔액', inOutData.balance || 0],
+        ];
+        islands.push({ title: '입출금현황', headers, data: rows });
+      }
+
+      // 7. 모빌결제내역
+      if (mobilPaymentsData.length > 0) {
+        const headers = ['거래처', '결제금액', '결제일시', '비고'];
+        const rows = mobilPaymentsData.map(row => [
+          row.customer || '',
+          row.amount || 0,
+          row.paymentDate || '',
+          row.remarks || '',
+        ]);
+        islands.push({ title: '모빌결제내역', headers, data: rows });
+      }
+
+      const filename = `daily-status-${selectedDate}.xlsx`;
+      exportIslandTables(islands, filename);
+
+    } catch (error) {
+      console.error('Excel export error:', error);
+      alert('엑셀 다운로드 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -222,13 +367,20 @@ export default function DailyStatusPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
-          {isLoading ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Calendar className="w-4 h-4 text-zinc-400" />}
-          <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300 mr-2">조회일</span>
-          <input 
-            type="date" value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="text-sm bg-transparent border-none focus:ring-0 text-zinc-900 dark:text-zinc-100 outline-none cursor-pointer"
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
+            {isLoading ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Calendar className="w-4 h-4 text-zinc-400" />}
+            <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300 mr-2">조회일</span>
+            <input
+              type="date" value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="text-sm bg-transparent border-none focus:ring-0 text-zinc-900 dark:text-zinc-100 outline-none cursor-pointer"
+            />
+          </div>
+
+          <ExcelDownloadButton
+            onClick={handleExcelDownload}
+            disabled={isLoading}
           />
         </div>
       </div>

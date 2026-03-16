@@ -15,10 +15,11 @@ export async function GET(request: Request) {
     const startDate = `${date.substring(0, 7)}-01`;
 
     const getSalesBranchFilter = () => {
-      if (division === '전체') return "(거래처그룹1코드명 LIKE '%사업소%' OR 거래처그룹1코드명 LIKE '%지사%')";
-      if (division === '창원') return "(창고명 = '창원' OR 판매처명 = '테크젠 주식회사')";
-      if (division === 'MB') return "거래처그룹1코드명 = 'MB'";
-      return `(거래처그룹1코드명 LIKE '%${division}%' OR 창고명 LIKE '%${division}%')`;
+      if (division === '전체') return "(ec.전체사업소 LIKE '%사업소%' OR ec.전체사업소 LIKE '%지사%')";
+      if (division === '창원') return "(ec.전체사업소 = '경남사업소' OR w.창고명 = '창원' OR c.거래처명 = '테크젠 주식회사')";
+      if (division === 'MB') return "ec.전체사업소 = '벤츠'";
+      if (division === '화성') return "ec.전체사업소 LIKE '%화성%'";
+      return `(ec.전체사업소 LIKE '%${division}%' OR w.창고명 LIKE '%${division}%')`;
     };
 
     const getPurchBranchFilter = () => {
@@ -43,21 +44,26 @@ export async function GET(request: Request) {
       FROM (
         SELECT
           CASE
-            WHEN 판매처명 LIKE '메르세데스벤츠%' OR 품목그룹1코드 = 'MB' THEN 'Mobil-MB'
-            WHEN 판매처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR 품목그룹1코드 = 'FU' THEN '훅스'
-            WHEN 품목그룹1코드 = 'BL' THEN '블라자'
-            WHEN 품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI') OR (품목그룹1코드 IS NULL AND (판매처명 = '테크젠 주식회사' OR 창고명 = '창원')) THEN 'Mobil'
+            WHEN c.거래처명 LIKE '메르세데스벤츠%' OR i.품목그룹1코드 = 'MB' THEN 'Mobil-MB'
+            WHEN c.거래처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR i.품목그룹1코드 = 'FU' THEN '훅스'
+            WHEN i.품목그룹1코드 = 'BL' THEN '블라자'
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI') OR (i.품목그룹1코드 IS NULL AND (c.거래처명 = '테크젠 주식회사' OR w.창고명 = '창원')) THEN 'Mobil'
             ELSE '기타(셸 외 타사제품)'
           END as category,
           CASE
-            WHEN 판매처명 LIKE '메르세데스벤츠%' OR 품목그룹1코드 = 'MB' THEN 0
-            ELSE CAST(REPLACE(합_계, ',', '') AS NUMERIC)
+            WHEN c.거래처명 LIKE '메르세데스벤츠%' OR i.품목그룹1코드 = 'MB' THEN 0
+            ELSE CAST(REPLACE(s.합계, ',', '') AS NUMERIC)
           END as amount,
-          CAST(REPLACE(중량, ',', '') AS NUMERIC) as weight,
-          일자
-        FROM sales
+          CAST(REPLACE(s.중량, ',', '') AS NUMERIC) as weight,
+          s.일자
+        FROM sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE ${getSalesBranchFilter()}
-          AND 일자 >= '${startDate}' AND 일자 <= '${date}'
+          AND s.일자 >= '${startDate}' AND s.일자 <= '${date}'
       )
       GROUP BY category
     `;
@@ -125,17 +131,22 @@ export async function GET(request: Request) {
 
         SELECT
           CASE
-            WHEN 판매처명 LIKE '메르세데스벤츠%' OR 품목그룹1코드 = 'MB' THEN 'Mobil-MB'
-            WHEN 판매처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR 품목그룹1코드 = 'FU' THEN '훅스'
-            WHEN 품목그룹1코드 = 'BL' THEN '블라자'
-            WHEN 품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI') OR (품목그룹1코드 IS NULL AND (판매처명 = '테크젠 주식회사' OR 창고명 = '창원')) THEN 'Mobil'
+            WHEN c.거래처명 LIKE '메르세데스벤츠%' OR i.품목그룹1코드 = 'MB' THEN 'Mobil-MB'
+            WHEN c.거래처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR i.품목그룹1코드 = 'FU' THEN '훅스'
+            WHEN i.품목그룹1코드 = 'BL' THEN '블라자'
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI') OR (i.품목그룹1코드 IS NULL AND (c.거래처명 = '테크젠 주식회사' OR w.창고명 = '창원')) THEN 'Mobil'
             ELSE '기타'
           END as category,
-          CAST(REPLACE(중량, ',', '') AS NUMERIC) / 200.0 as amount,
+          CAST(REPLACE(s.중량, ',', '') AS NUMERIC) / 200.0 as amount,
           'out' as type,
-          일자
-        FROM sales
-        WHERE ${getSalesBranchFilter()} AND 일자 >= '${startDate}' AND 일자 <= '${date}'
+          s.일자
+        FROM sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE ${getSalesBranchFilter()} AND s.일자 >= '${startDate}' AND s.일자 <= '${date}'
       )
       GROUP BY category
     `;
@@ -148,9 +159,14 @@ export async function GET(request: Request) {
         SUM(CASE WHEN type = 'sales' THEN volume ELSE 0 END) as salesMTD,
         SUM(CASE WHEN type = 'purchase' THEN volume ELSE 0 END) as purchaseMTD
       FROM (
-        SELECT CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume, 'sales' as type, 일자
-        FROM sales
-        WHERE 일자 >= '${startDate}' AND 일자 <= '${date}' AND 품목그룹3코드 = 'FLA' AND 품목그룹1코드 = 'IL' AND ${getSalesBranchFilter()}
+        SELECT CAST(REPLACE(s.중량, ',', '') AS NUMERIC) as volume, 'sales' as type, s.일자
+        FROM sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE s.일자 >= '${startDate}' AND s.일자 <= '${date}' AND i.품목그룹3코드 = 'FLA' AND i.품목그룹1코드 = 'IL' AND ${getSalesBranchFilter()}
         UNION ALL
         SELECT CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume, 'purchase' as type, 일자
         FROM purchases

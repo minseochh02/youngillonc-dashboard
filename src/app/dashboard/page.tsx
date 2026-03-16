@@ -11,6 +11,8 @@ import { apiFetch } from '@/lib/api';
 import { useStarredQueries, type StarredQuery } from '@/hooks/useStarredQueries';
 import { regenerateSQLDates } from '@/lib/date-regenerator';
 import { extractDatesFromSQL, formatDateRangeDisplay } from '@/lib/date-extractor';
+import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
+import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
 interface QueryResult {
   rows: any[];
@@ -210,6 +212,25 @@ export default function DashboardPage() {
     executeQuery(exampleQuery);
   };
 
+  const handleExcelDownload = () => {
+    if (!result || !result.rows || result.rows.length === 0) {
+      alert('다운로드할 데이터가 없습니다.');
+      return;
+    }
+
+    // Convert rows to format with column headers
+    const exportData = result.rows.map(row => {
+      const formattedRow: Record<string, any> = {};
+      result.columns.forEach((col, index) => {
+        formattedRow[col] = row[index] ?? row[col];
+      });
+      return formattedRow;
+    });
+
+    const filename = generateFilename('query-result');
+    exportToExcel(exportData, filename);
+  };
+
   const renderResults = () => {
     if (!result) return null;
 
@@ -217,9 +238,9 @@ export default function DashboardPage() {
     const transformedData = componentConfig.transform(result.rows);
 
     if (componentConfig.component === 'SalesTable') {
-      return <SalesTable data={transformedData} />;
+      return <SalesTable data={transformedData} queryKey={result.intent} />;
     } else {
-      return <GenericResultTable rows={result.rows} columns={result.columns} />;
+      return <GenericResultTable rows={result.rows} columns={result.columns} queryKey={result.intent} />;
     }
   };
 
@@ -323,30 +344,36 @@ export default function DashboardPage() {
 
       {/* Metadata Display */}
       {metadata && (
-        <div className="flex items-center gap-4 text-sm text-zinc-600 dark:text-zinc-400">
-          {currentDateRange && (
-            <div className={`flex items-center gap-1 px-2 py-0.5 rounded ${
-              baseDate
-                ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
-                : 'bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300'
-            }`}>
-              <Calendar className="w-4 h-4" />
-              <span>{currentDateRange}</span>
-              {baseDate && (
-                <span className="text-xs">(기준: {baseDate})</span>
-              )}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4 text-sm text-zinc-600 dark:text-zinc-400">
+            {currentDateRange && (
+              <div className={`flex items-center gap-1 px-2 py-0.5 rounded ${
+                baseDate
+                  ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                  : 'bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300'
+              }`}>
+                <Calendar className="w-4 h-4" />
+                <span>{currentDateRange}</span>
+                {baseDate && (
+                  <span className="text-xs">(기준: {baseDate})</span>
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-1">
+              <Clock className="w-4 h-4" />
+              <span>{metadata.executionTime}ms</span>
             </div>
-          )}
-          <div className="flex items-center gap-1">
-            <Clock className="w-4 h-4" />
-            <span>{metadata.executionTime}ms</span>
+            <div className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+              {(metadata.rowCount ?? 0).toLocaleString()}개 결과
+            </div>
+            {/* <div className="text-xs text-zinc-500 dark:text-zinc-500">
+              남은 쿼리: {metadata.remaining}
+            </div> */}
           </div>
-          <div className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
-            {(metadata.rowCount ?? 0).toLocaleString()}개 결과
-          </div>
-          {/* <div className="text-xs text-zinc-500 dark:text-zinc-500">
-            남은 쿼리: {metadata.remaining}
-          </div> */}
+          <ExcelDownloadButton
+            onClick={handleExcelDownload}
+            disabled={!result || !result.rows || result.rows.length === 0}
+          />
         </div>
       )}
 
