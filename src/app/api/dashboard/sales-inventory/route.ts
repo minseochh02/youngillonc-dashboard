@@ -15,7 +15,20 @@ export async function GET(request: Request) {
       ? `AND 일자 LIKE '${month}%'`
       : '';
 
-    // 1. Sales by item × division (부서별 판매 현황)
+    // Unified sales subquery across all four tables
+    const combinedSales = `
+      (
+        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
+        UNION ALL
+        SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
+      )
+    `;
+
+    // 1. Sales by item × division across all four tables
     const salesByItem = await executeSQL(`
       SELECT
         s.품목코드,
@@ -37,11 +50,11 @@ export async function GET(request: Request) {
             WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
             ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
           END as division
-        FROM sales s
+        FROM ${combinedSales} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        WHERE 1=1 ${monthFilter}
+        WHERE e.사원_담당_명 != '김도량' ${monthFilter}
       ) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       WHERE 1=1 ${divisionFilter}
@@ -108,18 +121,35 @@ export async function GET(request: Request) {
           WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
           ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
         END as division
-      FROM sales s
+      FROM (
+        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
+        UNION ALL
+        SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
+      ) s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE ec.전체사업소 IS NOT NULL
+        AND e.사원_담당_명 != '김도량'
       ORDER BY 1
     `);
 
-    // 6. Available months for filter
+    // 6. Available months for filter across all four tables
     const months = await executeSQL(`
       SELECT DISTINCT SUBSTR(일자, 1, 7) as month
-      FROM sales
+      FROM (
+        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
+        UNION ALL
+        SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
+      ) s
       WHERE 일자 IS NOT NULL
       ORDER BY month DESC
       LIMIT 24

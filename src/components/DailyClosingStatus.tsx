@@ -146,8 +146,8 @@ export default function DailyClosingStatus({
               steps={[
                 "브랜드 분류: 품목그룹1코드(IL, PVL, CVL, AVI, MB, BL, FU)를 기준으로 실적을 자동 분류합니다.",
                 "지사 필터링: 창고명 매칭 및 특정 예외 업체(예: 창원의 경우 테크젠 주식회사)를 포함하여 정확한 지사 실적을 도출합니다.",
-                "특이사항 처리: Mobil-MB(벤츠) 실적은 중량(D/M) 위주로 관리하며, 매출액 합산 시 0으로 처리하는 공식 마감 규칙을 따릅니다.",
-                "단위 환산: 비고란의 D/M 수치는 판매 중량(kg)을 200kg으로 나눈 환산값입니다.",
+                "특이사항 처리: Mobil-MB(벤츠) 실적은 용량(D/M) 위주로 관리하며, 매출액 합산 시 0으로 처리하는 공식 마감 규칙을 따릅니다.",
+                "단위 환산: 비고란의 D/M 수치는 판매 용량(L)을 200L으로 나눈 환산값입니다.",
                 "누계 산출: 선택한 날짜가 속한 월의 1일부터 해당일까지의 합계를 산출합니다."
               ]}
             />
@@ -260,7 +260,7 @@ export default function DailyClosingStatus({
                 "당일 입고: 당일 발생한 구매현황(purchases) 데이터의 중량을 합산합니다. 창고(창고명) 필드를 기준으로 사업소별 실적을 분류합니다.",
                 "당일 출고: 당일 발생한 판매현황(sales) 데이터의 중량을 합산합니다.",
                 "기말 재고: 기초 재고 + 당일 입고 - 당일 출고 수식을 실시간 적용합니다.",
-                "단위 변환: 모든 재고 수치는 kg 단위를 200으로 나눈 Drum(D/M) 단위로 통일하여 표시합니다."
+                "단위 변환: 모든 재고 수치는 L 단위를 200으로 나눈 Drum(D/M) 단위로 통일하여 표시합니다."
               ]}
               footnote="※ 구매현황은 창고를 기준으로 산출되며, 모빌 제품군의 경우 부가세 포함 금액을 사용합니다."
             />
@@ -312,7 +312,7 @@ export default function DailyClosingStatus({
           <div className="grid grid-cols-2 gap-6">
             <div className="bg-zinc-800 dark:bg-zinc-700/50 rounded-xl p-4 border border-zinc-700">
               <p className="text-[11px] uppercase tracking-widest text-zinc-400 mb-2 font-bold">당일 입고량</p>
-              <p className="text-2xl font-bold">{purchaseData.todayVolume.toLocaleString()} kg</p>
+              <p className="text-2xl font-bold">{purchaseData.todayVolume.toLocaleString()} L</p>
             </div>
             <div className="bg-zinc-800 dark:bg-zinc-700/50 rounded-xl p-4 border border-zinc-700">
               <p className="text-[11px] uppercase tracking-widest text-zinc-400 mb-2 font-bold">당일 매입액</p>

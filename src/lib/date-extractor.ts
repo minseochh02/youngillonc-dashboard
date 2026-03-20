@@ -6,6 +6,10 @@
  * Extract dates from SQL query
  */
 export function extractDatesFromSQL(sql: string): { start: string; end: string } | null {
+  if (!sql || typeof sql !== 'string') {
+    return null;
+  }
+
   const datePattern = /'(\d{4}-\d{2}-\d{2})'/g;
   const matches = [...sql.matchAll(datePattern)];
 

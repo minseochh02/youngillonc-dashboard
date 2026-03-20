@@ -25,7 +25,7 @@ export interface IslandTable {
  */
 function detectColumnType(header: string): 'number' | 'currency' | 'text' {
   const currencyKeywords = ['금액', '매출', '수금', '잔액', '원'];
-  const numberKeywords = ['수량', '중량', 'kg', '톤', '건수', '개', '율'];
+  const numberKeywords = ['수량', '중량', 'L', '톤', '건수', '개', '율'];
 
   if (currencyKeywords.some(keyword => header.includes(keyword))) {
     return 'currency';

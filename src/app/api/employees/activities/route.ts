@@ -16,19 +16,26 @@ export async function GET(request: NextRequest) {
 
   try {
     const query = `
-      SELECT 
-        id,
-        activity_date,
-        activity_type,
-        activity_summary,
-        customer_name,
-        products_mentioned,
-        confidence_score
-      FROM employee_activity_log
-      WHERE employee_name = '${employeeName}'
-        AND activity_date >= '${startDate}'
-        AND activity_date <= '${endDate}'
-      ORDER BY activity_date ASC
+      SELECT
+        eal.id,
+        eal.activity_date,
+        eal.activity_type,
+        eal.activity_label,
+        krm.message as activity_summary,
+        eal.customer as customer_name,
+        eal.location,
+        eal.products as products_mentioned,
+        eal.outcome,
+        eal.issue_severity,
+        eal.action_taken,
+        eal.resolved_by,
+        eal.confidence_score
+      FROM employee_activity_log eal
+      JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
+      WHERE eal.employee_name = '${employeeName}'
+        AND eal.activity_date >= '${startDate}'
+        AND eal.activity_date <= '${endDate}'
+      ORDER BY eal.activity_date ASC
     `;
 
     const result = await executeSQL(query);
@@ -45,8 +52,19 @@ export async function GET(request: NextRequest) {
         // Skip invalid JSON
       }
       return {
-        ...row,
-        products_mentioned: Array.isArray(products) ? products : []
+        id: row.id,
+        activity_date: row.activity_date,
+        activity_type: row.activity_type,
+        activity_label: row.activity_label,
+        activity_summary: row.activity_summary,
+        customer_name: row.customer_name,
+        location: row.location,
+        products_mentioned: Array.isArray(products) ? products : [],
+        outcome: row.outcome,
+        issue_severity: row.issue_severity,
+        action_taken: row.action_taken,
+        resolved_by: row.resolved_by,
+        confidence_score: row.confidence_score
       };
     });
 

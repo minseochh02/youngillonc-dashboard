@@ -70,6 +70,6 @@ if (flaPurchases.length > 0) {
       console.log('  창고명:', row[창고명Idx]);
       console.log('  거래처그룹1명:', row[거래처그룹1명Idx]);
     });
-    console.log('\nTotal weight:', totalWeight, 'kg');
+    console.log('\nTotal volume:', totalWeight, 'L');
   }
 }

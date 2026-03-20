@@ -34,9 +34,9 @@ const oldTotal = oldFilter.reduce((sum, row) => sum + (Number(row[중량Idx]) ||
 
 console.log('OLD Filter (품목그룹3코드 = FLA only):');
 console.log('Count:', oldFilter.length);
-console.log('Total:', oldTotal, 'kg');
+console.log('Total:', oldTotal, 'L');
 oldFilter.forEach(row => {
-  console.log(`  - ${row[품목명Idx]}: ${row[중량Idx]}kg (품목그룹1코드: ${row[품목그룹1코드Idx]})`);
+    console.log(`  - ${row[품목명Idx]}: ${row[중량Idx]}L (품목그룹1코드: ${row[품목그룹1코드Idx]})`);
 });
 
 // New filter (FLA + IL)
@@ -57,12 +57,12 @@ const newTotal = newFilter.reduce((sum, row) => sum + (Number(row[중량Idx]) ||
 
 console.log('\nNEW Filter (품목그룹3코드 = FLA AND 품목그룹1코드 = IL):');
 console.log('Count:', newFilter.length);
-console.log('Total:', newTotal, 'kg');
+console.log('Total:', newTotal, 'L');
 newFilter.forEach(row => {
-  console.log(`  - ${row[품목명Idx]}: ${row[중량Idx]}kg (품목그룹1코드: ${row[품목그룹1코드Idx]})`);
+    console.log(`  - ${row[품목명Idx]}: ${row[중량Idx]}L (품목그룹1코드: ${row[품목그룹1코드Idx]})`);
 });
 
 console.log('\n=== Result ===');
-console.log(`Changed from ${oldTotal}kg to ${newTotal}kg`);
+console.log(`Changed from ${oldTotal}L to ${newTotal}L`);
 console.log(`Employee reported: 500kg`);
 console.log(`Match: ${newTotal === 500 ? '✓ YES' : '✗ NO'}`);

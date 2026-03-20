@@ -38,7 +38,7 @@ async function main() {
       c.업종분류코드,
       ec.전체사업소
     FROM clients c
-    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
     LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
     WHERE ec.전체사업소 LIKE '%중부%'
     LIMIT 20

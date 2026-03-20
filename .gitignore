@@ -48,3 +48,6 @@ backup-activity-log-2026-03-13.json
 backup-activity-log-source-tracking-2026-03-13.json
 extraction-backup-2024-03-11-to-2024-03-11.json
 extraction-backup-2024-03-12-to-2024-03-18.json
+*.json
+/migrations
+/FINAL-Kakaotalk

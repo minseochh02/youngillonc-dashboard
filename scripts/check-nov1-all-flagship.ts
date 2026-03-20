@@ -38,5 +38,5 @@ if (nov1Fla.length > 0) {
     console.log('  창고명:', row[창고명Idx]);
     console.log('  거래처그룹1명:', row[거래처그룹1명Idx]);
   });
-  console.log('\n=== Total Weight:', totalWeight, 'kg ===');
+  console.log('\n=== Total Volume:', totalWeight, 'L ===');
 }

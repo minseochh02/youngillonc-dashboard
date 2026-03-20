@@ -38,7 +38,7 @@ if (nov5Fla.length > 0) {
     console.log('  창고명:', row[창고명Idx]);
     console.log('  거래처그룹1명:', row[거래처그룹1명Idx]);
   });
-  console.log('\n=== Total Weight:', totalWeight, 'kg ===');
+  console.log('\n=== Total Volume:', totalWeight, 'L ===');
 }
 
 // Check for 창원
@@ -59,5 +59,5 @@ if (nov5Changwon.length > 0) {
     console.log('  중량:', weight);
     console.log('  창고명:', row[창고명Idx]);
   });
-  console.log('\nTotal weight (창원):', totalWeight, 'kg');
+  console.log('\nTotal volume (창원):', totalWeight, 'L');
 }

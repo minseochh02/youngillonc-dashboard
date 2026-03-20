@@ -253,7 +253,7 @@ export default function DailyStatusPage() {
 
       // 1. 매출현황
       if (salesData.length > 0) {
-        const headers = ['사업소', '총매출', '모빌매출금액', '모빌매출중량', '대표매출중량', '모빌매입중량', '대표매입중량'];
+        const headers = ['사업소', '총매출', '모빌매출금액', '모빌매출용량', '대표매출용량', '모빌매입용량', '대표매입용량'];
         const rows = salesData.map(row => [
           row.branch || '',
           row.totalSales || 0,
@@ -268,7 +268,7 @@ export default function DailyStatusPage() {
 
       // 2. 월별매출현황
       if (monthlyData.length > 0) {
-        const headers = ['월', '총매출', '모빌매출금액', '모빌매출중량', '대표매출중량', '모빌매입중량', '대표매입중량'];
+        const headers = ['월', '총매출', '모빌매출금액', '모빌매출용량', '대표매출용량', '모빌매입용량', '대표매입용량'];
         const rows = monthlyData.map(row => [
           row.month || '',
           row.totalSales || 0,
@@ -417,11 +417,11 @@ export default function DailyStatusPage() {
               </div>
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 판매 중량</p>
-                <p className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-100">{(totals.mobileSalesWeight + totals.flagshipSalesWeight).toLocaleString()} kg</p>
+                <p className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-100">{(totals.mobileSalesWeight + totals.flagshipSalesWeight).toLocaleString()} L</p>
               </div>
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 구매 중량</p>
-                <p className="text-2xl font-bold mt-2 text-amber-600 dark:text-amber-500">{(totals.mobilePurchaseWeight + totals.flagshipPurchaseWeight).toLocaleString()} kg</p>
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 구매 용량</p>
+                <p className="text-2xl font-bold mt-2 text-amber-600 dark:text-amber-500">{(totals.mobilePurchaseWeight + totals.flagshipPurchaseWeight).toLocaleString()} L</p>
               </div>
             </div>
             <div className="space-y-4">
@@ -435,7 +435,7 @@ export default function DailyStatusPage() {
                   <SalesTable data={salesData} />
                   {miscMobil && miscMobil.count > 0 && (
                     <div className="p-4 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-500">
-                      <span className="font-bold">💡 데이터 알림:</span> 분류 외 Mobil 제품 {miscMobil.count}건 발견. 매출 ₩{Number(miscMobil.amount).toLocaleString()}, 중량 {Number(miscMobil.weight).toLocaleString()} kg.
+                      <span className="font-bold">💡 데이터 알림:</span> 분류 외 Mobil 제품 {miscMobil.count}건 발견. 매출 ₩{Number(miscMobil.amount).toLocaleString()}, 용량 {Number(miscMobil.weight).toLocaleString()} L.
                     </div>
                   )}
                 </div>
@@ -458,11 +458,11 @@ export default function DailyStatusPage() {
               </div>
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">YTD 총 판매 중량</p>
-                <p className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-100">{(ytdTotals.mobileSalesWeight + ytdTotals.flagshipSalesWeight).toLocaleString()} kg</p>
+                <p className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-100">{(ytdTotals.mobileSalesWeight + ytdTotals.flagshipSalesWeight).toLocaleString()} L</p>
               </div>
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">YTD 총 구매 중량</p>
-                <p className="text-2xl font-bold mt-2 text-amber-600 dark:text-amber-500">{(ytdTotals.mobilePurchaseWeight + ytdTotals.flagshipPurchaseWeight).toLocaleString()} kg</p>
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">YTD 총 구매 용량</p>
+                <p className="text-2xl font-bold mt-2 text-amber-600 dark:text-amber-500">{(ytdTotals.mobilePurchaseWeight + ytdTotals.flagshipPurchaseWeight).toLocaleString()} L</p>
               </div>
             </div>
             <div className="space-y-4">

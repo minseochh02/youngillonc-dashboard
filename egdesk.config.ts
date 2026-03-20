@@ -14,7 +14,7 @@ export interface TableDefinition {
   name: string;
   displayName: string;
   description?: string;
-  rowCount: number;
+  rowCount: number | undefined;
   columnCount: number;
   columns: string[];
 }
@@ -164,14 +164,14 @@ export const TABLES = {
     columnCount: 13,
     columns: ['id', '일자', '증감구분', '어음번호', '거래처명', '계정명', '부서명', '프로젝트명', '적요', '증가금액', '감소금액', '잔액', 'imported_at']
   } as TableDefinition,
-  table19: {
-    name: 'product_mapping',
-    displayName: '품목코드매핑',
-    description: 'Product code mapping table for inventory categorization',
-    rowCount: 709,
-    columnCount: 8,
-    columns: ['id', '품목코드', '품목명', '품목그룹1코드', '품목그룹1명', '품목그룹2명', '품목그룹3코드', 'last_seen_date']
-  } as TableDefinition,
+  // table19: {
+  //   name: 'product_mapping',
+  //   displayName: '품목코드매핑',
+  //   description: 'Product code mapping table for inventory categorization (DEPRECATED - use items table)',
+  //   rowCount: 709,
+  //   columnCount: 8,
+  //   columns: ['id', '품목코드', '품목명', '품목그룹1코드', '품목그룹1명', '품목그룹2명', '품목그룹3코드', 'last_seen_date']
+  // } as TableDefinition,
   table20: {
     name: 'ledger',
     displayName: '계정별원장',
@@ -211,6 +211,54 @@ export const TABLES = {
     rowCount: 5154,
     columnCount: 23,
     columns: ['id', '일자', '거래처코드', '거래처그룹1명', '구매처명', '창고명', '품목코드', '품목명', '단위', '규격_규격명', '수량', '중량', '단가', '공급가액', '합_계', '적요', '적요1', '적요2', '품목그룹1명', '품목그룹1코드', '품목그룹2명', '품목그룹3코드', 'imported_at']
+  } as TableDefinition,
+  table25: {
+    name: 'east_division_sales',
+    displayName: '동부판매',
+    description: '동부사업소 February 2026 sales data (sales schema)',
+    rowCount: 1340,
+    columnCount: 17,
+    columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '단위', '규격명', '수량', '중량', '단가', '공급가액', '부가세', '합계', '출하창고코드', '신규일', '적요', '적요2']
+  } as TableDefinition,
+  table26: {
+    name: 'west_division_sales',
+    displayName: '서부판매',
+    description: '서부사업소 February 2026 sales data (sales schema)',
+    rowCount: 1659,
+    columnCount: 17,
+    columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '단위', '규격명', '수량', '중량', '단가', '공급가액', '부가세', '합계', '출하창고코드', '신규일', '적요', '적요2']
+  } as TableDefinition,
+  table27: {
+    name: 'south_division_sales',
+    displayName: '남부판매',
+    description: 'South division sales data',
+    rowCount: 994,
+    columnCount: 18,
+    columns: ['id', '일자', '거래처코드', '담당자명', '판매처명', '출하창고코드', '출하창고명', '품목코드', '품목명', '단위', '규격명', '수량', '중량', '단가', '공급가액', '부가세', '합계', 'imported_at']
+  } as TableDefinition,
+  table28: {
+    name: 'east_division_purchases',
+    displayName: '동부구매',
+    description: '동부사업소 February 2026 purchase data (purchases schema)',
+    rowCount: 139,
+    columnCount: 22,
+    columns: ['id', '일자', '거래처코드', '거래처그룹1명', '구매처명', '창고명', '품목코드', '품목명', '단위', '규격_규격명', '수량', '중량', '단가', '공급가액', '합_계', '적요', '적요1', '적요2', '품목그룹1명', '품목그룹1코드', '품목그룹2명', '품목그룹3코드']
+  } as TableDefinition,
+  table29: {
+    name: 'west_division_purchases',
+    displayName: '서부구매',
+    description: '서부사업소 February 2026 purchase data (purchases schema)',
+    rowCount: 161,
+    columnCount: 22,
+    columns: ['id', '일자', '거래처코드', '거래처그룹1명', '구매처명', '창고명', '품목코드', '품목명', '단위', '규격_규격명', '수량', '중량', '단가', '공급가액', '합_계', '적요', '적요1', '적요2', '품목그룹1명', '품목그룹1코드', '품목그룹2명', '품목그룹3코드']
+  } as TableDefinition,
+  table30: {
+    name: 'south_division_purchases',
+    displayName: '남부구매',
+    description: 'South division purchases data',
+    rowCount: 86,
+    columnCount: 22,
+    columns: ['id', '일자', '거래처코드', '거래처그룹1명', '구매처명', '창고명', '품목코드', '품목명', '단위', '규격_규격명', '수량', '중량', '단가', '공급가액', '합_계', '적요', '적요1', '적요2', '품목그룹1명', '품목그룹1코드', '품목그룹2명', '품목그룹3코드']
   } as TableDefinition
 } as const;
 
@@ -244,10 +292,16 @@ export const TABLE_NAMES = {
   table16: 'purchase_orders',
   table17: 'deposits',
   table18: 'promissory_notes',
-  table19: 'product_mapping',
+  // table19: 'product_mapping', // DEPRECATED - use items table
   table20: 'ledger',
   table21: 'pending_purchases',
   table22: 'pending_sales',
   table23: 'inventory',
-  table24: 'purchases'
+  table24: 'purchases',
+  table25: 'east_division_sales',
+  table26: 'west_division_sales',
+  table27: 'south_division_sales',
+  table28: 'east_division_purchases',
+  table29: 'west_division_purchases',
+  table30: 'south_division_purchases'
 } as const;

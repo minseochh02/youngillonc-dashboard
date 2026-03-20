@@ -36,11 +36,11 @@ const total = nov1.reduce((sum, row) => sum + (Number(row[중량Idx]) || 0), 0);
 
 console.log('IL Flagship purchases for 창원:');
 console.log('Count:', nov1.length);
-console.log('Total:', total, 'kg');
+console.log('Total:', total, 'L');
 
 if (nov1.length > 0) {
   nov1.forEach(row => {
-    console.log(`  - ${row[품목명Idx]}: ${row[중량Idx]}kg`);
+    console.log(`  - ${row[품목명Idx]}: ${row[중량Idx]}L`);
   });
 } else {
   console.log('  (No IL flagship purchases for 창원 on Nov 1st)');

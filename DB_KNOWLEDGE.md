@@ -12,6 +12,12 @@ This document contains essential knowledge about the Youngil ONC database struct
 |-------|-------------|-----------|-------------|---------|
 | `sales` | 판매현황 | ~6,500 | 일자, 거래처코드, 품목코드, 수량, 중량, 합계 | Sales transactions (NORMALIZED) |
 | `purchases` | 구매현황 | ~5,000 | 일자, 거래처코드, 품목코드, 수량, 중량, 합_계 | Purchase transactions (denormalized) |
+| `east_division_sales` | 동부판매 | ~1,340 | 일자, 거래처코드, 품목코드, 중량, 합계 | East division supplemental sales |
+| `west_division_sales` | 서부판매 | ~1,660 | 일자, 거래처코드, 품목코드, 중량, 합계 | West division supplemental sales |
+| `south_division_sales` | 남부판매 | ~990 | 일자, 거래처코드, 품목코드, 중량, 합계 | South division supplemental sales |
+| `east_division_purchases` | 동부구매 | ~140 | 일자, 거래처코드, 품목코드, 중량 | East division supplemental purchases |
+| `west_division_purchases` | 서부구매 | ~160 | 일자, 거래처코드, 품목코드, 중량 | West division supplemental purchases |
+| `south_division_purchases` | 남부구매 | ~90 | 일자, 거래처코드, 품목코드, 중량 | South division supplemental purchases |
 | `inventory` | 창고별재고 | ~54,000 | 품목코드, 창고코드, 재고수량 | Current inventory by warehouse |
 | `inventory_transfers` | 창고이동현황 | ~138 | 일자, 출고창고명, 입고창고명, 품목명_규격, 수량 | Inter-warehouse transfers |
 | `ledger` | 계정별원장 | ~20,600 | 일자, 계정명, 거래처명, 차변금액, 대변금액, 잔액 | General ledger entries |
@@ -70,20 +76,23 @@ This document contains essential knowledge about the Youngil ONC database struct
 
 ### Branch Mapping by Table
 
-**`sales` (NORMALIZED - requires JOINs)**:
+**`sales` (NORMALIZED - direct JOIN path)**:
 ```sql
--- Branch comes from employee_category.전체사업소 via JOIN chain:
--- sales → clients → employees → employee_category
+-- Branch comes from employee_category.전체사업소 via direct JOIN:
+-- sales → employees → employee_category
 SELECT
   ec.전체사업소 as branch
 FROM sales s
-LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
 LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
 ```
 
+**NOTE**: Some supplemental tables (like `south_division_sales`) may require joining on `담당자명` instead of `담당자코드`.
+
 **Other tables**:
 - `purchases`: 거래처그룹1명 (still denormalized)
+- `east_division_sales`, `west_division_sales`, `south_division_sales`: Used for supplemental branch-specific sales.
+- `east_division_purchases`, `west_division_purchases`, `south_division_purchases`: Used for supplemental branch-specific purchases.
 - `deposits`, `promissory_notes`, `ledger`: 부서명
 - `inventory_transfers`: `출고창고명`, `입고창고명`
 
@@ -103,23 +112,65 @@ CASE
 END
 ```
 
+### Employee Segments (B2B / B2C)
+The `employee_category` table is used to filter employees into **B2B** or **B2C** segments.
+
+- **B2B**: Employees where `b2c_팀 = 'B2B'`
+- **B2C**: Employees where `b2c_팀 != 'B2B'` (includes teams like '1맥심팀', '2솔개팀', '3아리안팀', etc.)
+
 **Actual branch values in employee_category**:
 - `벤츠` → Maps to "MB"
 - `경남사업소` → Maps to "창원"
 - `화성사업소`, `중부사업소`, `동부사업소`, `서부사업소`, `부산사업소`, `남부지사`, `제주사업소`, `별도`
 
+### Special Employees & Exclusions
+
+**Employees to EXCLUDE:**
+- **김도량**: Used for internal purchases or sales where **Young-il (영일)** is purchasing from the **East (동부)** or **West (서부)** branches. These transactions are considered **Internal** and should NOT be counted in general business metrics. **IMPORTANT**: This exclusion applies ONLY when using the three-table join structure (Sales/Purchases + Employees + Employee Category) for branch-based analysis.
+
+**Query Pattern for Exclusion**:
+```sql
+WHERE e.사원_담당_명 != '김도량'
+```
+
+**Special Cases (INCLUDE in metrics):**
+- **이미숙**: Employee who is neither B2B nor B2C (not assigned to either category in employee_category table), but her transactions SHOULD be counted in general business metrics.
+
 ## 3. Product Categories (품목그룹)
 
 ### Category Hierarchy (품목그룹1코드)
-Products are categorized by their technical group:
+The `품목그룹1코드` represents the main category or brand.
 
-| Category | 품목그룹1코드 | Product Count | Description |
-|----------|---------------|---------------|-------------|
-| **PVL** | `PVL` | ~70 | Passenger Vehicle Lubricants |
-| **CVL** | `CVL` | ~75 | Commercial Vehicle Lubricants |
-| **IL** | `IL` | 295 | Industrial oils |
-| **MB** | `MB`, `AVI` | 19 | Mercedes-Benz + Aviation oils |
-| **Others** | All other codes | 250 | Other brands (Fuchs, Shell, Blaser, GS, etc.) |
+| Code | Name (KOR) | Description |
+|------|------------|-------------|
+| **PVL** | Mobil-자동차 | Passenger Vehicle Lubricants |
+| **CVL** | Mobil-대형차 | Commercial Vehicle Lubricants |
+| **IL** | Mobil-산업유 | Industrial Lubricants |
+| **MB** | Mobil-MB | Mercedes-Benz specific oils |
+| **AVI** | Mobil-항공기유 | Aviation oils |
+| **FU** | Fuchs | Brand: Fuchs |
+| **BL** | Blaser | Brand: Blaser |
+| **SH** | Shell | Brand: Shell |
+| **GS** | GS Caltex | Brand: GS Caltex |
+| **CA** | Castrol | Brand: Castrol |
+| **AA** | 기타제품 | Others (Washer fluid, etc.) |
+| **XT** | H-Oilbank | Brand: Hyundai Oilbank |
+| **ST** | S-Total | Brand: S-Oil Total |
+| **SK** | SK Lub. | Brand: SK Lubricants (ZIC) |
+
+### Sub-Categories (품목그룹2명)
+Common values for `품목그룹2명` include:
+- **Engine Oil**: `PVL-Engine Oil`, `CVL-Engine Oil`
+- **Gear Oil**: `PVL-Gear Oil`, `CVL-Gear Oil`, `기어오일`
+- **Industrial**: `유압유` (Hydraulic), `절삭유` (Cutting oil), `습동면유` (Slideway), `터빈오일`, `컴프레샤유`
+- **Maintenance**: `Grease`, `ATF`, `부동액` (Antifreeze), `워셔액`, `브레이크액`
+
+### Tier Classification (품목그룹3코드)
+Products are classified by tier/grade:
+- **FLA**: **Flagship** (Premium/Top-tier)
+- **PRE**: **Premium**
+- **STA**: **Standard**
+- **ALL**: General/All
 
 ### Business Classification (AUTO Channels)
 The term **"AUTO"** refers to specific business types/channels, not just the product type. These are defined in the `company_type_auto` table based on the customer's `업종분류코드`.
@@ -226,7 +277,8 @@ Many numeric columns stored as TEXT with commas: `"1,234,567"`
 - **Withdrawals**: `대변금액 > 0`
 
 ## 9. Units
-- **Weight to D/M**: Divide by 200 (`중량/200.0`)
+- **중량 (Weight)**: Values in the `중량` column across all tables (sales, purchases, inventory, etc.) are in **Liters (L)**.
+- **Weight to D/M**: Divide by 200 (`중량/200.0`) to convert to Drum equivalents (1 Drum = 200L).
 - **Flagship**: Track in Liters (L), not D/M
 - **Currency**: KRW (₩)
 - **Default Unit**: Liters (L) for oil products
@@ -280,6 +332,11 @@ For each branch and category/tier combination:
 
 ## 13. Common Query Patterns
 
+### Important: Query Restrictions
+**Only `SELECT` queries are allowed** when using `executeSQL` or the `user_data_sql_query` tool. 
+- ❌ `INSERT`, `UPDATE`, `DELETE`, `DROP`, `CREATE`, `ALTER` will fail.
+- ✅ Use `SELECT` for all data retrieval and analysis.
+
 ### Get Sales by Branch and Date (NORMALIZED - requires JOINs)
 ```sql
 SELECT
@@ -292,7 +349,7 @@ SELECT
   SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
 FROM sales s
 LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
 LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
 WHERE s.일자 = '2026-02-03'
   AND (ec.전체사업소 LIKE '%사업소%' OR ec.전체사업소 LIKE '%지사%' OR ec.전체사업소 = '벤츠')
@@ -373,7 +430,7 @@ GROUP BY branch, payment_type
 
 | What | Where | Filter Column | Format |
 |------|-------|---------------|--------|
-| Sales by branch | `sales` (JOIN via clients→employees→employee_category) | `ec.전체사업소` | LIKE '%사업소%' OR = '벤츠' |
+| Sales by branch | `sales` (JOIN via employees→employee_category) | `ec.전체사업소` | LIKE '%사업소%' OR = '벤츠' |
 | Purchases by branch | `purchases` | `거래처그룹1명` | LIKE '%창원%' |
 | Inventory by warehouse | `inventory` | `창고명` | LIKE '%창원%' |
 | Collections by branch | `deposits`, `promissory_notes` | `부서명` | LIKE '%창원%' |
@@ -383,5 +440,5 @@ GROUP BY branch, payment_type
 
 ---
 
-**Last Updated**: 2026-03-16 (Removed product_mapping in favor of items table)
+**Last Updated**: 2026-03-20 (Added employee 김도량 exclusion note regarding three-table joins)
 **Maintainer**: See `scripts/` directory for maintenance scripts

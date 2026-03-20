@@ -4,9 +4,9 @@ import { executeSQL } from '@/egdesk-helpers';
 interface PlannedTask {
   id: number;
   employee_name: string;
-  activity_date: string;
+  message_date: string; // When they made the plan
   next_action: string;
-  next_action_date: string;
+  next_action_date: string; // When they plan to do it
   customer_name?: string;
   confidence_score: number;
 }
@@ -35,54 +35,58 @@ export async function GET(request: NextRequest) {
   const endDate = searchParams.get('endDate') || '2026-12-31';
 
   try {
-    // Get all planned tasks (exclude noise: "other" type, low confidence)
+    // Get all planned tasks (activity_type = 'planned_task')
+    // Join with kakaotalk_raw_messages to get the original message and when it was sent
     let plannedQuery = `
       SELECT
-        id,
-        employee_name,
-        activity_date,
-        next_action,
-        next_action_date,
-        customer_name,
-        confidence_score
-      FROM employee_activity_log
-      WHERE next_action IS NOT NULL
-        AND next_action_date IS NOT NULL
-        AND activity_type != 'other'
-        AND confidence_score >= 0.7
-        AND activity_date >= '${startDate}'
-        AND activity_date <= '${endDate}'
+        eal.id,
+        eal.employee_name,
+        krm.chat_date as message_date,
+        krm.message as next_action,
+        eal.activity_label,
+        eal.activity_date as next_action_date,
+        eal.customer as customer_name,
+        eal.confidence_score
+      FROM employee_activity_log eal
+      JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
+      WHERE eal.activity_type = 'planned_task'
+        AND eal.confidence_score >= 0.7
+        AND eal.activity_date >= '${startDate}'
+        AND eal.activity_date <= '${endDate}'
     `;
 
     if (employeeFilter) {
-      plannedQuery += ` AND employee_name = '${employeeFilter}'`;
+      plannedQuery += ` AND eal.employee_name = '${employeeFilter}'`;
     }
 
     if (customerFilter) {
-      plannedQuery += ` AND customer_name LIKE '%${customerFilter}%'`;
+      plannedQuery += ` AND eal.customer LIKE '%${customerFilter}%'`;
     }
 
-    plannedQuery += ' ORDER BY activity_date DESC, employee_name';
+    plannedQuery += ' ORDER BY eal.activity_date DESC, eal.employee_name';
 
     const plannedResult = await executeSQL(plannedQuery);
     const plannedTasks: PlannedTask[] = plannedResult?.rows || [];
 
-    // Get all actual activities (exclude noise)
+    // Get all actual completed activities
+    // Join with kakaotalk_raw_messages to get the original message
     const actualQuery = `
       SELECT
-        id,
-        employee_name,
-        activity_date,
-        activity_type,
-        activity_summary,
-        customer_name,
-        confidence_score
-      FROM employee_activity_log
-      WHERE activity_type IN ('customer_visit', 'sales_activity', 'work_completed', 'product_discussion')
-        AND confidence_score >= 0.7
-        AND activity_date >= '${startDate}'
-        AND activity_date <= '${endDate}'
-      ORDER BY activity_date, employee_name
+        eal.id,
+        eal.employee_name,
+        eal.activity_date,
+        eal.activity_type,
+        krm.message as activity_summary,
+        eal.activity_label,
+        eal.customer as customer_name,
+        eal.confidence_score
+      FROM employee_activity_log eal
+      JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
+      WHERE eal.activity_type = 'completed_task'
+        AND eal.confidence_score >= 0.7
+        AND eal.activity_date >= '${startDate}'
+        AND eal.activity_date <= '${endDate}'
+      ORDER BY eal.activity_date, eal.employee_name
     `;
 
     const actualResult = await executeSQL(actualQuery);
@@ -131,11 +135,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // 1. Get all active employees as base
+    // 1. Get all employees from activity log
     const employeesResult = await executeSQL(`
-      SELECT employee_name, department, position, team 
-      FROM employee_master 
-      WHERE employment_status = 'active'
+      SELECT DISTINCT employee_name
+      FROM employee_activity_log
       ORDER BY employee_name
     `);
     const allEmployees = employeesResult?.rows || [];
@@ -172,7 +175,6 @@ export async function GET(request: NextRequest) {
       const actionable = s.total - s.future;
       return {
         employee_name: emp.employee_name,
-        department: emp.department,
         total: s.total,
         completed: s.completed,
         missed: s.missed,
@@ -186,11 +188,11 @@ export async function GET(request: NextRequest) {
 
 
     const uniqueCustomers = await executeSQL(`
-      SELECT DISTINCT customer_name
+      SELECT DISTINCT customer as customer_name
       FROM employee_activity_log
-      WHERE customer_name IS NOT NULL
-        AND customer_name != ''
-      ORDER BY customer_name
+      WHERE customer IS NOT NULL
+        AND customer != ''
+      ORDER BY customer
     `);
 
     return NextResponse.json({

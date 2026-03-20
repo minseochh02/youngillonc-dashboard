@@ -37,9 +37,9 @@ let currentTotal = 0;
 currentFilter.forEach(row => {
   const weight = Number(row[중량Idx]) || 0;
   currentTotal += weight;
-  console.log(`  ${row[품목명Idx]} - ${weight}kg (창고: ${row[창고명Idx]}, 그룹: ${row[거래처그룹1명Idx]})`);
+  console.log(`  ${row[품목명Idx]} - ${weight}L (창고: ${row[창고명Idx]}, 그룹: ${row[거래처그룹1명Idx]})`);
 });
-console.log('Total:', currentTotal, 'kg\n');
+console.log('Total:', currentTotal, 'L\n');
 
 // Method 2: Group-only filter
 const groupOnlyFilter = nov5Fla.filter(row => {
@@ -54,14 +54,14 @@ if (groupOnlyFilter.length > 0) {
   groupOnlyFilter.forEach(row => {
     const weight = Number(row[중량Idx]) || 0;
     groupTotal += weight;
-    console.log(`  ${row[품목명Idx]} - ${weight}kg (창고: ${row[창고명Idx]}, 그룹: ${row[거래처그룹1명Idx]})`);
+    console.log(`  ${row[품목명Idx]} - ${weight}L (창고: ${row[창고명Idx]}, 그룹: ${row[거래처그룹1명Idx]})`);
   });
-  console.log('Total:', groupTotal, 'kg');
+  console.log('Total:', groupTotal, 'L');
 } else {
-  console.log('Total: 0 kg (No purchases with 거래처그룹1명 containing "창원")');
+  console.log('Total: 0 L (No purchases with 거래처그룹1명 containing "창원")');
 }
 
 console.log('\n=== Difference ===');
-console.log(`Current filter: ${currentTotal} kg`);
-console.log(`Group-only filter: ${groupOnlyFilter.length > 0 ? groupOnlyFilter.reduce((sum, row) => sum + (Number(row[중량Idx]) || 0), 0) : 0} kg`);
-console.log(`Difference: ${currentTotal - (groupOnlyFilter.length > 0 ? groupOnlyFilter.reduce((sum, row) => sum + (Number(row[중량Idx]) || 0), 0) : 0)} kg`);
+console.log(`Current filter: ${currentTotal} L`);
+console.log(`Group-only filter: ${groupOnlyFilter.length > 0 ? groupOnlyFilter.reduce((sum, row) => sum + (Number(row[중량Idx]) || 0), 0) : 0} L`);
+console.log(`Difference: ${currentTotal - (groupOnlyFilter.length > 0 ? groupOnlyFilter.reduce((sum, row) => sum + (Number(row[중량Idx]) || 0), 0) : 0)} L`);

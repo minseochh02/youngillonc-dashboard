@@ -3,11 +3,13 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Package, ShoppingCart, Truck, Loader2, Search,
-  AlertTriangle, CheckCircle2, Clock, Filter,
+  AlertTriangle, CheckCircle2, Clock, Filter, Calendar,
+  ArrowLeftRight, TrendingUp, TrendingDown, Calculator, Printer
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
 import { exportToExcel, generateFilename, flattenObject } from "@/lib/excel-export";
+import React from "react";
 
 // ── Types ──
 
@@ -49,10 +51,53 @@ interface MergedItem {
   totalPendingPurchasesQty: number;
 }
 
+interface InventoryStats {
+  beginning: number;
+  purchase: number;
+  sales: number;
+  transfer: number;
+  inventory: number;
+}
+
+interface BranchStats {
+  [category_tier: string]: InventoryStats;
+}
+
+interface DailyInventoryData {
+  branches: string[];
+  stats: { [branch: string]: BranchStats };
+  date: string;
+}
+
+const CATEGORIES = [
+  { id: "Auto_Flagship", label: "Auto", subLabel: "Flagship" },
+  { id: "Auto_Others", label: "Auto", subLabel: "Others" },
+  { id: "IL_Flagship", label: "IL", subLabel: "Flagship" },
+  { id: "IL_Others", label: "IL", subLabel: "Others" },
+  { id: "MB_Flagship", label: "MB", subLabel: "Flagship" },
+  { id: "MB_Others", label: "MB", subLabel: "Others" },
+  { id: "Others_Flagship", label: "Others", subLabel: "Flagship" },
+  { id: "Others_Others", label: "Others", subLabel: "Others" },
+];
+
+const METRICS = [
+  { id: "beginning", label: "기초재고", icon: Package },
+  { id: "purchase", label: "매입", icon: TrendingUp },
+  { id: "sales", label: "매출", icon: TrendingDown },
+  { id: "transfer", label: "이동", icon: ArrowLeftRight },
+  { id: "inventory", label: "재고", icon: Calculator },
+  { id: "inventoryDM", label: "재고 D/M계", icon: Calculator, formula: (val: number) => val / 200 },
+];
+
 // ── Helpers ──
 
 function fmt(val: number): string {
   return val.toLocaleString();
+}
+
+function fmtDM(val: number): string {
+  if (val === 0) return "-";
+  return val.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function StatusBadge({ stock, pendingOut }: { stock: number; pendingOut: number }) {
@@ -132,24 +177,72 @@ function PendingTags({ pendingSales, pendingPurchases }: { pendingSales: Pending
   );
 }
 
+function MiniCard({
+  label, value, color,
+}: {
+  label: string;
+  value: string;
+  color?: "blue" | "indigo" | "amber" | "emerald";
+}) {
+  const valueColor = color === "blue"
+    ? "text-blue-600 dark:text-blue-400"
+    : color === "indigo"
+      ? "text-indigo-600 dark:text-indigo-400"
+      : color === "amber"
+        ? "text-amber-600 dark:text-amber-400"
+        : color === "emerald"
+          ? "text-emerald-600 dark:text-emerald-400"
+          : "text-zinc-900 dark:text-zinc-100";
+
+  return (
+    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 shadow-sm">
+      <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">{label}</p>
+      <p className={`text-lg font-bold mt-0.5 ${valueColor}`}>{value}</p>
+    </div>
+  );
+}
+
 // ── Page ──
 
 export default function InventoryStatusPage() {
+  const [activeTab, setActiveTab] = useState<'items' | 'daily'>('items');
+
+  // Item view state
   const [inventoryByItem, setInventoryByItem] = useState<InventoryRow[]>([]);
   const [pendingSales, setPendingSales] = useState<PendingSaleRow[]>([]);
   const [pendingPurchases, setPendingPurchases] = useState<PendingPurchaseRow[]>([]);
   const [warehouseList, setWarehouseList] = useState<string[]>([]);
-
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [search, setSearch] = useState("");
   const [showOnlyWithPending, setShowOnlyWithPending] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  // Daily view state
+  const [dailyData, setDailyData] = useState<DailyInventoryData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoadingDaily, setIsLoadingDaily] = useState(false);
+  const [date, setDate] = useState(() => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  useEffect(() => {
+    if (activeTab === 'items') {
+      fetchItemsData();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'daily') {
+      fetchDailyData();
+    }
+  }, [activeTab, date]);
+
+  const fetchItemsData = async () => {
+    setIsLoadingItems(true);
     try {
       const response = await apiFetch(`/api/dashboard/inventory`);
       const result = await response.json();
@@ -162,7 +255,29 @@ export default function InventoryStatusPage() {
     } catch (error) {
       console.error("Failed to fetch:", error);
     } finally {
-      setIsLoading(false);
+      setIsLoadingItems(false);
+    }
+  };
+
+  const fetchDailyData = async () => {
+    setIsLoadingDaily(true);
+    setError(null);
+    try {
+      const response = await apiFetch(`/api/dashboard/daily-inventory?date=${date}`);
+      const result = await response.json();
+      if (result.success) {
+        setDailyData(result.data);
+        if (selectedBranches.length === 0 && result.data.branches.length > 0) {
+          setSelectedBranches(result.data.branches.slice(0, 5));
+        }
+      } else {
+        setError(result.error || "데이터를 불러오지 못했습니다.");
+      }
+    } catch (error: any) {
+      console.error("Failed to fetch daily inventory:", error);
+      setError(error.message || "서버 통신 중 오류가 발생했습니다.");
+    } finally {
+      setIsLoadingDaily(false);
     }
   };
 
@@ -239,15 +354,24 @@ export default function InventoryStatusPage() {
     return { totalStock, totalPendingOut, totalPendingIn, itemsWithPending };
   }, [mergedItems]);
 
-  const handleExcelDownload = () => {
+  const branchesToShow = useMemo(() => {
+    if (!dailyData) return [];
+    return dailyData.branches.filter(b => selectedBranches.includes(b));
+  }, [dailyData, selectedBranches]);
+
+  const toggleBranch = (branch: string) => {
+    setSelectedBranches(prev =>
+      prev.includes(branch) ? prev.filter(b => b !== branch) : [...prev, branch]
+    );
+  };
+
+  const handleItemsExcelDownload = () => {
     if (filtered.length === 0) {
       alert('다운로드할 데이터가 없습니다.');
       return;
     }
 
-    // Flatten the nested structure for Excel export
     const exportData = filtered.map(item => {
-      // Create base row
       const row: Record<string, any> = {
         '품목코드': item.code,
         '품목명': item.name,
@@ -256,19 +380,16 @@ export default function InventoryStatusPage() {
         '미구매 잔량': item.totalPendingPurchasesQty,
       };
 
-      // Add warehouse stock columns
       warehouseList.forEach(warehouse => {
         row[`${warehouse} 재고`] = item.stockByWarehouse[warehouse] || 0;
       });
 
-      // Add pending sales info (concatenated)
       if (item.pendingSales.length > 0) {
         row['미판매 내역'] = item.pendingSales
           .map(ps => `${ps.customer}(${ps.remaining_qty}, 납기:${ps.due_date})`)
           .join('; ');
       }
 
-      // Add pending purchases info (concatenated)
       if (item.pendingPurchases.length > 0) {
         row['미구매 내역'] = item.pendingPurchases
           .map(pp => `${pp.supplier}(${pp.remaining_qty}, 납기:${pp.due_date})`)
@@ -285,6 +406,48 @@ export default function InventoryStatusPage() {
     exportToExcel(exportData, filename);
   };
 
+  const handleDailyExcelDownload = () => {
+    if (!dailyData || branchesToShow.length === 0) {
+      alert('다운로드할 데이터가 없습니다. 부서를 선택해주세요.');
+      return;
+    }
+
+    const exportData: any[] = [];
+
+    METRICS.forEach(metric => {
+      CATEGORIES.forEach(cat => {
+        const row: Record<string, any> = {
+          '분류': metric.label,
+          '산업군': cat.label,
+          '티어': cat.subLabel,
+        };
+
+        branchesToShow.forEach(branch => {
+          const branchData = dailyData.stats[branch];
+          if (branchData && branchData[cat.id]) {
+            const stats = branchData[cat.id];
+            let value = 0;
+
+            if (metric.id === 'inventoryDM' && stats.inventory !== undefined) {
+              value = metric.formula ? metric.formula(stats.inventory) : stats.inventory;
+            } else if (metric.id !== 'inventoryDM' && stats[metric.id as keyof InventoryStats] !== undefined) {
+              value = stats[metric.id as keyof InventoryStats] as number;
+            }
+
+            row[`${branch}`] = value;
+          } else {
+            row[`${branch}`] = 0;
+          }
+        });
+
+        exportData.push(row);
+      });
+    });
+
+    const filename = `daily-inventory-sheet-${date}.xlsx`;
+    exportToExcel(exportData, filename);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -294,170 +457,342 @@ export default function InventoryStatusPage() {
             재고현황
           </h2>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-            창고별 실시간 재고와 미판매/미구매 잔량을 품목 단위로 확인합니다
+            {activeTab === 'items'
+              ? '창고별 실시간 재고와 미판매/미구매 잔량을 품목 단위로 확인합니다'
+              : '부서별/카테고리별 실시간 재고 및 수불 현황 (단위: Liter / DM)'}
           </p>
         </div>
       </div>
 
-      {/* Summary strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MiniCard label="품목 수" value={fmt(mergedItems.length)} />
-        <MiniCard label="현재고 합계" value={fmt(stats.totalStock)} color="indigo" />
-        <MiniCard label="미판매 잔량" value={fmt(stats.totalPendingOut)} color="amber" />
-        <MiniCard label="미구매 잔량" value={fmt(stats.totalPendingIn)} color="emerald" />
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-800">
+        <button
+          onClick={() => setActiveTab('items')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'items'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+              : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+          }`}
+        >
+          품목별 재고
+        </button>
+        <button
+          onClick={() => setActiveTab('daily')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'daily'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+              : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+          }`}
+        >
+          일일재고파악시트
+        </button>
       </div>
 
-      {/* Filters bar */}
-      <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 shadow-sm">
-        {/* Search */}
-        <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-          <Search className="w-4 h-4 text-zinc-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="품목코드 또는 품목명 검색..."
-            className="text-sm bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 w-full"
-          />
-        </div>
-
-        <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
-
-        {/* Pending toggle */}
-        <label className="flex items-center gap-1.5 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={showOnlyWithPending}
-            onChange={(e) => setShowOnlyWithPending(e.target.checked)}
-            className="w-3.5 h-3.5 rounded border-zinc-300 dark:border-zinc-600 text-blue-600 focus:ring-blue-500"
-          />
-          <span className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap">미판매/미구매만</span>
-        </label>
-
-        <div className="ml-auto" />
-
-        <ExcelDownloadButton
-          onClick={handleExcelDownload}
-          disabled={filtered.length === 0}
-        />
-
-        {isLoading && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
-      </div>
-
-      {/* ── Main Table ── */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-800/80 backdrop-blur">
-              <tr>
-                {/* Item info */}
-                <th className="text-left py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-700 min-w-[240px]">
-                  품목
-                </th>
-
-                {/* Inventory */}
-                <th className="text-left py-3 px-4 text-[10px] font-bold text-indigo-500 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-700 min-w-[180px]">
-                  창고별 재고
-                </th>
-
-                {/* Total Stock */}
-                <th className="text-right py-3 px-4 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-700 bg-indigo-50/50 dark:bg-indigo-900/10 whitespace-nowrap">
-                  재고 합계
-                </th>
-
-                {/* Pending / Status */}
-                <th className="text-center py-3 px-3 text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-700 min-w-[120px]">
-                  상태
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && !isLoading ? (
-                <tr>
-                  <td colSpan={4} className="py-16 text-center text-zinc-400">
-                    {search ? "검색 결과가 없습니다" : "데이터가 없습니다"}
-                  </td>
-                </tr>
-              ) : (
-                filtered.slice(0, 200).map((item) => (
-                  <tr
-                    key={item.code}
-                    className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group"
-                  >
-                    {/* Item */}
-                    <td className="py-3 px-4">
-                      <p className="font-medium text-zinc-900 dark:text-zinc-100 truncate max-w-[240px] group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                        {item.name}
-                      </p>
-                      <p className="text-[10px] text-zinc-400 font-mono">{item.code}</p>
-                      <PendingTags
-                        pendingSales={item.pendingSales}
-                        pendingPurchases={item.pendingPurchases}
-                      />
-                    </td>
-
-                    {/* Inventory pills */}
-                    <td className="py-3 px-4">
-                      <WarehousePills stockByWarehouse={item.stockByWarehouse} />
-                    </td>
-
-                    {/* Total Stock */}
-                    <td className="py-3 px-4 text-right font-mono bg-indigo-50/30 dark:bg-indigo-900/5">
-                      <span className="font-bold text-indigo-700 dark:text-indigo-300 text-xs">{fmt(item.totalStock)}</span>
-                    </td>
-
-                    {/* Status */}
-                    <td className="py-3 px-3 text-center">
-                      <StatusBadge stock={item.totalStock} pendingOut={item.totalPendingSalesQty} />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {filtered.length > 200 && (
-          <div className="px-4 py-3 text-xs text-zinc-400 border-t border-zinc-100 dark:border-zinc-800 text-center">
-            {filtered.length}개 중 200개만 표시됩니다. 검색으로 범위를 좁혀주세요.
+      {/* Items Tab */}
+      {activeTab === 'items' && (
+        <>
+          {/* Summary strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <MiniCard label="품목 수" value={fmt(mergedItems.length)} />
+            <MiniCard label="현재고 합계" value={fmt(stats.totalStock)} color="indigo" />
+            <MiniCard label="미판매 잔량" value={fmt(stats.totalPendingOut)} color="amber" />
+            <MiniCard label="미구매 잔량" value={fmt(stats.totalPendingIn)} color="emerald" />
           </div>
-        )}
-      </div>
 
-      {/* Loading overlay */}
-      {isLoading && mergedItems.length === 0 && (
-        <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400">
-          <Loader2 className="w-8 h-8 animate-spin" />
-          <p>데이터를 불러오는 중...</p>
-        </div>
+          {/* Filters bar */}
+          <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+              <Search className="w-4 h-4 text-zinc-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="품목코드 또는 품목명 검색..."
+                className="text-sm bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 w-full"
+              />
+            </div>
+
+            <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showOnlyWithPending}
+                onChange={(e) => setShowOnlyWithPending(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-zinc-300 dark:border-zinc-600 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap">미판매/미구매만</span>
+            </label>
+
+            <div className="ml-auto" />
+
+            <ExcelDownloadButton
+              onClick={handleItemsExcelDownload}
+              disabled={filtered.length === 0}
+            />
+
+            {isLoadingItems && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
+          </div>
+
+          {/* Main Table */}
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-800/80 backdrop-blur">
+                  <tr>
+                    <th className="text-left py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-700 min-w-[240px]">
+                      품목
+                    </th>
+                    <th className="text-left py-3 px-4 text-[10px] font-bold text-indigo-500 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-700 min-w-[180px]">
+                      창고별 재고
+                    </th>
+                    <th className="text-right py-3 px-4 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-700 bg-indigo-50/50 dark:bg-indigo-900/10 whitespace-nowrap">
+                      재고 합계
+                    </th>
+                    <th className="text-center py-3 px-3 text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-700 min-w-[120px]">
+                      상태
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 && !isLoadingItems ? (
+                    <tr>
+                      <td colSpan={4} className="py-16 text-center text-zinc-400">
+                        {search ? "검색 결과가 없습니다" : "데이터가 없습니다"}
+                      </td>
+                    </tr>
+                  ) : (
+                    filtered.slice(0, 200).map((item) => (
+                      <tr
+                        key={item.code}
+                        className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group"
+                      >
+                        <td className="py-3 px-4">
+                          <p className="font-medium text-zinc-900 dark:text-zinc-100 truncate max-w-[240px] group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                            {item.name}
+                          </p>
+                          <p className="text-[10px] text-zinc-400 font-mono">{item.code}</p>
+                          <PendingTags
+                            pendingSales={item.pendingSales}
+                            pendingPurchases={item.pendingPurchases}
+                          />
+                        </td>
+                        <td className="py-3 px-4">
+                          <WarehousePills stockByWarehouse={item.stockByWarehouse} />
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono bg-indigo-50/30 dark:bg-indigo-900/5">
+                          <span className="font-bold text-indigo-700 dark:text-indigo-300 text-xs">{fmt(item.totalStock)}</span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <StatusBadge stock={item.totalStock} pendingOut={item.totalPendingSalesQty} />
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {filtered.length > 200 && (
+              <div className="px-4 py-3 text-xs text-zinc-400 border-t border-zinc-100 dark:border-zinc-800 text-center">
+                {filtered.length}개 중 200개만 표시됩니다. 검색으로 범위를 좁혀주세요.
+              </div>
+            )}
+          </div>
+
+          {isLoadingItems && mergedItems.length === 0 && (
+            <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400">
+              <Loader2 className="w-8 h-8 animate-spin" />
+              <p>데이터를 불러오는 중...</p>
+            </div>
+          )}
+        </>
       )}
-    </div>
-  );
-}
 
-// ── Mini stat card ──
+      {/* Daily Tab */}
+      {activeTab === 'daily' && (
+        <>
+          {/* Controls */}
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="pl-10 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              />
+            </div>
 
-function MiniCard({
-  label, value, color,
-}: {
-  label: string;
-  value: string;
-  color?: "blue" | "indigo" | "amber" | "emerald";
-}) {
-  const valueColor = color === "blue"
-    ? "text-blue-600 dark:text-blue-400"
-    : color === "indigo"
-      ? "text-indigo-600 dark:text-indigo-400"
-      : color === "amber"
-        ? "text-amber-600 dark:text-amber-400"
-        : color === "emerald"
-          ? "text-emerald-600 dark:text-emerald-400"
-          : "text-zinc-900 dark:text-zinc-100";
+            <ExcelDownloadButton
+              onClick={handleDailyExcelDownload}
+              disabled={!dailyData || branchesToShow.length === 0}
+            />
 
-  return (
-    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 shadow-sm">
-      <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">{label}</p>
-      <p className={`text-lg font-bold mt-0.5 ${valueColor}`}>{value}</p>
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-2 px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-sm font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all"
+            >
+              <Printer className="w-4 h-4" /> 인쇄
+            </button>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-xl flex items-center gap-3 text-red-700 dark:text-red-300">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm font-medium">{error}</p>
+              <button onClick={() => fetchDailyData()} className="ml-auto text-xs font-bold underline hover:no-underline">다시 시도</button>
+            </div>
+          )}
+
+          {/* Branch Selection */}
+          {dailyData && (
+            <div className="flex flex-wrap items-center gap-2 bg-zinc-50 dark:bg-zinc-900/50 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-x-auto">
+              <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider px-2">부서 필터:</span>
+              {dailyData.branches.map(branch => (
+                <button
+                  key={branch}
+                  onClick={() => toggleBranch(branch)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    selectedBranches.includes(branch)
+                      ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                      : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-600"
+                  }`}
+                >
+                  {branch}
+                </button>
+              ))}
+              <button
+                onClick={() => setSelectedBranches(dailyData.branches)}
+                className="text-xs text-blue-600 font-medium px-2 hover:underline"
+              >
+                전체 선택
+              </button>
+            </div>
+          )}
+
+          {/* Daily Table */}
+          <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-zinc-50 dark:bg-zinc-900/80">
+                    <th className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[120px]">분류</th>
+                    <th className="sticky left-[120px] z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[100px]">산업군</th>
+                    <th className="sticky left-[220px] z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[100px]">티어</th>
+                    {branchesToShow.map(branch => (
+                      <th key={branch} className="p-4 border-b border-zinc-200 dark:border-zinc-800 text-center min-w-[120px]">
+                        <span className="block text-[10px] text-zinc-400 uppercase tracking-widest mb-1">지사/사업소</span>
+                        <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{branch}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {METRICS.map((metric, metricIdx) => (
+                    <React.Fragment key={metric.id}>
+                      {CATEGORIES.map((cat, catIdx) => (
+                        <tr
+                          key={`${metric.id}-${cat.id}`}
+                          className={`group hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 transition-colors ${
+                            catIdx === CATEGORIES.length - 1 ? "border-b-2 border-zinc-200 dark:border-zinc-800" : "border-b border-zinc-100 dark:border-zinc-900"
+                          }`}
+                        >
+                          {catIdx === 0 && (
+                            <td
+                              rowSpan={CATEGORIES.length}
+                              className="sticky left-0 z-10 bg-white dark:bg-zinc-950 p-4 border-r border-zinc-200 dark:border-zinc-800 font-bold text-zinc-900 dark:text-zinc-100 align-middle"
+                            >
+                              <div className="flex flex-col items-center gap-2">
+                                <metric.icon className={`w-5 h-5 ${
+                                  metric.id === 'beginning' ? 'text-zinc-400' :
+                                  metric.id === 'purchase' ? 'text-emerald-500' :
+                                  metric.id === 'sales' ? 'text-blue-500' :
+                                  metric.id === 'transfer' ? 'text-amber-500' :
+                                  'text-indigo-500'
+                                }`} />
+                                <span className="text-center leading-tight">{metric.label}</span>
+                              </div>
+                            </td>
+                          )}
+                          <td className="sticky left-[120px] z-10 bg-white dark:bg-zinc-950 p-4 border-r border-zinc-200 dark:border-zinc-800 font-medium text-zinc-700 dark:text-zinc-300">
+                            {cat.label}
+                          </td>
+                          <td className="sticky left-[220px] z-10 bg-white dark:bg-zinc-950 p-4 border-r border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-500">
+                            {cat.subLabel}
+                          </td>
+                          {branchesToShow.map(branch => {
+                            const branchData = dailyData?.stats[branch]?.[cat.id];
+                            let val = 0;
+                            if (metric.id === 'inventoryDM') {
+                              val = (branchData?.inventory || 0) / 200;
+                            } else {
+                              val = (branchData as any)?.[metric.id] || 0;
+                            }
+
+                            return (
+                              <td key={branch} className={`p-4 text-right font-mono text-sm ${
+                                val > 0 ? "text-zinc-900 dark:text-zinc-100 font-semibold" : "text-zinc-300 dark:text-zinc-800"
+                              }`}>
+                                {fmtDM(val)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {(!dailyData || branchesToShow.length === 0) && !isLoadingDaily && (
+              <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
+                <Package className="w-12 h-12 mb-4 opacity-20" />
+                <p className="text-lg">표시할 데이터가 없습니다.</p>
+                <p className="text-sm">부서 필터에서 지사를 선택하거나 날짜를 변경해 보세요.</p>
+              </div>
+            )}
+
+            {isLoadingDaily && (
+              <div className="absolute inset-0 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-[1px] flex items-center justify-center z-50">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+                  <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">재고 파악 시트 생성 중...</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Summary Footer */}
+          {dailyData && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
+                <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">오늘의 총 매입 (Liter)</p>
+                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">
+                  {fmtDM(Object.values(dailyData.stats).reduce((acc, b) =>
+                    acc + Object.values(b).reduce((acc2, c) => acc2 + (c.purchase || 0), 0), 0))} L
+                </p>
+              </div>
+              <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-xl border border-blue-100 dark:border-blue-900/50">
+                <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-1">오늘의 총 매출 (Liter)</p>
+                <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+                  {fmtDM(Object.values(dailyData.stats).reduce((acc, b) =>
+                    acc + Object.values(b).reduce((acc2, c) => acc2 + (c.sales || 0), 0), 0))} L
+                </p>
+              </div>
+              <div className="p-4 bg-indigo-50 dark:bg-indigo-950/20 rounded-xl border border-indigo-100 dark:border-indigo-900/50">
+                <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">현재고 총계 (Liter)</p>
+                <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">
+                  {fmtDM(Object.values(dailyData.stats).reduce((acc, b) =>
+                    acc + Object.values(b).reduce((acc2, c) => acc2 + (c.inventory || 0), 0), 0))} L
+                </p>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

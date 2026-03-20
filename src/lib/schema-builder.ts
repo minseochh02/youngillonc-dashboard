@@ -101,8 +101,7 @@ Columns: ${table.columns.join(', ')}
 
 # Query Rules
 
-- SELECT only (no INSERT/UPDATE/DELETE/DROP)
-- Use LIMIT (max 1000 rows)
+- ONLY SELECT queries allowed (NEVER use INSERT/UPDATE/DELETE/DROP/CREATE/ALTER)
 - Clean numeric columns: CAST(REPLACE(column,',','') AS NUMERIC)
 - Date format: YYYY-MM-DD
 `;

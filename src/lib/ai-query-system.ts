@@ -19,6 +19,23 @@ interface QueryResult {
   attempts: number;
 }
 
+interface SingleQueryResult {
+  title: string;
+  description?: string;
+  sql: string;
+  rows: any[];
+  columns: string[];
+  intent: string;
+  verified: boolean;
+}
+
+interface MultiQueryResult {
+  results: SingleQueryResult[];
+  attempts: number;
+  totalRows: number;
+  errors?: string[];
+}
+
 /**
  * Generate SQL using AI with full context
  */
@@ -54,8 +71,8 @@ CRITICAL RULES - SQLITE ONLY:
 2. NEVER use INSERT, UPDATE, DELETE, DROP
 3. Use exact table and column names from schema
 4. Clean numeric columns: CAST(REPLACE(column,',','') AS NUMERIC)
-5. Add LIMIT (max 1000 rows)
-6. Return ONLY the SQL query (no markdown, no explanations)
+5. Return ONLY the SQL query (no markdown, no explanations)
+6. EVERY query MUST start with the word 'SELECT'. Do NOT use 'WITH' at the top level; use subqueries instead if needed.
 
 SQLITE LIMITATIONS (DO NOT USE):
 ❌ GROUP BY ... WITH ROLLUP (MySQL only)
@@ -68,6 +85,29 @@ FOR TOTALS: Use UNION ALL with a separate SELECT for the total row
 
 IMPORTANT: Only SELECT columns that users should see. Do NOT add helper columns (sort_order, row_num, etc.)
 If you need specific ordering, just don't use ORDER BY, or use simple column names only.
+
+MULTI-QUERY DETECTION:
+If the user's question requires MULTIPLE unrelated tables/topics, respond with JSON:
+{
+  "multiQuery": true,
+  "queries": [
+    { "title": "Korean title", "sql": "SELECT ...", "intent": "..." },
+    { "title": "Korean title", "sql": "SELECT ...", "intent": "..." }
+  ]
+}
+
+CRITICAL: Each "sql" field MUST be a valid SELECT query. NEVER use INSERT, UPDATE, DELETE, DROP, CREATE, ALTER.
+
+Examples needing multi-query:
+- "오늘 매출과 재고" → sales + inventory (2 SELECT queries)
+- "판매와 구매" → sales + purchases (2 SELECT queries)
+- "매출 재고 수금" → sales + inventory + collections (3 SELECT queries)
+
+Examples NOT needing multi-query (single table):
+- "오늘 창원 매출" → single SELECT query
+- "재고 현황" → single SELECT query
+
+If single query needed, return just the SELECT query as before (no JSON).
 
 Generate a SQL query to answer the user's question.`;
 
@@ -304,6 +344,132 @@ function detectQueryIntent(sql: string, userQuestion: string): string {
   }
 
   return 'generic';
+}
+
+/**
+ * Execute multi-query with AI detection
+ */
+export async function executeMultiQuery(userQuestion: string): Promise<MultiQueryResult> {
+  const maxAttempts = 4;
+  let attempts = 0;
+  let previousError: string | undefined;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    console.log(`\n🤖 Multi-Query Detection Attempt ${attempts}/${maxAttempts}...`);
+
+    try {
+      // Generate SQL with multi-query detection
+      const { sql, intent } = await generateSQL(userQuestion, previousError);
+
+      // Try to parse as JSON (multi-query response)
+      let multiQueryResponse: any = null;
+      try {
+        // Extract JSON from markdown if present
+        const jsonMatch = sql.match(/```(?:json)?\s*([\s\S]*?)```/) || sql.match(/\{[\s\S]*\}/);
+        const jsonText = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : sql;
+        multiQueryResponse = JSON.parse(jsonText);
+      } catch {
+        // Not JSON, treat as single query
+        multiQueryResponse = null;
+      }
+
+      // Check if it's a multi-query response
+      if (multiQueryResponse && multiQueryResponse.multiQuery && Array.isArray(multiQueryResponse.queries)) {
+        console.log(`\n✅ Multi-query detected: ${multiQueryResponse.queries.length} queries`);
+
+        // Execute each query sequentially
+        const results: SingleQueryResult[] = [];
+        const errors: string[] = [];
+
+        for (const queryDef of multiQueryResponse.queries) {
+          try {
+            const result = await executeSQL(queryDef.sql);
+            const rows = result.rows || [];
+            const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+            results.push({
+              title: queryDef.title,
+              description: queryDef.description,
+              sql: queryDef.sql,
+              rows,
+              columns,
+              intent: queryDef.intent,
+              verified: true
+            });
+          } catch (sqlError: any) {
+            const errorMsg = sqlError.message || String(sqlError);
+            console.error(`Query "${queryDef.title}" failed:`, errorMsg);
+            errors.push(`${queryDef.title}: ${errorMsg}`);
+          }
+        }
+
+        // Return results even if some queries failed (partial success)
+        if (results.length > 0) {
+          return {
+            results,
+            attempts,
+            totalRows: results.reduce((sum, r) => sum + r.rows.length, 0),
+            errors: errors.length > 0 ? errors : undefined
+          };
+        }
+
+        // All queries failed, retry with error feedback
+        if (attempts >= maxAttempts) {
+          throw new Error(`All queries failed: ${errors.join('; ')}`);
+        }
+
+        previousError = `All queries failed: ${errors.join('; ')}`;
+        continue;
+      }
+
+      // Single query response - execute normally
+      console.log(`\n✅ Single query detected`);
+
+      let result;
+      try {
+        result = await executeSQL(sql);
+      } catch (sqlError: any) {
+        const errorMsg = sqlError.message || String(sqlError);
+        console.log(`\n❌ SQL execution failed:`, errorMsg);
+
+        if (attempts >= maxAttempts) {
+          throw sqlError;
+        }
+
+        previousError = `SQL execution error: ${errorMsg}`;
+        continue;
+      }
+
+      const rows = result.rows || [];
+      const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+      // Return single query as multi-query result with 1 item
+      return {
+        results: [{
+          title: '검색 결과',
+          sql,
+          rows,
+          columns,
+          intent,
+          verified: true
+        }],
+        attempts,
+        totalRows: rows.length
+      };
+
+    } catch (error: any) {
+      console.error(`Attempt ${attempts} failed:`, error);
+
+      if (attempts >= maxAttempts) {
+        throw error;
+      }
+
+      previousError = error.message;
+    }
+  }
+
+  throw new Error(`Failed after ${maxAttempts} attempts`);
 }
 
 /**

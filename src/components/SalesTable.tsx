@@ -234,8 +234,8 @@ export default function SalesTable({ data, queryKey }: SalesTableProps) {
                     )}
                   </span>
                 </th>
-                <th colSpan={3} className="px-4 py-3 border-r border-b border-zinc-200 dark:border-zinc-800 bg-blue-50/50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-300 font-semibold tracking-wide">모빌제품 매출액 및 중량</th>
-                <th colSpan={2} className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-amber-50/50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-300 font-semibold tracking-wide">모빌제품 구매 중량</th>
+                <th colSpan={3} className="px-4 py-3 border-r border-b border-zinc-200 dark:border-zinc-800 bg-blue-50/50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-300 font-semibold tracking-wide">모빌제품 매출액 및 용량</th>
+                <th colSpan={2} className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-amber-50/50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-300 font-semibold tracking-wide">모빌제품 구매 용량</th>
               </tr>
               {/* Secondary Header (Sub-categories) */}
               <tr className="bg-zinc-50/50 dark:bg-zinc-900/50 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
@@ -251,7 +251,7 @@ export default function SalesTable({ data, queryKey }: SalesTableProps) {
                 </th>
                 <th onClick={() => handleSort('mobileSalesWeight')} className="group cursor-pointer px-3 py-3 border-r border-b border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
                   <span className="inline-flex items-center gap-1">
-                    판매 중량
+                    판매 용량
                     {sortState.column === 'mobileSalesWeight' ? (
                       sortState.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
                     ) : (
@@ -271,7 +271,7 @@ export default function SalesTable({ data, queryKey }: SalesTableProps) {
                 </th>
                 <th onClick={() => handleSort('mobilePurchaseWeight')} className="group cursor-pointer px-3 py-3 border-r border-b border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
                   <span className="inline-flex items-center gap-1">
-                    구매 중량
+                    구매 용량
                     {sortState.column === 'mobilePurchaseWeight' ? (
                       sortState.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
                     ) : (
@@ -386,7 +386,7 @@ export default function SalesTable({ data, queryKey }: SalesTableProps) {
           "사업소 통합: '사업소', '지사' 명칭을 제거하고 '화성', '창원' 등 핵심 명칭으로 데이터를 자동 병합합니다.",
           "수치 정밀화: 데이터베이스 내 콤마(,)가 포함된 텍스트 수치를 실제 계산 가능한 숫자로 변환하여 오차 없는 합계를 산출합니다.",
           "Mobil 전용 필터: 품목 그룹 코드가 IL, PVL, MB, CVL, AVI, MAR인 핵심 모빌 브랜드 제품만 선별하여 집계합니다.",
-          "플래그십 식별: 내부 관리 코드 'FLA'가 지정된 고부가가치 제품군의 중량을 별도로 분리하여 표시합니다."
+          "플래그십 식별: 내부 관리 코드 'FLA'가 지정된 고부가가치 제품군의 용량을 별도로 분리하여 표시합니다."
         ]}
       />
     </div>

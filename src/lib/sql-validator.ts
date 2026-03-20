@@ -19,16 +19,9 @@ export function validateSQL(sql: string): ValidationResult {
   // Normalize SQL for validation
   const normalizedSQL = sql.trim().toLowerCase();
 
-  // 1. Check if query is SELECT only (allow WITH clauses for CTEs)
-  if (!normalizedSQL.startsWith('select') && !normalizedSQL.startsWith('with')) {
-    return {
-      isValid: false,
-      error: '보안상의 이유로 SELECT 쿼리만 실행할 수 있습니다.'
-    };
-  }
-
-  // 1b. If it starts with WITH, ensure it contains SELECT
-  if (normalizedSQL.startsWith('with') && !normalizedSQL.includes('select')) {
+  // 1. Check if query is SELECT only (must start with SELECT)
+  // Note: Even if you use CTEs (WITH clause), the overall query should be wrapped or structured to start with SELECT for tool compatibility.
+  if (!normalizedSQL.startsWith('select')) {
     return {
       isValid: false,
       error: '보안상의 이유로 SELECT 쿼리만 실행할 수 있습니다.'

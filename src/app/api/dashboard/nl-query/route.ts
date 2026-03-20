@@ -5,10 +5,68 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { executeAIQuery } from '@/lib/ai-query-system';
+import { executeAIQuery, executeMultiQuery } from '@/lib/ai-query-system';
 import { validateSQL, sanitizeSQL } from '@/lib/sql-validator';
-import { checkRateLimit, getRateLimitIdentifier, formatResetTime } from '@/lib/rate-limiter';
+import { checkRateLimit, checkRateLimitMultiple, getRateLimitIdentifier, formatResetTime } from '@/lib/rate-limiter';
 import { executeSQL } from '../../../../../egdesk-helpers';
+import { generateSQLFromTemplate } from '@/lib/query-templates';
+
+/**
+ * Determine component hint based on intent
+ */
+function determineComponentHint(intent: string): string {
+  if (intent === 'daily_sales_by_branch' || intent === 'monthly_sales_by_branch') {
+    return 'SalesTable';
+  }
+  return 'GenericResultTable';
+}
+
+/**
+ * Format multi-query response
+ */
+function formatMultiQueryResponse(
+  results: Array<{
+    title: string;
+    description?: string;
+    rows: any[];
+    columns: string[];
+    sql: string;
+    intent: string;
+  }>,
+  metadata: {
+    executionTime: number;
+    method: 'template' | 'ai';
+    remaining: number;
+    attempts?: number;
+    verified?: boolean;
+    errors?: string[];
+  }
+) {
+  return NextResponse.json({
+    success: true,
+    data: {
+      results: results.map(r => ({
+        title: r.title,
+        description: r.description,
+        rows: r.rows,
+        columns: r.columns,
+        sql: r.sql,
+        intent: r.intent,
+        componentHint: determineComponentHint(r.intent)
+      }))
+    },
+    metadata: {
+      executionTime: metadata.executionTime,
+      totalRowCount: results.reduce((sum, r) => sum + r.rows.length, 0),
+      queries: results.length,
+      method: metadata.method,
+      remaining: metadata.remaining,
+      ...(metadata.attempts && { attempts: metadata.attempts }),
+      ...(metadata.verified !== undefined && { verified: metadata.verified }),
+      ...(metadata.errors && { errors: metadata.errors })
+    }
+  });
+}
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -126,10 +184,84 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Execute AI-driven query with verification
-    let queryResult;
+    // 3. Try template system first
+    const templateResult = generateSQLFromTemplate(userQuery);
+
+    if (templateResult) {
+      console.log(`\n✅ Template matched: ${templateResult.results.length} queries`);
+
+      // Check rate limit for multiple queries
+      const queryCount = templateResult.results.length;
+      const multiRateLimit = checkRateLimitMultiple(rateLimitId, queryCount);
+
+      if (!multiRateLimit.allowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `너무 많은 요청입니다. ${formatResetTime(multiRateLimit.resetTime)} 후 다시 시도해주세요.`
+          },
+          { status: 429 }
+        );
+      }
+
+      // Execute all template queries
+      const results = [];
+      const errors: string[] = [];
+
+      for (const templateQuery of templateResult.results) {
+        try {
+          const sanitized = sanitizeSQL(templateQuery.sql);
+          const validation = validateSQL(sanitized);
+
+          if (!validation.isValid) {
+            errors.push(`${templateQuery.title}: 생성된 쿼리가 안전하지 않습니다.`);
+            continue;
+          }
+
+          const result = await executeSQL(sanitized);
+          const rows = Array.isArray(result) ? result : (result?.rows || result?.data || []);
+          const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+          results.push({
+            title: templateQuery.title,
+            description: templateQuery.description,
+            rows,
+            columns,
+            sql: sanitized,
+            intent: templateQuery.intent
+          });
+        } catch (sqlError: any) {
+          console.error(`Template query "${templateQuery.title}" failed:`, sqlError);
+          errors.push(`${templateQuery.title}: ${sqlError.message}`);
+        }
+      }
+
+      // Return results (even if some queries failed)
+      if (results.length > 0) {
+        const executionTime = Date.now() - startTime;
+        return formatMultiQueryResponse(results, {
+          executionTime,
+          method: 'template',
+          remaining: multiRateLimit.remaining,
+          ...(errors.length > 0 && { errors })
+        });
+      }
+
+      // All template queries failed
+      return NextResponse.json(
+        {
+          success: false,
+          error: '템플릿 쿼리 실행 중 오류가 발생했습니다.',
+          errors
+        },
+        { status: 400 }
+      );
+    }
+
+    // 4. Fall back to AI-driven multi-query with verification
+    let multiQueryResult;
     try {
-      queryResult = await executeAIQuery(userQuery);
+      multiQueryResult = await executeMultiQuery(userQuery);
     } catch (aiError: any) {
       console.error('AI query failed:', aiError);
 
@@ -156,11 +288,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Validate SQL (safety check)
-    const sanitized = sanitizeSQL(queryResult.sql);
-    const validation = validateSQL(sanitized);
+    // 5. Check rate limit for AI multi-query
+    const queryCount = multiQueryResult.results.length;
+    const multiRateLimit = checkRateLimitMultiple(rateLimitId, queryCount);
 
-    if (!validation.isValid) {
+    if (!multiRateLimit.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `너무 많은 요청입니다. ${formatResetTime(multiRateLimit.resetTime)} 후 다시 시도해주세요.`
+        },
+        { status: 429 }
+      );
+    }
+
+    // 6. Validate all SQL queries (safety check)
+    const validatedResults = [];
+    for (const result of multiQueryResult.results) {
+      const sanitized = sanitizeSQL(result.sql);
+      const validation = validateSQL(sanitized);
+
+      if (!validation.isValid) {
+        console.warn(`Query "${result.title}" failed validation`);
+        continue;
+      }
+
+      validatedResults.push({
+        ...result,
+        sql: sanitized
+      });
+    }
+
+    if (validatedResults.length === 0) {
       return NextResponse.json(
         {
           success: false,
@@ -170,34 +329,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5. Determine component hint
-    let componentHint = 'GenericResultTable';
-    if (queryResult.intent === 'daily_sales_by_branch' ||
-        queryResult.intent === 'monthly_sales_by_branch') {
-      componentHint = 'SalesTable';
-    }
-
     const executionTime = Date.now() - startTime;
 
-    // 6. Return response
-    return NextResponse.json({
-      success: true,
-      data: {
-        rows: queryResult.rows,
-        columns: queryResult.columns,
-        sql: queryResult.sql,
-        intent: queryResult.intent,
-        componentHint
-      },
-      metadata: {
+    // 7. Return multi-query response
+    return formatMultiQueryResponse(
+      validatedResults.map(r => ({
+        title: r.title,
+        description: r.description,
+        rows: r.rows,
+        columns: r.columns,
+        sql: r.sql,
+        intent: r.intent
+      })),
+      {
         executionTime,
-        rowCount: queryResult.rows.length,
         method: 'ai',
-        verified: queryResult.verified,
-        attempts: queryResult.attempts,
-        remaining: rateLimit.remaining
+        remaining: multiRateLimit.remaining,
+        attempts: multiQueryResult.attempts,
+        verified: true,
+        errors: multiQueryResult.errors
       }
-    });
+    );
 
   } catch (error: any) {
     console.error('NL Query API error:', error);

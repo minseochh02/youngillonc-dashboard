@@ -65,6 +65,69 @@ export function checkRateLimit(identifier: string): { allowed: boolean; remainin
 }
 
 /**
+ * Check rate limit for multiple queries at once
+ * Deducts 'count' queries from the limit
+ */
+export function checkRateLimitMultiple(
+  identifier: string,
+  count: number
+): { allowed: boolean; remaining: number; resetTime: number } {
+  const now = Date.now();
+  const entry = rateLimitStore.get(identifier);
+
+  // Clean up expired entries periodically
+  if (Math.random() < 0.01) { // 1% chance to cleanup
+    cleanupExpiredEntries(now);
+  }
+
+  if (!entry || now >= entry.resetTime) {
+    // No entry or expired - create new entry
+    const resetTime = now + RATE_LIMIT_WINDOW;
+
+    if (count > RATE_LIMIT_MAX) {
+      // Request exceeds rate limit
+      return {
+        allowed: false,
+        remaining: 0,
+        resetTime
+      };
+    }
+
+    rateLimitStore.set(identifier, {
+      count,
+      resetTime
+    });
+
+    return {
+      allowed: true,
+      remaining: RATE_LIMIT_MAX - count,
+      resetTime
+    };
+  }
+
+  // Entry exists and is valid
+  const newCount = entry.count + count;
+
+  if (newCount > RATE_LIMIT_MAX) {
+    return {
+      allowed: false,
+      remaining: Math.max(0, RATE_LIMIT_MAX - entry.count),
+      resetTime: entry.resetTime
+    };
+  }
+
+  // Increment counter by count
+  entry.count = newCount;
+  rateLimitStore.set(identifier, entry);
+
+  return {
+    allowed: true,
+    remaining: RATE_LIMIT_MAX - entry.count,
+    resetTime: entry.resetTime
+  };
+}
+
+/**
  * Clean up expired rate limit entries
  */
 function cleanupExpiredEntries(now: number): void {

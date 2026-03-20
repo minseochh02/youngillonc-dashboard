@@ -59,9 +59,9 @@ nov3Mobil.forEach(row => {
 
 console.log('\n=== Breakdown by Product Code ===');
 Object.keys(byCode).forEach(code => {
-  console.log(`\n${code}: ${byCode[code].weight} kg (${byCode[code].count} items)`);
+  console.log(`\n${code}: ${byCode[code].weight} L (${byCode[code].count} items)`);
   byCode[code].items.slice(0, 5).forEach(item => {
-    console.log(`  - ${item.품목명}: ${item.중량}kg (${item.창고명})`);
+    console.log(`  - ${item.품목명}: ${item.중량}L (${item.창고명})`);
   });
   if (byCode[code].items.length > 5) {
     console.log(`  ... and ${byCode[code].items.length - 5} more items`);
@@ -69,7 +69,7 @@ Object.keys(byCode).forEach(code => {
 });
 
 console.log('\n=== Total ===');
-console.log('Total weight:', totalWeight, 'kg');
+console.log('Total volume:', totalWeight, 'L');
 console.log('Total volume (assuming 1L ≈ 1kg):', totalWeight, 'L');
 console.log('Expected:', '10,621 L');
 console.log('Match:', totalWeight === 10621 ? '✓ YES' : '✗ NO');

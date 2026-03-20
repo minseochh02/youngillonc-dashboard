@@ -7,9 +7,20 @@
 
 export interface QueryTemplate {
   pattern: RegExp;
-  sqlGenerator: (params: Record<string, string>) => string;
   intent: string;
-  paramExtractor: (query: string) => Record<string, string>;
+  paramExtractor: (query: string) => Record<string, string> | null;
+
+  // Single-query (existing)
+  sqlGenerator?: (params: Record<string, string>) => string;
+
+  // Multi-query (new)
+  multiQuery?: boolean;
+  sqlGenerators?: Array<{
+    title: string;
+    description?: string;
+    generator: (params: Record<string, string>) => string;
+    intent: string;
+  }>;
 }
 
 /**
@@ -105,7 +116,121 @@ function normalizeBranch(columnName: string): string {
  * Query Templates
  */
 export const QUERY_TEMPLATES: QueryTemplate[] = [
-  // 1. Specific date + division sales (e.g., "2월 7일 창원 매출")
+  // Multi-query templates (should come first for priority matching)
+
+  // 1. Sales and Inventory (e.g., "오늘 매출과 재고", "매출 재고")
+  {
+    pattern: /매출.*재고|재고.*매출/i,
+    intent: 'sales_and_inventory',
+    multiQuery: true,
+    paramExtractor: (query) => {
+      const date = extractDateParam(query);
+      const division = extractDivision(query);
+      return { date, division: division || '' };
+    },
+    sqlGenerators: [
+      {
+        title: '매출 현황',
+        intent: 'daily_sales_by_branch',
+        generator: (params) => {
+          const divisionFilter = params.division
+            ? `AND 거래처그룹1코드명 LIKE '%${params.division}%'`
+            : '';
+
+          return `
+            SELECT
+              ${normalizeBranch('거래처그룹1코드명')} as 사업소,
+              SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as 총매출액
+            FROM sales
+            WHERE 일자 = '${params.date}'
+              ${divisionFilter}
+            GROUP BY ${normalizeBranch('거래처그룹1코드명')}
+            ORDER BY 총매출액 DESC
+          `;
+        }
+      },
+      {
+        title: '재고 현황',
+        intent: 'inventory_status',
+        generator: (params) => {
+          const divisionFilter = params.division
+            ? `WHERE 창고명 LIKE '%${params.division}%'`
+            : '';
+
+          return `
+            SELECT
+              창고명,
+              품목명_규격_,
+              CAST(REPLACE(재고수량, ',', '') AS NUMERIC) as 재고수량
+            FROM inventory
+            ${divisionFilter}
+            ORDER BY CAST(REPLACE(재고수량, ',', '') AS NUMERIC) DESC
+            LIMIT 100
+          `;
+        }
+      }
+    ]
+  },
+
+  // 2. Sales and Collections (e.g., "매출과 수금", "수금 매출")
+  {
+    pattern: /매출.*수금|수금.*매출/i,
+    intent: 'sales_and_collections',
+    multiQuery: true,
+    paramExtractor: (query) => {
+      const date = extractDateParam(query);
+      const division = extractDivision(query);
+      return { date, division: division || '' };
+    },
+    sqlGenerators: [
+      {
+        title: '매출 현황',
+        intent: 'daily_sales_by_branch',
+        generator: (params) => {
+          const divisionFilter = params.division
+            ? `AND 거래처그룹1코드명 LIKE '%${params.division}%'`
+            : '';
+
+          return `
+            SELECT
+              ${normalizeBranch('거래처그룹1코드명')} as 사업소,
+              SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as 총매출액
+            FROM sales
+            WHERE 일자 = '${params.date}'
+              ${divisionFilter}
+            GROUP BY ${normalizeBranch('거래처그룹1코드명')}
+            ORDER BY 총매출액 DESC
+          `;
+        }
+      },
+      {
+        title: '수금 현황',
+        intent: 'daily_collections',
+        generator: (params) => {
+          const divisionFilter = params.division
+            ? `AND 부서명 LIKE '%${params.division}%'`
+            : '';
+
+          return `
+            SELECT
+              부서명 as 사업소,
+              거래처명,
+              SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as 수금액
+            FROM deposits
+            WHERE 전표번호 = '${params.date}'
+              AND 계정명 = '외상매출금'
+              ${divisionFilter}
+            GROUP BY 부서명, 거래처명
+            ORDER BY 수금액 DESC
+          `;
+        }
+      }
+    ]
+  },
+
+  // Single-query templates
+
+  // 3. Specific date + division sales (e.g., "2월 7일 창원 매출")
   {
     pattern: /(\d{1,2}월\s*\d{1,2}일|\d{4}-\d{2}-\d{2}|오늘|어제).*(창원|화성|MB|남부|중부|서부|동부|제주|부산|서울).*매출|(창원|화성|MB|남부|중부|서부|동부|제주|부산|서울).*(\d{1,2}월\s*\d{1,2}일|\d{4}-\d{2}-\d{2}|오늘|어제).*매출/i,
     intent: 'daily_sales_by_division',
@@ -124,7 +249,7 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     `
   },
 
-  // 2. Today's total sales
+  // 4. Today's total sales
   {
     pattern: /오늘.*매출|매출.*오늘/i,
     intent: 'daily_total_sales',
@@ -386,16 +511,47 @@ export function matchQueryTemplate(query: string): { template: QueryTemplate; pa
   return null;
 }
 
+export interface TemplateQueryResult {
+  title: string;
+  description?: string;
+  sql: string;
+  intent: string;
+}
+
+export interface MultiTemplateResult {
+  results: TemplateQueryResult[];
+}
+
 /**
  * Generate SQL from natural language query using templates
  */
-export function generateSQLFromTemplate(query: string): { sql: string; intent: string } | null {
+export function generateSQLFromTemplate(query: string): MultiTemplateResult | null {
   const match = matchQueryTemplate(query);
   if (!match) return null;
 
-  const sql = match.template.sqlGenerator(match.params).trim();
-  return {
-    sql,
-    intent: match.template.intent
-  };
+  // Multi-query template
+  if (match.template.multiQuery && match.template.sqlGenerators) {
+    return {
+      results: match.template.sqlGenerators.map(gen => ({
+        title: gen.title,
+        description: gen.description,
+        sql: gen.generator(match.params).trim(),
+        intent: gen.intent
+      }))
+    };
+  }
+
+  // Single-query template (backward compatible)
+  if (match.template.sqlGenerator) {
+    const sql = match.template.sqlGenerator(match.params).trim();
+    return {
+      results: [{
+        title: '검색 결과',
+        sql,
+        intent: match.template.intent
+      }]
+    };
+  }
+
+  return null;
 }

@@ -43,7 +43,7 @@ console.log('Breakdown by 거래처그룹1명:');
 Object.keys(byBranch)
   .sort((a, b) => byBranch[b] - byBranch[a])
   .forEach(branch => {
-    console.log(`  ${branch}: ${byBranch[branch].toLocaleString()} kg (${byBranch[branch].toLocaleString()} L)`);
+    console.log(`  ${branch}: ${byBranch[branch].toLocaleString()} L (${byBranch[branch].toLocaleString()} L)`);
     if (byBranch[branch] === 10621) {
       console.log('    ★ MATCH! This equals 10,621 L');
     }
@@ -66,7 +66,7 @@ console.log('\nBreakdown by 창고명:');
 Object.keys(byWarehouse)
   .sort((a, b) => byWarehouse[b] - byWarehouse[a])
   .forEach(warehouse => {
-    console.log(`  ${warehouse}: ${byWarehouse[warehouse].toLocaleString()} kg (${byWarehouse[warehouse].toLocaleString()} L)`);
+    console.log(`  ${warehouse}: ${byWarehouse[warehouse].toLocaleString()} L (${byWarehouse[warehouse].toLocaleString()} L)`);
     if (byWarehouse[warehouse] === 10621) {
       console.log('    ★ MATCH! This equals 10,621 L');
     }

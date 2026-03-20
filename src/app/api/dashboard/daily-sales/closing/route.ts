@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const startDate = `${date.substring(0, 7)}-01`;
 
     const getSalesBranchFilter = () => {
-      if (division === '전체') return "(ec.전체사업소 LIKE '%사업소%' OR ec.전체사업소 LIKE '%지사%')";
+      if (division === '전체') return "1=1";
       if (division === '창원') return "(ec.전체사업소 = '경남사업소' OR w.창고명 = '창원' OR c.거래처명 = '테크젠 주식회사')";
       if (division === 'MB') return "ec.전체사업소 = '벤츠'";
       if (division === '화성') return "ec.전체사업소 LIKE '%화성%'";
@@ -23,15 +23,26 @@ export async function GET(request: Request) {
     };
 
     const getPurchBranchFilter = () => {
-      if (division === '전체') return "(거래처그룹1명 LIKE '%사업소%' OR 거래처그룹1명 LIKE '%지사%')";
+      if (division === '전체') return "1=1";
       return `(거래처그룹1명 LIKE '%${division}%' OR 창고명 LIKE '%${division}%')`;
     };
 
     const getDepBranchFilter = () => {
-      if (division === '전체') return "(부서명 LIKE '%사업소%' OR 부서명 LIKE '%지사%')";
+      if (division === '전체') return "1=1";
       if (division === 'MB') return "부서명 = 'MB'";
       return `부서명 LIKE '%${division}%'`;
     };
+
+    // 0. Base subquery for sales with UNION across all division tables
+    const baseSalesSubquery = `
+      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
+      UNION ALL
+      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
+      UNION ALL
+      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
+      UNION ALL
+      SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
+    `;
 
     // 1. Sales Status Aggregation
     const salesQuery = `
@@ -56,11 +67,11 @@ export async function GET(request: Request) {
           END as amount,
           CAST(REPLACE(s.중량, ',', '') AS NUMERIC) as weight,
           s.일자
-        FROM sales s
+        FROM (${baseSalesSubquery}) s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
-        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE ${getSalesBranchFilter()}
           AND s.일자 >= '${startDate}' AND s.일자 <= '${date}'
@@ -68,7 +79,7 @@ export async function GET(request: Request) {
       GROUP BY category
     `;
 
-    // 2. Collection Status Aggregation (using ledger for daily granularity)
+    // 2. Collection Status Aggregation (using deposits and promissory_notes for better metadata)
     const collectionQuery = `
       SELECT
         method,
@@ -78,27 +89,25 @@ export async function GET(request: Request) {
       FROM (
         SELECT
           CASE
-            WHEN 적요 LIKE '%이니시스%' THEN '카드'
+            WHEN 계좌 LIKE '%카드%' OR 계좌 LIKE '%이니시스%' OR 적요 LIKE '%이니시스%' THEN '카드'
             ELSE 'Cash'
           END as method,
-          CAST(REPLACE(대변금액, ',', '') AS NUMERIC) as amount,
-          일자
-        FROM ledger
+          CAST(REPLACE(금액, ',', '') AS NUMERIC) as amount,
+          전표번호 as 일자
+        FROM deposits
         WHERE 계정명 = '외상매출금'
           AND ${getDepBranchFilter()}
-          AND CAST(REPLACE(대변금액, ',', '') AS NUMERIC) > 0
-          AND 일자 >= '${startDate}' AND 일자 <= '${date}'
+          AND 전표번호 >= '${startDate}' AND 전표번호 <= '${date}'
 
         UNION ALL
 
         SELECT
           '어음' as method,
-          CAST(REPLACE(대변금액, ',', '') AS NUMERIC) as amount,
+          CAST(REPLACE(증가금액, ',', '') AS NUMERIC) as amount,
           일자
-        FROM ledger
-        WHERE 계정명 = '받을어음'
+        FROM promissory_notes
+        WHERE 증감구분 = '증가'
           AND ${getDepBranchFilter()}
-          AND CAST(REPLACE(대변금액, ',', '') AS NUMERIC) > 0
           AND 일자 >= '${startDate}' AND 일자 <= '${date}'
       )
       GROUP BY method
@@ -124,8 +133,16 @@ export async function GET(request: Request) {
           CAST(REPLACE(중량, ',', '') AS NUMERIC) / 200.0 as amount,
           'in' as type,
           일자
-        FROM purchases
-        WHERE ${getPurchBranchFilter()} AND 일자 >= '${startDate}' AND 일자 <= '${date}'
+        FROM (
+          SELECT 일자, 거래처그룹1명, 창고명, 중량, 품목그룹1코드, 구매처명 FROM purchases
+          UNION ALL
+          SELECT 일자, 거래처그룹1명, 창고명, 중량, 품목그룹1코드, 구매처명 FROM east_division_purchases
+          UNION ALL
+          SELECT 일자, 거래처그룹1명, 창고명, 중량, 품목그룹1코드, 구매처명 FROM west_division_purchases
+          UNION ALL
+          SELECT 일자, 거래처그룹1명, 창고명, 중량, 품목그룹1코드, 구매처명 FROM south_division_purchases
+        )
+        WHERE ${getPurchBranchFilter()} AND 일자 <= '${date}'
 
         UNION ALL
 
@@ -140,13 +157,13 @@ export async function GET(request: Request) {
           CAST(REPLACE(s.중량, ',', '') AS NUMERIC) / 200.0 as amount,
           'out' as type,
           s.일자
-        FROM sales s
+        FROM (${baseSalesSubquery}) s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
-        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        WHERE ${getSalesBranchFilter()} AND s.일자 >= '${startDate}' AND s.일자 <= '${date}'
+        WHERE ${getSalesBranchFilter()} AND s.일자 <= '${date}'
       )
       GROUP BY category
     `;
@@ -160,16 +177,24 @@ export async function GET(request: Request) {
         SUM(CASE WHEN type = 'purchase' THEN volume ELSE 0 END) as purchaseMTD
       FROM (
         SELECT CAST(REPLACE(s.중량, ',', '') AS NUMERIC) as volume, 'sales' as type, s.일자
-        FROM sales s
+        FROM (${baseSalesSubquery}) s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
-        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 >= '${startDate}' AND s.일자 <= '${date}' AND i.품목그룹3코드 = 'FLA' AND i.품목그룹1코드 = 'IL' AND ${getSalesBranchFilter()}
         UNION ALL
         SELECT CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume, 'purchase' as type, 일자
-        FROM purchases
+        FROM (
+          SELECT 일자, 중량, 품목그룹3코드, 품목그룹1코드, 거래처그룹1명, 창고명 FROM purchases
+          UNION ALL
+          SELECT 일자, 중량, 품목그룹3코드, 품목그룹1코드, 거래처그룹1명, 창고명 FROM east_division_purchases
+          UNION ALL
+          SELECT 일자, 중량, 품목그룹3코드, 품목그룹1코드, 거래처그룹1명, 창고명 FROM west_division_purchases
+          UNION ALL
+          SELECT 일자, 중량, 품목그룹3코드, 품목그룹1코드, 거래처그룹1명, 창고명 FROM south_division_purchases
+        )
         WHERE 일자 >= '${startDate}' AND 일자 <= '${date}' AND 품목그룹3코드 = 'FLA' AND 품목그룹1코드 = 'IL' AND ${getPurchBranchFilter()}
       )
     `;
@@ -184,7 +209,15 @@ export async function GET(request: Request) {
           CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume,
           CAST(REPLACE(합_계, ',', '') AS NUMERIC) as amount,
           일자
-        FROM purchases
+        FROM (
+          SELECT 일자, 중량, 합_계, 품목그룹1코드, 거래처그룹1명, 창고명 FROM purchases
+          UNION ALL
+          SELECT 일자, 중량, 합_계, 품목그룹1코드, 거래처그룹1명, 창고명 FROM east_division_purchases
+          UNION ALL
+          SELECT 일자, 중량, 합_계, 품목그룹1코드, 거래처그룹1명, 창고명 FROM west_division_purchases
+          UNION ALL
+          SELECT 일자, 중량, 합_계, 품목그룹1코드, 거래처그룹1명, 창고명 FROM south_division_purchases
+        )
         WHERE 일자 >= '${startDate}' AND 일자 <= '${date}'
           AND 품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI', 'MB')
           AND ${getPurchBranchFilter()}

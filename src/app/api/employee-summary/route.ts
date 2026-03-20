@@ -15,38 +15,32 @@ export async function GET(request: NextRequest) {
   try {
     // 1. Get unique customers and their visit counts
     const customersQuery = `
-      SELECT 
-        customer_name, 
+      SELECT
+        customer as customer_name,
         COUNT(*) as visit_count,
         MAX(activity_date) as last_visit
       FROM employee_activity_log
       WHERE employee_name = '${employeeName}'
-        AND customer_name IS NOT NULL
-        AND customer_name != ''
-      GROUP BY customer_name
+        AND customer IS NOT NULL
+        AND customer != ''
+      GROUP BY customer
       ORDER BY visit_count DESC
     `;
 
-    // 2. Get all activities with products_mentioned to process in JS
+    // 2. Get all activities with products to process in JS
     // This avoids complex JSON SQL functions that might be restricted or incompatible
     const productsRawQuery = `
-      SELECT products_mentioned, activity_date
+      SELECT products, activity_date
       FROM employee_activity_log
       WHERE employee_name = '${employeeName}'
-        AND products_mentioned IS NOT NULL
-        AND products_mentioned != '[]'
-        AND products_mentioned != ''
+        AND products IS NOT NULL
+        AND products != '[]'
+        AND products != ''
     `;
 
-    // 3. Get employee profile info
-    const masterQuery = `
-      SELECT * FROM employee_master WHERE employee_name = '${employeeName}'
-    `;
-
-    const [customersResult, productsRawResult, masterResult] = await Promise.all([
+    const [customersResult, productsRawResult] = await Promise.all([
       executeSQL(customersQuery),
-      executeSQL(productsRawQuery),
-      executeSQL(masterQuery)
+      executeSQL(productsRawQuery)
     ]);
 
     // Process products in JavaScript
@@ -55,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     rawRows.forEach((row: any) => {
       try {
-        const products = JSON.parse(row.products_mentioned);
+        const products = JSON.parse(row.products);
         if (Array.isArray(products)) {
           products.forEach(p => {
             if (!productStats[p]) {
@@ -72,39 +66,23 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // Get unique product names to fetch categories
+    // Get unique product names
     const productNames = Object.keys(productStats);
-    let productsWithCategories = [];
-
-    if (productNames.length > 0) {
-      // Fetch categories for these products
-      const placeholders = productNames.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
-      const mappingQuery = `
-        SELECT "품목명", "품목그룹1명", "품목그룹2명"
-        FROM product_mapping
-        WHERE "품목명" IN (${placeholders})
-      `;
-      const mappingResult = await executeSQL(mappingQuery);
-      const mappings: Record<string, any> = {};
-      mappingResult?.rows?.forEach((r: any) => {
-        mappings[r.품목명] = r;
-      });
-
-      productsWithCategories = productNames.map(name => ({
-        product_name: name,
-        mention_count: productStats[name].count,
-        last_mentioned: productStats[name].lastDate,
-        category1: mappings[name]?.품목그룹1명,
-        category2: mappings[name]?.품목그룹2명
-      })).sort((a, b) => b.mention_count - a.mention_count);
-    }
+    const productsWithCategories = productNames.map(name => ({
+      product_name: name,
+      mention_count: productStats[name].count,
+      last_mentioned: productStats[name].lastDate
+    })).sort((a, b) => b.mention_count - a.mention_count);
 
     return NextResponse.json({
       success: true,
       data: {
         companies: customersResult?.rows || [],
         products: productsWithCategories,
-        profile: masterResult?.rows?.[0] || { employee_name: employeeName }
+        profile: {
+          employee_name: employeeName,
+          employment_status: 'active'
+        }
       }
     });
   } catch (error: any) {
