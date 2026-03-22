@@ -113,15 +113,15 @@ export async function GET(request: Request) {
           (il + auto + mbk) as total
         FROM (
           SELECT 
-            REPLACE(REPLACE(COALESCE(창고명, '기타'), '사업소', ''), '지사', '') as branch,
-            SUM(CASE WHEN 품목그룹1코드 = 'IL' THEN 합계 ELSE 0 END) as il,
-            SUM(CASE WHEN 품목그룹1코드 IN ('PVL', 'CVL') THEN 합계 ELSE 0 END) as auto,
-            SUM(CASE WHEN 품목그룹1코드 IN ('MB', 'AVI') THEN 합계 ELSE 0 END) as mbk
-          FROM purchase_orders
-          WHERE 월_일 = '${date}'
-            AND 거래처명 LIKE '%모빌%'
-            AND (창고명 LIKE '%사업소%' OR 창고명 LIKE '%지사%' OR 창고명 = 'MB')
-          GROUP BY REPLACE(REPLACE(COALESCE(창고명, '기타'), '사업소', ''), '지사', '')
+            COALESCE(w.창고명, p.창고코드, '기타') as branch,
+            SUM(CASE WHEN p.품목그룹1코드 = 'IL' THEN p.합계 ELSE 0 END) as il,
+            SUM(CASE WHEN p.품목그룹1코드 IN ('PVL', 'CVL') THEN p.합계 ELSE 0 END) as auto,
+            SUM(CASE WHEN p.품목그룹1코드 = 'MB' THEN p.합계 ELSE 0 END) as mbk
+          FROM purchase_orders p
+          LEFT JOIN warehouses w ON p.창고코드 = w.창고코드 OR p.창고코드 = CAST(w.창고코드 AS INTEGER)
+          WHERE p.일자 = '${date}'
+            AND p.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'MB')
+          GROUP BY branch
         )
         ORDER BY total DESC
       `;

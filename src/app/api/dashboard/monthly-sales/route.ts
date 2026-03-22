@@ -2,125 +2,86 @@ import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 
 /**
- * API Endpoint to fetch Monthly Sales Status for the current year
- * 
- * Logic:
- * 1. Queries ONLY the main 'sales' table for sales data.
- * 2. Categorizes by Employee Branch (employee_category.전체사업소).
- * 3. Uses '공급가액' (Supply Amount) instead of '합계' (Total with VAT) for revenue.
- * 4. Normalizes branch names to standard 9 branches.
- * 5. Excludes employee '김도량' (internal transfers).
+ * API Endpoint to fetch Monthly Sales and Purchase Status for the current year
  */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const year = searchParams.get('year') || '2026';
+    const includeVat = searchParams.get('includeVat') === 'true';
 
-    // Aggregate sales and purchase data by Month and Branch for the specific year
-    // Wrapped in a subquery to avoid ambiguous column name errors
-    const query = `
-      SELECT * FROM (
-        SELECT 
-          COALESCE(s.month, p.month) as month,
-          COALESCE(s.branch, p.branch) as branch,
-          COALESCE(s.totalSales, 0) as totalSales,
-          COALESCE(s.mobileSalesAmount, 0) as mobileSalesAmount,
-          COALESCE(s.mobileSalesWeight, 0) as mobileSalesWeight,
-          COALESCE(s.flagshipSalesWeight, 0) as flagshipSalesWeight,
-          COALESCE(p.mobilePurchaseWeight, 0) as mobilePurchaseWeight,
-          COALESCE(p.flagshipPurchaseWeight, 0) as flagshipPurchaseWeight
-        FROM (
-          SELECT
-            substr(s.일자, 1, 7) as month,
-            CASE
-              WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-              WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-              WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
-              WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-              WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-              WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-              WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-              WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-              WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
-              ELSE '기타'
-            END as branch,
-            SUM(CAST(REPLACE(s.공급가액, ',', '') AS NUMERIC)) as totalSales,
-            SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(s.공급가액, ',', '') AS NUMERIC) ELSE 0 END) as mobileSalesAmount,
-            SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as mobileSalesWeight,
-            SUM(CASE WHEN i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipSalesWeight
-          FROM (
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 공급가액, 중량 FROM sales
-            UNION ALL
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 공급가액, 중량 FROM east_division_sales
-            UNION ALL
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 공급가액, 중량 FROM west_division_sales
-            UNION ALL
-            SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 공급가액, 중량 FROM south_division_sales
-          ) s
-          LEFT JOIN items i ON s.품목코드 = i.품목코드
-          LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-          LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
-          LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-          WHERE s.일자 LIKE '${year}-%'
-            AND (e.사원_담당_명 IS NULL OR e.사원_담당_명 != '김도량')
-          GROUP BY 1, 2
-        ) s
-        FULL OUTER JOIN (
-          SELECT 
-            substr(일자, 1, 7) as month,
-            CASE 
-              WHEN 거래처그룹1명 = 'MB' THEN 'MB'
-              WHEN 거래처그룹1명 LIKE '%화성%' THEN '화성'
-              WHEN 거래처그룹1명 LIKE '%창원%' THEN '창원'
-              WHEN 거래처그룹1명 LIKE '%남부%' THEN '남부'
-              WHEN 거래처그룹1명 LIKE '%중부%' THEN '중부'
-              WHEN 거래처그룹1명 LIKE '%서부%' THEN '서부'
-              WHEN 거래처그룹1명 LIKE '%동부%' THEN '동부'
-              WHEN 거래처그룹1명 LIKE '%제주%' THEN '제주'
-              WHEN 거래처그룹1명 LIKE '%부산%' THEN '부산'
-              ELSE '기타'
-            END as branch,
-            SUM(CASE WHEN 품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(중량, ',', '') AS NUMERIC) ELSE 0 END) as mobilePurchaseWeight,
-            SUM(CASE WHEN 품목그룹3코드 = 'FLA' THEN CAST(REPLACE(중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipPurchaseWeight
-          FROM purchases
-          WHERE 일자 LIKE '${year}-%'
-          GROUP BY 1, 2
-        ) p ON s.month = p.month AND s.branch = p.branch
-      )
-      WHERE branch != '기타'
+    const divisor = includeVat ? '1.0' : '1.1';
+
+    // 1. Monthly Sales Data (by Client Branch Mapping)
+    const salesQuery = `
+      SELECT
+        substr(s.일자, 1, 7) as month,
+        CASE 
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%MB%' THEN 'MB'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%서울%' THEN 'MB'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%벤츠%' THEN 'MB'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%화성%' THEN '화성'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%창원%' THEN '창원'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%경남%' THEN '창원'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%남부%' THEN '남부'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%중부%' THEN '중부'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%서부%' THEN '서부'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%인천%' THEN '서부'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%동부%' THEN '동부'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%하남%' THEN '동부'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%제주%' THEN '제주'
+          WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%부산%' THEN '부산'
+          ELSE '기타'
+        END as branch,
+        SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as totalSales,
+        SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as mobileSalesAmount,
+        SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as mobileSalesWeight,
+        SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipSalesWeight
+      FROM sales s
+      LEFT JOIN items i ON s.품목코드 = i.품목코드
+      LEFT JOIN clients c1 ON s.거래처코드 = c1.거래처코드
+      LEFT JOIN clients c2 ON (s.실납업체 IS NOT NULL AND s.실납업체 != '' AND s.실납업체 = c2.거래처코드)
+      WHERE s.일자 LIKE '${year}-%'
+      GROUP BY 1, 2
       ORDER BY month ASC, 
         CASE branch
-          WHEN '화성' THEN 1
-          WHEN 'MB' THEN 2
-          WHEN '창원' THEN 3
-          WHEN '부산' THEN 4
-          WHEN '중부' THEN 5
-          WHEN '남부' THEN 6
-          WHEN '서부' THEN 7
-          WHEN '제주' THEN 8
-          WHEN '동부' THEN 9
-          ELSE 10
+          WHEN '화성' THEN 1 WHEN 'MB' THEN 2 WHEN '창원' THEN 3
+          WHEN '부산' THEN 4 WHEN '중부' THEN 5 WHEN '남부' THEN 6
+          WHEN '서부' THEN 7 WHEN '제주' THEN 8 WHEN '동부' THEN 9
+          ELSE 100
         END ASC
     `;
 
-    const resultData = await executeSQL(query);
-    const data = resultData?.rows || [];
+    // 2. Monthly Purchase Data (Using raw Warehouse Hierarchy Group)
+    const purchaseQuery = `
+      SELECT
+        substr(p.일자, 1, 7) as month,
+        COALESCE(w.계층그룹코드, w.창고명, p.창고코드) as branch,
+        SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor}) as totalPurchases,
+        SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as mobilePurchaseAmount,
+        SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(p.중량, ',', '') AS NUMERIC) ELSE 0 END) as mobilePurchaseWeight,
+        SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(p.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipPurchaseWeight
+      FROM purchases p
+      LEFT JOIN items i ON p.품목코드 = i.품목코드
+      LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
+      WHERE p.일자 LIKE '${year}-%'
+      GROUP BY 1, 2
+      ORDER BY month ASC, totalPurchases DESC
+    `;
 
-    // Calculate Misc Mobil Footnote data for the year (Mobil products in 'AA' group)
+    const salesResult = await executeSQL(salesQuery);
+    const purchaseResult = await executeSQL(purchaseQuery);
+
+    const salesData = salesResult?.rows || [];
+    const purchaseData = purchaseResult?.rows || [];
+
+    // 3. Misc Mobil Footnote data for the year
     const miscMobilQuery = `
       SELECT
-        SUM(CAST(REPLACE(s.공급가액, ',', '') AS NUMERIC)) as amount,
+        SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
         COUNT(*) as count
-      FROM (
-        SELECT 일자, 거래처코드, 품목코드, 공급가액, 중량 FROM sales
-        UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 공급가액, 중량 FROM east_division_sales
-        UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 공급가액, 중량 FROM west_division_sales
-        UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 공급가액, 중량 FROM south_division_sales
-      ) s
+      FROM sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       WHERE (i.품목명 LIKE 'MOBIL%' OR i.품목명 LIKE 'Mobil%')
         AND i.품목그룹1코드 = 'AA'
@@ -131,7 +92,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      data,
+      salesData,
+      purchaseData,
       miscMobil,
       year
     });
@@ -139,7 +101,7 @@ export async function GET(request: Request) {
     console.error('Monthly API Error:', error);
     return NextResponse.json({
       success: false,
-      error: error.message || 'Failed to fetch monthly sales data'
+      error: error.message || 'Failed to fetch monthly data'
     }, { status: 500 });
   }
 }

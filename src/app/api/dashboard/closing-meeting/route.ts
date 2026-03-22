@@ -6,6 +6,17 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const tab = searchParams.get('tab') || 'monthly-summary';
 
+    // Base subquery to combine all four sales tables
+    const baseSalesSubquery = `
+      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 수량, 중량, 단가, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
+      UNION ALL
+      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 수량, 중량, 단가, 합계, 창고코드 as 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
+      UNION ALL
+      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 수량, 중량, 단가, 합계, 창고코드 as 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
+      UNION ALL
+      SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 수량, 중량, 단가, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
+    `;
+
     if (tab === 'monthly-summary') {
       const now = new Date();
       const currentYear = now.getFullYear();
@@ -37,29 +48,29 @@ export async function GET(request: Request) {
       `;
 
       // Query purchases by month and category for current year
-      // For drum products (200/208L), count drums; for others, use weight
       const purchasesQuery = `
         SELECT
-          substr(일자, 1, 7) as month,
+          substr(p.일자, 1, 7) as month,
           CASE
-            WHEN 품목그룹1코드 = 'MB' THEN 'MB'
-            WHEN 품목그룹1코드 IN ('AVI', 'MAR') THEN 'AVI + MAR'
-            WHEN 품목그룹1코드 IN ('PVL', 'CVL') THEN 'AUTO'
-            WHEN 품목그룹1코드 = 'IL' THEN 'IL'
+            WHEN i.품목그룹1코드 = 'MB' THEN 'MB'
+            WHEN i.품목그룹1코드 IN ('AVI', 'MAR') THEN 'AVI + MAR'
+            WHEN i.품목그룹1코드 IN ('PVL', 'CVL') THEN 'AUTO'
+            WHEN i.품목그룹1코드 = 'IL' THEN 'IL'
             ELSE 'Others'
           END as category,
-          SUM(CAST(REPLACE(중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as amount
+          SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as weight,
+          SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC)) as amount
         FROM (
-          SELECT 일자, 품목그룹1코드, 중량, 합_계 FROM purchases
+          SELECT 일자, 품목코드, 중량, 합_계 FROM purchases
           UNION ALL
-          SELECT 일자, 품목그룹1코드, 중량, 합_계 FROM east_division_purchases
+          SELECT 일자, 품목코드, 중량, 합_계 FROM east_division_purchases
           UNION ALL
-          SELECT 일자, 품목그룹1코드, 중량, 합_계 FROM west_division_purchases
+          SELECT 일자, 품목코드, 중량, 합_계 FROM west_division_purchases
           UNION ALL
-          SELECT 일자, 품목그룹1코드, 중량, 합_계 FROM south_division_purchases
-        )
-        WHERE 일자 LIKE '${currentYear}-%'
+          SELECT 일자, 품목코드, 중량, 합_계 FROM south_division_purchases
+        ) p
+        LEFT JOIN items i ON p.품목코드 = i.품목코드
+        WHERE p.일자 LIKE '${currentYear}-%'
         GROUP BY month, category
       `;
 
@@ -68,15 +79,7 @@ export async function GET(request: Request) {
         SELECT
           substr(s.일자, 1, 7) as month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
-        FROM (
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
-        ) s
+        FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
@@ -246,15 +249,7 @@ export async function GET(request: Request) {
             ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
           END as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
-        FROM (
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
-        ) s
+        FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
@@ -361,15 +356,7 @@ export async function GET(request: Request) {
             ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
           END as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
-        FROM (
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
-        ) s
+        FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
@@ -506,15 +493,7 @@ export async function GET(request: Request) {
           END as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
-        FROM (
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
-        ) s
+        FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
@@ -541,15 +520,7 @@ export async function GET(request: Request) {
           END as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
-        FROM (
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
-        ) s
+        FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자

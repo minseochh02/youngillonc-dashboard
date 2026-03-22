@@ -27,10 +27,11 @@ export async function GET(request: Request) {
       return `(거래처그룹1명 LIKE '%${division}%' OR 창고명 LIKE '%${division}%')`;
     };
 
-    const getDepBranchFilter = () => {
+    const getDepBranchFilter = (alias: string = '') => {
+      const prefix = alias ? `${alias}.` : '';
       if (division === '전체') return "1=1";
-      if (division === 'MB') return "부서명 = 'MB'";
-      return `부서명 LIKE '%${division}%'`;
+      if (division === 'MB') return `${prefix}부서명 = 'MB'`;
+      return `${prefix}부서명 LIKE '%${division}%'`;
     };
 
     // 0. Base subquery for sales with UNION across all division tables
@@ -58,7 +59,7 @@ export async function GET(request: Request) {
             WHEN c.거래처명 LIKE '메르세데스벤츠%' OR i.품목그룹1코드 = 'MB' THEN 'Mobil-MB'
             WHEN c.거래처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR i.품목그룹1코드 = 'FU' THEN '훅스'
             WHEN i.품목그룹1코드 = 'BL' THEN '블라자'
-            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI') OR (i.품목그룹1코드 IS NULL AND (c.거래처명 = '테크젠 주식회사' OR w.창고명 = '창원')) THEN 'Mobil'
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL') OR (i.품목그룹1코드 IS NULL AND (c.거래처명 = '테크젠 주식회사' OR w.창고명 = '창원')) THEN 'Mobil'
             ELSE '기타(셸 외 타사제품)'
           END as category,
           CASE
@@ -80,6 +81,7 @@ export async function GET(request: Request) {
     `;
 
     // 2. Collection Status Aggregation (using deposits and promissory_notes for better metadata)
+    // Note: deposits table schema updated (전표번호 -> 일자, 부서명 moved to ledger)
     const collectionQuery = `
       SELECT
         method,
@@ -89,15 +91,16 @@ export async function GET(request: Request) {
       FROM (
         SELECT
           CASE
-            WHEN 계좌 LIKE '%카드%' OR 계좌 LIKE '%이니시스%' OR 적요 LIKE '%이니시스%' THEN '카드'
+            WHEN d.계좌 LIKE '%카드%' OR d.계좌 LIKE '%이니시스%' OR d.적요 LIKE '%이니시스%' THEN '카드'
             ELSE 'Cash'
           END as method,
-          CAST(REPLACE(금액, ',', '') AS NUMERIC) as amount,
-          전표번호 as 일자
-        FROM deposits
-        WHERE 계정명 = '외상매출금'
-          AND ${getDepBranchFilter()}
-          AND 전표번호 >= '${startDate}' AND 전표번호 <= '${date}'
+          CAST(REPLACE(d.금액, ',', '') AS NUMERIC) as amount,
+          d.일자 as 일자
+        FROM deposits d
+        LEFT JOIN ledger l ON d.일자 = l.일자 AND d.적요 = l.적요 AND d.계정명 = l.계정명 AND REPLACE(d.금액, ',', '') = REPLACE(l.대변금액, ',', '')
+        WHERE d.계정명 = '외상매출금'
+          AND ${getDepBranchFilter('l')}
+          AND d.일자 >= '${startDate}' AND d.일자 <= '${date}'
 
         UNION ALL
 
@@ -127,7 +130,7 @@ export async function GET(request: Request) {
             WHEN 구매처명 LIKE '메르세데스벤츠%' OR 품목그룹1코드 = 'MB' THEN 'Mobil-MB'
             WHEN 구매처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR 품목그룹1코드 = 'FU' THEN '훅스'
             WHEN 품목그룹1코드 = 'BL' THEN '블라자'
-            WHEN 품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI') OR (품목그룹1코드 IS NULL AND (창고명 = '창원')) THEN 'Mobil'
+            WHEN 품목그룹1코드 IN ('IL', 'PVL', 'CVL') OR (품목그룹1코드 IS NULL AND (창고명 = '창원')) THEN 'Mobil'
             ELSE '기타'
           END as category,
           CAST(REPLACE(중량, ',', '') AS NUMERIC) / 200.0 as amount,
@@ -151,7 +154,7 @@ export async function GET(request: Request) {
             WHEN c.거래처명 LIKE '메르세데스벤츠%' OR i.품목그룹1코드 = 'MB' THEN 'Mobil-MB'
             WHEN c.거래처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR i.품목그룹1코드 = 'FU' THEN '훅스'
             WHEN i.품목그룹1코드 = 'BL' THEN '블라자'
-            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI') OR (i.품목그룹1코드 IS NULL AND (c.거래처명 = '테크젠 주식회사' OR w.창고명 = '창원')) THEN 'Mobil'
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL') OR (i.품목그룹1코드 IS NULL AND (c.거래처명 = '테크젠 주식회사' OR w.창고명 = '창원')) THEN 'Mobil'
             ELSE '기타'
           END as category,
           CAST(REPLACE(s.중량, ',', '') AS NUMERIC) / 200.0 as amount,
@@ -219,7 +222,7 @@ export async function GET(request: Request) {
           SELECT 일자, 중량, 합_계, 품목그룹1코드, 거래처그룹1명, 창고명 FROM south_division_purchases
         )
         WHERE 일자 >= '${startDate}' AND 일자 <= '${date}'
-          AND 품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI', 'MB')
+          AND 품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'MB')
           AND ${getPurchBranchFilter()}
       )
     `;

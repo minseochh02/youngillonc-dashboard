@@ -36,6 +36,12 @@ This document contains essential knowledge about the Youngil ONC database struct
 ### Schema Changes (March 2026)
 **IMPORTANT**: The `sales` table was **normalized** from 27 denormalized columns to 17 columns:
 
+**NEW (March 22, 2026)**: The `deposits` table schema was updated:
+- `전표번호` column renamed to `일자`.
+- `부서명` and `거래처명` columns removed.
+- **Rule**: To get `부서명`, JOIN with `ledger` on `일자`, `적요`, `계정명`, and `금액` (matching `대변금액`).
+- **Rule**: To get `거래처명`, JOIN with `clients` on `거래처코드`.
+
 **OLD (deprecated)**: Sales had inline data like `거래처그룹1코드명`, `판매처명`, `품목그룹1코드`, `창고명`
 **NEW (current)**: Sales has foreign keys: `거래처코드`, `품목코드`, `출하창고코드`
 
@@ -52,7 +58,7 @@ This document contains essential knowledge about the Youngil ONC database struct
 | Table | Display Name | Row Count | Purpose |
 |-------|-------------|-----------|---------|
 | `purchase_orders` | 발주서현황 | 1,122 | Purchase orders (발주서) |
-| `deposits` | 입금보고서집계 | 1,410 | Customer deposits and payments |
+| `deposits` | 입금보고서집계 | ~1,650 | 일자, 계좌, 계정명, 거래처코드, 금액 | Customer deposits (Updated Mar 22) |
 | `promissory_notes` | 받을어음거래내역 | 157 | Promissory notes receivable |
 | `pending_purchases` | 미구매현황 | 221 | Unfulfilled purchase orders |
 | `pending_sales` | 미판매현황 | 12 | Unfulfilled sales orders |
@@ -97,10 +103,12 @@ LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
 - `inventory_transfers`: `출고창고명`, `입고창고명`
 
 ### Branch Value Mapping
+The `employee_category` (사원구분코드) table stores branch names in Korean, which need to be mapped to standardized short codes for display and analysis:
+
 ```sql
 CASE
-  WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-  WHEN ec.전체사업소 = '경남사업소' THEN '창원'
+  WHEN ec.전체사업소 = '벤츠' THEN 'MB'  -- Mercedes-Benz division
+  WHEN ec.전체사업소 = '경남사업소' OR ec.전체사업소 = '창원사업소' THEN '창원'
   WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
   WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
   WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
@@ -112,6 +120,8 @@ CASE
 END
 ```
 
+**Note**: The `employee_category` table is also referred to as `사원구분코드` (employee classification code) table in business documentation.
+
 ### Employee Segments (B2B / B2C)
 The `employee_category` table is used to filter employees into **B2B** or **B2C** segments.
 
@@ -120,21 +130,48 @@ The `employee_category` table is used to filter employees into **B2B** or **B2C*
 
 **Actual branch values in employee_category**:
 - `벤츠` → Maps to "MB"
-- `경남사업소` → Maps to "창원"
-- `화성사업소`, `중부사업소`, `동부사업소`, `서부사업소`, `부산사업소`, `남부지사`, `제주사업소`, `별도`
+- `경남사업소` or `창원사업소` → Maps to "창원"
+- `화성사업소`, `중부사업소`, `동부사업소`, `서부사업소`, `부산사업소`, `남부지사`, `제주사업소`
+- `별도` → Special category for internal transfer employees (like 김도량)
 
 ### Special Employees & Exclusions
 
 **Employees to EXCLUDE:**
-- **김도량**: Used for internal purchases or sales where **Young-il (영일)** is purchasing from the **East (동부)** or **West (서부)** branches. These transactions are considered **Internal** and should NOT be counted in general business metrics. **IMPORTANT**: This exclusion applies ONLY when using the three-table join structure (Sales/Purchases + Employees + Employee Category) for branch-based analysis.
+- **김도량 (사원코드: 31)**: Used for internal transfers between branches. This employee is assigned to TWO branches simultaneously:
+  - **동부 (East)**: Transactions with customer code `거래처코드 = 'YI90000'`
+  - **서부 (West)**: Transactions with customer code `거래처코드 = 'YI90001'`
+  - These transactions represent internal transfers where **Young-il (영일)** head office is purchasing from or distributing to branch offices.
+  - These should NOT be counted in general business metrics.
+  - **IMPORTANT**: This exclusion applies ONLY when using the three-table join structure (Sales/Purchases + Employees + Employee Category) for branch-based analysis.
 
 **Query Pattern for Exclusion**:
 ```sql
+-- Simple exclusion (general metrics)
 WHERE e.사원_담당_명 != '김도량'
+
+-- Branch-specific handling (when needed)
+WHERE e.사원_담당_명 = '김도량'
+  AND s.거래처코드 = 'YI90000'  -- 동부 transactions
+  -- OR
+WHERE e.사원_담당_명 = '김도량'
+  AND s.거래처코드 = 'YI90001'  -- 서부 transactions
 ```
 
 **Special Cases (INCLUDE in metrics):**
 - **이미숙**: Employee who is neither B2B nor B2C (not assigned to either category in employee_category table), but her transactions SHOULD be counted in general business metrics.
+
+### Data Quality Issues
+
+**Case Sensitivity Mismatch (화성auto vs 화성AUTO):**
+- **Issue**: The `employees` table contains `사원_담당_명 = '화성auto'` (lowercase "auto"), but the `employee_category` table has `담당자 = '화성AUTO'` (uppercase "AUTO").
+- **Impact**: The JOIN between `employees` and `employee_category` fails for this employee because SQL string comparison is case-sensitive, resulting in null branch assignment (전체사업소 = NULL).
+- **Data Source**: The Excel file `2602 판매실적 영일.xlsx` contains 13 transactions with employee name "화성auto" (lowercase), which were imported into the `employees` table as-is.
+- **Affected Records**: 13 sales transactions (216 L total) in February 2026 fall into "기타 (null)" category when categorizing by branch.
+- **Resolution**: Either:
+  1. Update `employees` table: `UPDATE employees SET 사원_담당_명 = '화성AUTO' WHERE 사원_담당_명 = '화성auto'`
+  2. Update `employee_category` table: `UPDATE employee_category SET 담당자 = '화성auto' WHERE 담당자 = '화성AUTO'`
+  3. Use case-insensitive collation in JOIN queries (SQLite default is case-sensitive for non-ASCII characters)
+- **Note**: There are 21 total employees in the `employees` table with no matching entry in `employee_category`, causing similar null branch issues.
 
 ## 3. Product Categories (품목그룹)
 
@@ -207,7 +244,7 @@ END as tier
 ```
 
 ### Brand-Specific Codes
-- **Mobil**: `품목그룹1코드 IN ('IL','PVL','MB','CVL','AVI','MAR')`
+- **Mobil**: `품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'MB')`
 - **Mobil-MB**: `품목그룹1코드='MB'` OR `판매처명 LIKE '메르세데스벤츠%'`
 - **Blaser**: `품목그룹1코드='BL'`
 - **Fuchs**: `품목그룹1코드='FU'`
@@ -231,9 +268,9 @@ Many numeric columns stored as TEXT with commas: `"1,234,567"`
 
 ### Deposits (입금)
 - **Table**: `deposits`
-- **Date Column**: `전표번호` (NOT `일자`)
+- **Date Column**: `일자` (Updated Mar 22 from `전표번호`)
 - **Filter**: `계정명='외상매출금'` only
-- **Branch Column**: `부서명`
+- **Branch**: JOIN with `ledger` on `일자`, `적요`, `계정명`, `금액` (matching `대변금액`) to get `부서명`.
 - **Card**: `계좌 LIKE '%카드%' OR 계좌 LIKE '%이니시스%'`
 - **Cash**: All other accounts
 
@@ -243,11 +280,13 @@ Many numeric columns stored as TEXT with commas: `"1,234,567"`
 
 ## 7. Mobil Purchases (모빌결제)
 - **Table**: `purchase_orders` only
-- **Filter**: `거래처명 LIKE '%모빌%'`
+- **Key Columns**: `일자`, `창고코드`, `품목그룹1코드`, `합계`
+- **Filter**: `품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'MB')`
 - **Industry Groups**:
   - IL (Industrial): `품목그룹1코드='IL'`
   - AUTO: `품목그룹1코드 IN ('PVL','CVL')`
-  - MBK: `품목그룹1코드 IN ('MB','AVI')`
+  - MBK: `품목그룹1코드='MB'`
+- **Notes**: JOIN with `warehouses` on `창고코드` to get the branch name. Use `일자` for date filtering (not `월_일`).
 
 ## 8. Ledger (원장) - Funds Status
 
@@ -375,14 +414,19 @@ GROUP BY category
 ### Get Daily Collections (Card vs Cash)
 ```sql
 SELECT
-  부서명 as branch,
+  l.부서명 as branch,
   CASE
-    WHEN 계좌 LIKE '%카드%' OR 계좌 LIKE '%이니시스%' THEN 'Card'
+    WHEN d.계좌 LIKE '%카드%' OR d.계좌 LIKE '%이니시스%' THEN 'Card'
     ELSE 'Cash'
   END as payment_type,
-  SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as total_amount
-FROM deposits
-WHERE 계정명 = '외상매출금'
+  SUM(CAST(REPLACE(d.금액, ',', '') AS NUMERIC)) as total_amount
+FROM deposits d
+JOIN ledger l ON 
+  d.일자 = l.일자 AND 
+  d.적요 = l.적요 AND 
+  d.계정명 = l.계정명 AND 
+  REPLACE(d.금액, ',', '') = REPLACE(l.대변금액, ',', '')
+WHERE d.계정명 = '외상매출금'
 GROUP BY branch, payment_type
 ```
 

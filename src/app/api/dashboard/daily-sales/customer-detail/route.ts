@@ -22,10 +22,11 @@ export async function GET(request: Request) {
       return `(ec.전체사업소 LIKE '%${division}%' OR w.창고명 LIKE '%${division}%')`;
     };
 
-    const getDepBranchFilter = () => {
+    const getDepBranchFilter = (alias: string = '') => {
+      const prefix = alias ? `${alias}.` : '';
       if (division === '전체') return "1=1";
-      if (division === 'MB') return "부서명 = 'MB'";
-      return `부서명 LIKE '%${division}%'`;
+      if (division === 'MB') return `${prefix}부서명 = 'MB'`;
+      return `${prefix}부서명 LIKE '%${division}%'`;
     };
 
     // 0. Base subquery for sales with UNION across all division tables
@@ -57,16 +58,18 @@ export async function GET(request: Request) {
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE ${getSalesBranchFilter()} AND s.일자 >= '${startDate}' AND s.일자 <= '${date}'
         UNION
-        SELECT DISTINCT 거래처명 as name, 거래처코드
-        FROM deposits
-        WHERE ${getDepBranchFilter()} AND 전표번호 >= '${startDate}' AND 전표번호 <= '${date}'
+        SELECT DISTINCT c_dep.거래처명 as name, d.거래처코드
+        FROM deposits d
+        LEFT JOIN clients c_dep ON d.거래처코드 = c_dep.거래처코드
+        LEFT JOIN ledger l ON d.일자 = l.일자 AND d.적요 = l.적요 AND d.계정명 = l.계정명 AND REPLACE(d.금액, ',', '') = REPLACE(l.대변금액, ',', '')
+        WHERE ${getDepBranchFilter('l')} AND d.일자 >= '${startDate}' AND d.일자 <= '${date}'
       ) cust
       LEFT JOIN (
         SELECT
           거래처코드,
           SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as amount
         FROM deposits
-        WHERE 전표번호 < '${date}'
+        WHERE 일자 < '${date}'
           AND 계정명 = '외상매출금'
         GROUP BY 거래처코드
       ) tc_prev ON cust.거래처코드 = tc_prev.거래처코드
@@ -91,7 +94,7 @@ export async function GET(request: Request) {
           거래처코드,
           SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as amount
         FROM deposits
-        WHERE 전표번호 = '${date}'
+        WHERE 일자 = '${date}'
           AND 계정명 = '외상매출금'
         GROUP BY 거래처코드
       ) tc ON cust.거래처코드 = tc.거래처코드
@@ -108,7 +111,7 @@ export async function GET(request: Request) {
           거래처코드,
           SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as amount
         FROM deposits
-        WHERE 전표번호 >= '${startDate}' AND 전표번호 <= '${date}'
+        WHERE 일자 >= '${startDate}' AND 일자 <= '${date}'
           AND 계정명 = '외상매출금'
         GROUP BY 거래처코드
       ) mc ON cust.거래처코드 = mc.거래처코드

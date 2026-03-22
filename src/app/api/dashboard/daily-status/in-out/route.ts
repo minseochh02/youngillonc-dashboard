@@ -20,12 +20,12 @@ export async function GET(request: Request) {
     const depositQuery = `
       SELECT
         계정명 as type,
-        거래처명 as source,
+        부서명 as source,
         CAST(REPLACE(REPLACE(COALESCE(차변금액,'0'), ',', ''), ' ', '') AS NUMERIC) as amount,
         적요 as detail
       FROM ledger
       WHERE 일자 = '${ledgerDate}'
-        AND 계정명 = '보통예금'
+        AND TRIM(계정명) = '보통예금'
         AND CAST(REPLACE(REPLACE(COALESCE(차변금액,'0'), ',', ''), ' ', '') AS NUMERIC) > 0
       ORDER BY 3 DESC
     `;
@@ -36,12 +36,12 @@ export async function GET(request: Request) {
     const withdrawalQuery = `
       SELECT
         계정명 as type,
-        거래처명 as source,
+        부서명 as source,
         CAST(REPLACE(REPLACE(COALESCE(대변금액,'0'), ',', ''), ' ', '') AS NUMERIC) as amount,
         적요 as detail
       FROM ledger
       WHERE 일자 = '${ledgerDate}'
-        AND 계정명 = '보통예금'
+        AND TRIM(계정명) = '보통예금'
         AND CAST(REPLACE(REPLACE(COALESCE(대변금액,'0'), ',', ''), ' ', '') AS NUMERIC) > 0
       ORDER BY 3 DESC
     `;

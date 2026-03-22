@@ -26,14 +26,15 @@ export async function GET(request: Request) {
         (il + auto + mbk) as total
       FROM (
         SELECT 
-          COALESCE(창고명, '기타') as branch,
-          SUM(CASE WHEN 품목그룹1코드 = 'IL' THEN CAST(REPLACE(COALESCE(합계,'0'), ',', '') AS NUMERIC) ELSE 0 END) as il,
-          SUM(CASE WHEN 품목그룹1코드 IN ('PVL', 'CVL') THEN CAST(REPLACE(COALESCE(합계,'0'), ',', '') AS NUMERIC) ELSE 0 END) as auto,
-          SUM(CASE WHEN 품목그룹1코드 IN ('MB', 'AVI') THEN CAST(REPLACE(COALESCE(합계,'0'), ',', '') AS NUMERIC) ELSE 0 END) as mbk
-        FROM purchase_orders
-        WHERE 월_일 = '${date}'
-          AND 거래처명 LIKE '%모빌%'
-        GROUP BY COALESCE(창고명, '기타')
+          COALESCE(w.창고명, p.창고코드, '기타') as branch,
+          SUM(CASE WHEN p.품목그룹1코드 = 'IL' THEN CAST(REPLACE(REPLACE(CAST(COALESCE(p.합계,'0') AS TEXT), ',', ''), '₩', '') AS NUMERIC) ELSE 0 END) as il,
+          SUM(CASE WHEN p.품목그룹1코드 IN ('PVL', 'CVL') THEN CAST(REPLACE(REPLACE(CAST(COALESCE(p.합계,'0') AS TEXT), ',', ''), '₩', '') AS NUMERIC) ELSE 0 END) as auto,
+          SUM(CASE WHEN p.품목그룹1코드 = 'MB' THEN CAST(REPLACE(REPLACE(CAST(COALESCE(p.합계,'0') AS TEXT), ',', ''), '₩', '') AS NUMERIC) ELSE 0 END) as mbk
+        FROM purchase_orders p
+        LEFT JOIN warehouses w ON p.창고코드 = w.창고코드 OR p.창고코드 = CAST(w.창고코드 AS INTEGER)
+        WHERE p.일자 = '${date}'
+          AND p.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'MB')
+        GROUP BY branch
       )
       ORDER BY total DESC
     `;

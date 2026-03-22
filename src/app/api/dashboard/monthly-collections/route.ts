@@ -10,6 +10,7 @@ export async function GET(request: Request) {
     const year = searchParams.get('year') || '2026';
 
     // SQL to aggregate monthly collection data by branch
+    // Logic: Using clients table via 거래처코드 for both deposits and promissory notes
     const query = `
       SELECT 
         COALESCE(d.month, n.month) as month,
@@ -20,54 +21,65 @@ export async function GET(request: Request) {
         COALESCE(d.card, 0) as card
       FROM (
         SELECT 
-          substr(전표번호, 1, 7) as month,
+          substr(d.일자, 1, 7) as month,
           CASE 
-            WHEN 부서명 = 'MB' THEN 'MB'
-            WHEN 부서명 LIKE '%화성%' THEN '화성'
-            WHEN 부서명 LIKE '%창원%' THEN '창원'
-            WHEN 부서명 LIKE '%남부%' THEN '남부'
-            WHEN 부서명 LIKE '%중부%' THEN '중부'
-            WHEN 부서명 LIKE '%서부%' THEN '서부'
-            WHEN 부서명 LIKE '%동부%' THEN '동부'
-            WHEN 부서명 LIKE '%제주%' THEN '제주'
-            WHEN 부서명 LIKE '%부산%' THEN '부산'
-            ELSE REPLACE(REPLACE(COALESCE(부서명, '기타'), '사업소', ''), '지사', '')
+            WHEN c.거래처그룹1명 LIKE '%MB%' THEN 'MB'
+            WHEN c.거래처그룹1명 LIKE '%서울%' THEN 'MB'
+            WHEN c.거래처그룹1명 LIKE '%벤츠%' THEN 'MB'
+            WHEN c.거래처그룹1명 LIKE '%화성%' THEN '화성'
+            WHEN c.거래처그룹1명 LIKE '%창원%' THEN '창원'
+            WHEN c.거래처그룹1명 LIKE '%경남%' THEN '창원'
+            WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
+            WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
+            WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
+            WHEN c.거래처그룹1명 LIKE '%인천%' THEN '서부'
+            WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
+            WHEN c.거래처그룹1명 LIKE '%하남%' THEN '동부'
+            WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
+            WHEN c.거래처그룹1명 LIKE '%부산%' THEN '부산'
+            ELSE '기타'
           END as branch,
           SUM(CASE 
-            WHEN (계좌 NOT LIKE '%카드%' AND 계좌 NOT LIKE '%이니시스%') 
-              OR (계좌 LIKE '%우리-%' OR 계좌 LIKE '%기업-%' OR 계좌 LIKE '%국민-%' OR 계좌 LIKE '%신한-%' OR 계좌 LIKE '%농협-%' OR 계좌 LIKE '%하나-%')
-            THEN CAST(REPLACE(금액, ',', '') AS NUMERIC) ELSE 0 END) as cash,
+            WHEN (d.계좌 NOT LIKE '%카드%' AND d.계좌 NOT LIKE '%이니시스%')
+              OR (d.계좌 LIKE '%우리-%' OR d.계좌 LIKE '%기업-%' OR d.계좌 LIKE '%국민-%' OR d.계좌 LIKE '%신한-%' OR d.계좌 LIKE '%농협-%' OR d.계좌 LIKE '%하나-%')
+            THEN CAST(REPLACE(d.금액, ',', '') AS NUMERIC) ELSE 0 END) as cash,
           SUM(CASE 
-            WHEN (계좌 LIKE '%카드%' OR 계좌 LIKE '%이니시스%')
-              AND (계좌 NOT LIKE '%우리-%' AND 계좌 NOT LIKE '%기업-%' AND 계좌 NOT LIKE '%국민-%' AND 계좌 NOT LIKE '%신한-%' AND 계좌 NOT LIKE '%농협-%' AND 계좌 NOT LIKE '%하나-%')
-            THEN CAST(REPLACE(금액, ',', '') AS NUMERIC) ELSE 0 END) as card
-        FROM deposits
-        WHERE 전표번호 LIKE '${year}-%'
-          AND 계정명 = '외상매출금'
-          AND (부서명 LIKE '%사업소%' OR 부서명 LIKE '%지사%' OR 부서명 = 'MB')
+            WHEN (d.계좌 LIKE '%카드%' OR d.계좌 LIKE '%이니시스%')
+              AND (d.계좌 NOT LIKE '%우리-%' AND d.계좌 NOT LIKE '%기업-%' AND d.계좌 NOT LIKE '%국민-%' AND d.계좌 NOT LIKE '%신한-%' AND d.계좌 NOT LIKE '%농협-%' AND d.계좌 NOT LIKE '%하나-%')
+            THEN CAST(REPLACE(d.금액, ',', '') AS NUMERIC) ELSE 0 END) as card
+        FROM deposits d
+        LEFT JOIN clients c ON d.거래처코드 = c.거래처코드
+        WHERE d.일자 LIKE '${year}-%'
+          AND d.계정명 = '외상매출금'
         GROUP BY 1, 2
       ) d
       FULL OUTER JOIN (
         SELECT 
-          substr(일자, 1, 7) as month,
+          substr(p.일자, 1, 7) as month,
           CASE 
-            WHEN 부서명 = 'MB' THEN 'MB'
-            WHEN 부서명 LIKE '%화성%' THEN '화성'
-            WHEN 부서명 LIKE '%창원%' THEN '창원'
-            WHEN 부서명 LIKE '%남부%' THEN '남부'
-            WHEN 부서명 LIKE '%중부%' THEN '중부'
-            WHEN 부서명 LIKE '%서부%' THEN '서부'
-            WHEN 부서명 LIKE '%동부%' THEN '동부'
-            WHEN 부서명 LIKE '%제주%' THEN '제주'
-            WHEN 부서명 LIKE '%부산%' THEN '부산'
-            ELSE REPLACE(REPLACE(COALESCE(부서명, '기타'), '사업소', ''), '지사', '')
+            WHEN c.거래처그룹1명 LIKE '%MB%' THEN 'MB'
+            WHEN c.거래처그룹1명 LIKE '%서울%' THEN 'MB'
+            WHEN c.거래처그룹1명 LIKE '%벤츠%' THEN 'MB'
+            WHEN c.거래처그룹1명 LIKE '%화성%' THEN '화성'
+            WHEN c.거래처그룹1명 LIKE '%창원%' THEN '창원'
+            WHEN c.거래처그룹1명 LIKE '%경남%' THEN '창원'
+            WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
+            WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
+            WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
+            WHEN c.거래처그룹1명 LIKE '%인천%' THEN '서부'
+            WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
+            WHEN c.거래처그룹1명 LIKE '%하남%' THEN '동부'
+            WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
+            WHEN c.거래처그룹1명 LIKE '%부산%' THEN '부산'
+            ELSE '기타'
           END as branch,
           SUM(증가금액) as notes
-        FROM promissory_notes
+        FROM promissory_notes p
+        LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
         WHERE 일자 LIKE '${year}-%' AND 증감구분 = '증가'
-          AND (부서명 LIKE '%사업소%' OR 부서명 LIKE '%지사%' OR 부서명 = 'MB')
         GROUP BY 1, 2
       ) n ON d.month = n.month AND d.branch = n.branch
+      WHERE COALESCE(d.branch, n.branch) != '기타'
       ORDER BY month ASC, totalCollection DESC
     `;
 

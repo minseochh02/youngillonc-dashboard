@@ -67,15 +67,26 @@ export default function FundsTable({ data }: FundsTableProps) {
                 ) : null}
               </div>
               
-              <div className="space-y-1">
-                <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100 tabular-nums">
-                  {symbol}{formatValue(item.current, item.currency)}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-zinc-400">현잔</span>
+                  <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100 tabular-nums">
+                    {symbol}{formatValue(item.current, item.currency)}
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                  <span>전일: {symbol}{formatValue(item.prev, item.currency)}</span>
-                  <div className="flex gap-2">
-                    {item.inc > 0 && <span className="text-green-500 font-medium">+{symbol}{formatValue(item.inc, item.currency)}</span>}
-                    {item.dec > 0 && <span className="text-red-500 font-medium">-{symbol}{formatValue(item.dec, item.currency)}</span>}
+
+                <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-zinc-400">전잔</span>
+                    <span className="text-zinc-600 dark:text-zinc-300 font-medium">{symbol}{formatValue(item.prev, item.currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-zinc-400">당입</span>
+                    <span className="text-green-500 font-bold">+{symbol}{formatValue(item.inc, item.currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-zinc-400">지출</span>
+                    <span className="text-red-500 font-bold">-{symbol}{formatValue(item.dec, item.currency)}</span>
                   </div>
                 </div>
               </div>
@@ -104,11 +115,11 @@ export default function FundsTable({ data }: FundsTableProps) {
 
       <DataLogicInfo 
         title="자금현황"
-        description="전사 계좌별 잔액 이동을 집계합니다. 현금 시재금, 보통예금, 받을어음, 외화예금(ledger) 반영."
+        description="전사 계좌별 잔액 이동을 집계합니다. 전잔(전일잔액), 당입(당일입금), 지출(당일출금), 현잔(현재잔액)을 표시합니다."
         steps={[
-          "잔액 흐름: '전일잔액 + 당일증가 - 당일감소 = 금일잔액'. 모든 데이터는 ledger 테이블의 계정별 최종 잔액 및 차변/대변 금액에서 집계합니다.",
-          "외화 자산: 외화예금 계정의 거래처명에서 통화(USD, JPY, EUR, GBP)를 자동 판별하여 구분 표시합니다.",
-          "받을어음: ledger의 받을어음 계정 잔액을 기반으로 하며, 당일 증가는 promissory_notes와 교차 검증합니다.",
+          "잔액 흐름: '전잔 + 당입 - 지출 = 현잔'. 모든 데이터는 ledger 테이블의 계정별 누적 차변/대변 금액에서 집계합니다.",
+          "외화 자산: 외화예금 계정의 적요에서 통화(USD, JPY, EUR, GBP)를 자동 판별하여 구분 표시합니다.",
+          "받을어음: 외담대(매출채권 관련)와 전자어음을 구분하여 집계하며, 당일 증가는 가이드 로직에 따라 필터링합니다.",
           "금액 컬럼은 DB_KNOWLEDGE §3에 따라 쉼표 제거 후 NUMERIC으로 집계합니다."
         ]}
         footnote="※ 차입금 및 부채 항목은 실시간 연동된 계정별원장 데이터를 표시합니다."

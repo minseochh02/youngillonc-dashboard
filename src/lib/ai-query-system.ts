@@ -267,7 +267,7 @@ VERIFICATION TASK:
 3. Common issues to check:
    - Wrong date range (e.g., "last month" but used current month)
    - Wrong column for branches (should use 거래처그룹1코드명 for sales, not 담당자코드명)
-   - Wrong table (e.g., deposits needs 전표번호 for dates, not 일자)
+   - Wrong table (e.g., deposits needs JOIN with ledger on 일자/적요/계정명/금액 for branch/부서명)
    - Missing required filters (e.g., deposits needs 계정명='외상매출금')
 
 Respond in JSON format:
