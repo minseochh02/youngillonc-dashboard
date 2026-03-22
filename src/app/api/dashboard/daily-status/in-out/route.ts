@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       FROM ledger
       WHERE 일자 = '${ledgerDate}'
         AND TRIM(계정명) = '보통예금'
-        AND CAST(REPLACE(REPLACE(COALESCE(차변금액,'0'), ',', ''), ' ', '') AS NUMERIC) > 0
+        AND (차변금액 IS NOT NULL AND 차변금액 != '' AND 차변금액 != '0')
       ORDER BY 3 DESC
     `;
     const depositResult = await executeSQL(depositQuery);
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
       FROM ledger
       WHERE 일자 = '${ledgerDate}'
         AND TRIM(계정명) = '보통예금'
-        AND CAST(REPLACE(REPLACE(COALESCE(대변금액,'0'), ',', ''), ' ', '') AS NUMERIC) > 0
+        AND (대변금액 IS NOT NULL AND 대변금액 != '' AND 대변금액 != '0')
       ORDER BY 3 DESC
     `;
     const withdrawalResult = await executeSQL(withdrawalQuery);
