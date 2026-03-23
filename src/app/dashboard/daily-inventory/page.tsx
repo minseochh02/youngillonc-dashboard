@@ -14,10 +14,15 @@ import { exportToExcel } from "@/lib/excel-export";
 
 interface InventoryStats {
   beginning: number;
+  beginning_weight: number;
   purchase: number;
+  purchase_weight: number;
   sales: number;
+  sales_weight: number;
   transfer: number;
+  transfer_weight: number;
   inventory: number;
+  inventory_weight: number;
 }
 
 interface BranchStats {
@@ -35,8 +40,7 @@ const CATEGORIES = [
   { id: "Auto_Others", label: "Auto", subLabel: "Others" },
   { id: "IL_Flagship", label: "IL", subLabel: "Flagship" },
   { id: "IL_Others", label: "IL", subLabel: "Others" },
-  { id: "MB_Flagship", label: "MB", subLabel: "Flagship" },
-  { id: "MB_Others", label: "MB", subLabel: "Others" },
+  { id: "MB_All", label: "MB", subLabel: "" },
   { id: "Others_Flagship", label: "Others", subLabel: "Flagship" },
   { id: "Others_Others", label: "Others", subLabel: "Others" },
 ];
@@ -101,10 +105,12 @@ export default function DailyInventorySheet() {
 
   const branchesToShow = useMemo(() => {
     if (!data) return [];
-    return data.branches.filter(b => selectedBranches.includes(b));
+    const filtered = data.branches.filter(b => selectedBranches.includes(b));
+    return ["합계", ...filtered];
   }, [data, selectedBranches]);
 
   const toggleBranch = (branch: string) => {
+    if (branch === "합계") return; // Cannot toggle total
     setSelectedBranches(prev =>
       prev.includes(branch) ? prev.filter(b => b !== branch) : [...prev, branch]
     );
@@ -127,23 +133,40 @@ export default function DailyInventorySheet() {
           '티어': cat.subLabel,
         };
 
-        // Add columns for each selected branch
+        // Add columns for each selected branch (including "합계")
         branchesToShow.forEach(branch => {
-          const branchData = data.stats[branch];
-          if (branchData && branchData[cat.id]) {
-            const stats = branchData[cat.id];
-            let value = 0;
+          let qty = 0;
+          let weight = 0;
 
-            // Get the value based on metric
-            if (metric.id === 'inventoryDM' && stats.inventory !== undefined) {
-              value = metric.formula ? metric.formula(stats.inventory) : stats.inventory;
-            } else if (metric.id !== 'inventoryDM' && stats[metric.id as keyof InventoryStats] !== undefined) {
-              value = stats[metric.id as keyof InventoryStats] as number;
-            }
-
-            row[`${branch}`] = value;
+          if (branch === "합계") {
+            Object.values(data.stats).forEach(bStats => {
+              const catStats = bStats[cat.id];
+              if (catStats) {
+                if (metric.id === 'inventoryDM') {
+                  qty += (catStats.inventory || 0) / 200;
+                } else {
+                  qty += (catStats as any)?.[metric.id] || 0;
+                  weight += (catStats as any)?.[`${metric.id}_weight`] || 0;
+                }
+              }
+            });
           } else {
-            row[`${branch}`] = 0;
+            const stats = data.stats[branch]?.[cat.id];
+            if (stats) {
+              if (metric.id === 'inventoryDM') {
+                qty = (stats.inventory || 0) / 200;
+              } else {
+                qty = (stats as any)?.[metric.id] || 0;
+                weight = (stats as any)?.[`${metric.id}_weight`] || 0;
+              }
+            }
+          }
+
+          if (metric.id === 'inventoryDM') {
+            row[`${branch}`] = qty;
+          } else {
+            row[`${branch} (Qty)`] = qty;
+            row[`${branch} (Liters)`] = weight;
           }
         });
 
@@ -239,9 +262,18 @@ export default function DailyInventorySheet() {
                 <th className="sticky left-[120px] z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[100px]">산업군</th>
                 <th className="sticky left-[220px] z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[100px]">티어</th>
                 {branchesToShow.map(branch => (
-                  <th key={branch} className="p-4 border-b border-zinc-200 dark:border-zinc-800 text-center min-w-[120px]">
-                    <span className="block text-[10px] text-zinc-400 uppercase tracking-widest mb-1">지사/사업소</span>
-                    <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{branch}</span>
+                  <th 
+                    key={branch} 
+                    className={`p-4 border-b border-zinc-200 dark:border-zinc-800 text-center min-w-[140px] ${
+                      branch === '합계' 
+                        ? 'sticky left-[320px] z-30 bg-blue-600 text-white border-x border-blue-500 shadow-[2px_0_5px_rgba(0,0,0,0.1)]' 
+                        : 'bg-zinc-50 dark:bg-zinc-900/80'
+                    }`}
+                  >
+                    <span className={`block text-[10px] uppercase tracking-widest mb-1 ${branch === '합계' ? 'text-blue-100' : 'text-zinc-400'}`}>
+                      {branch === '합계' ? '전체' : '지사/사업소'}
+                    </span>
+                    <span className="text-sm font-bold">{branch}</span>
                   </th>
                 ))}
               </tr>
@@ -285,19 +317,59 @@ export default function DailyInventorySheet() {
 
                       {/* Branch Data */}
                       {branchesToShow.map(branch => {
-                        const branchData = data?.stats[branch]?.[cat.id];
-                        let val = 0;
-                        if (metric.id === 'inventoryDM') {
-                          val = (branchData?.inventory || 0) / 200;
+                        let qty = 0;
+                        let weight = 0;
+
+                        if (branch === "합계") {
+                          // Aggregate across all branches
+                          Object.values(data?.stats || {}).forEach(bStats => {
+                            const catStats = bStats[cat.id];
+                            if (catStats) {
+                              if (metric.id === 'inventoryDM') {
+                                qty += (catStats.inventory || 0) / 200;
+                              } else {
+                                qty += (catStats as any)?.[metric.id] || 0;
+                                weight += (catStats as any)?.[`${metric.id}_weight`] || 0;
+                              }
+                            }
+                          });
                         } else {
-                          val = (branchData as any)?.[metric.id] || 0;
+                          const branchData = data?.stats[branch]?.[cat.id];
+                          if (metric.id === 'inventoryDM') {
+                            qty = (branchData?.inventory || 0) / 200;
+                          } else {
+                            qty = (branchData as any)?.[metric.id] || 0;
+                            weight = (branchData as any)?.[`${metric.id}_weight`] || 0;
+                          }
                         }
 
                         return (
-                          <td key={branch} className={`p-4 text-right font-mono text-sm ${
-                            val > 0 ? "text-zinc-900 dark:text-zinc-100 font-semibold" : "text-zinc-300 dark:text-zinc-800"
-                          }`}>
-                            {fmt(val)}
+                          <td 
+                            key={branch} 
+                            className={`p-4 border-r border-zinc-100 dark:border-zinc-900/50 align-middle ${
+                              branch === '합계' 
+                                ? 'sticky left-[320px] z-20 bg-blue-50 dark:bg-zinc-900 border-x-2 border-blue-200 dark:border-blue-900/50 font-bold shadow-[2px_0_5px_rgba(0,0,0,0.05)]' 
+                                : ''
+                            }`}
+                          >
+                            <div className="flex flex-col items-end gap-1">
+                              <span className={`font-mono text-sm ${
+                                qty > 0 ? "text-zinc-900 dark:text-zinc-100 font-semibold" : "text-zinc-300 dark:text-zinc-800"
+                              } ${branch === '합계' ? 'text-blue-700 dark:text-blue-400' : ''}`}>
+                                {fmt(qty)}
+                                {metric.id === 'inventoryDM' ? ' D/M' : ''}
+                              </span>
+                              {metric.id !== 'inventoryDM' && weight > 0 && (
+                                <span className={`text-[10px] font-mono ${branch === '합계' ? 'text-blue-600/60 dark:text-blue-400/60' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                                  {fmt(weight)} L
+                                </span>
+                              )}
+                              {metric.id !== 'inventoryDM' && qty > 0 && weight > 0 && (
+                                <span className={`text-[9px] transition-opacity ${branch === '합계' ? 'opacity-100 text-blue-500/40' : 'opacity-0 group-hover:opacity-100 text-zinc-400'}`}>
+                                  ({fmt(weight / qty)} L/ea)
+                                </span>
+                              )}
+                            </div>
                           </td>
                         );
                       })}
@@ -330,25 +402,43 @@ export default function DailyInventorySheet() {
       {/* Summary Footer */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:hidden">
         <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
-          <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">오늘의 총 매입 (Liter)</p>
-          <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">
-            {fmt(data ? Object.values(data.stats).reduce((acc, b) => 
-              acc + Object.values(b).reduce((acc2, c) => acc2 + (c.purchase || 0), 0), 0) : 0)} L
-          </p>
+          <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">오늘의 총 매입</p>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">
+              {fmt(data ? Object.values(data.stats).reduce((acc, b) => 
+                acc + Object.values(b).reduce((acc2, c) => acc2 + (c.purchase_weight || 0), 0), 0) : 0)} L
+            </span>
+            <span className="text-xs text-emerald-600/60 dark:text-emerald-400/60">
+              ({fmt(data ? Object.values(data.stats).reduce((acc, b) => 
+                acc + Object.values(b).reduce((acc2, c) => acc2 + (c.purchase || 0), 0), 0) : 0)} ea)
+            </span>
+          </div>
         </div>
         <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-xl border border-blue-100 dark:border-blue-900/50">
-          <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-1">오늘의 총 매출 (Liter)</p>
-          <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
-            {fmt(data ? Object.values(data.stats).reduce((acc, b) => 
-              acc + Object.values(b).reduce((acc2, c) => acc2 + (c.sales || 0), 0), 0) : 0)} L
-          </p>
+          <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-1">오늘의 총 매출</p>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+              {fmt(data ? Object.values(data.stats).reduce((acc, b) => 
+                acc + Object.values(b).reduce((acc2, c) => acc2 + (c.sales_weight || 0), 0), 0) : 0)} L
+            </span>
+            <span className="text-xs text-blue-600/60 dark:text-blue-400/60">
+              ({fmt(data ? Object.values(data.stats).reduce((acc, b) => 
+                acc + Object.values(b).reduce((acc2, c) => acc2 + (c.sales || 0), 0), 0) : 0)} ea)
+            </span>
+          </div>
         </div>
         <div className="p-4 bg-indigo-50 dark:bg-indigo-950/20 rounded-xl border border-indigo-100 dark:border-indigo-900/50">
-          <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">현재고 총계 (Liter)</p>
-          <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">
-            {fmt(data ? Object.values(data.stats).reduce((acc, b) => 
-              acc + Object.values(b).reduce((acc2, c) => acc2 + (c.inventory || 0), 0), 0) : 0)} L
-          </p>
+          <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">현재고 총계</p>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">
+              {fmt(data ? Object.values(data.stats).reduce((acc, b) => 
+                acc + Object.values(b).reduce((acc2, c) => acc2 + (c.inventory_weight || 0), 0), 0) : 0)} L
+            </span>
+            <span className="text-xs text-indigo-600/60 dark:text-indigo-400/60">
+              ({fmt(data ? Object.values(data.stats).reduce((acc, b) => 
+                acc + Object.values(b).reduce((acc2, c) => acc2 + (c.inventory || 0), 0), 0) : 0)} ea)
+            </span>
+          </div>
         </div>
       </div>
 

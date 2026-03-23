@@ -33,11 +33,22 @@ interface ItemOption {
   spec: string;
 }
 
+interface RecommendedItem {
+  itemCode: string;
+  itemName: string;
+  warehouse: string;
+  quantity: number;
+  sales_qty_6m: number;
+  lastSoldDate: string | null;
+  turnoverRatio: number;
+}
+
 interface ApiData {
   savedItems: SavedItem[];
   items: ItemOption[];
   warehouses: string[];
   units: string[];
+  recommendations: RecommendedItem[];
 }
 
 // ── Helpers ──
@@ -118,6 +129,7 @@ export default function LongTermInventoryPage() {
   // Search state
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("전체");
+  const [activeTab, setActiveTab] = useState<'managed' | 'recommended'>('managed');
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -286,6 +298,40 @@ export default function LongTermInventoryPage() {
     } catch (error) {
       console.error("Failed to delete:", error);
       alert("삭제에 실패했습니다.");
+    }
+  };
+
+  const handleRegisterRecommended = async (item: RecommendedItem) => {
+    setIsSaving(true);
+    try {
+      const itemOption = data?.items.find(it => it.품목코드 === item.itemCode);
+      const newItem = {
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        warehouse: item.warehouse,
+        quantity: item.quantity,
+        unit: 'EA', // Default
+        spec: itemOption?.spec || "",
+        remarks: `자동분석 추천 (마지막 판매: ${item.lastSoldDate || '없음'})`,
+        actionPlan: "",
+        targetMonth: selectedMonth,
+      };
+
+      const response = await apiFetch(`/api/dashboard/long-term-inventory`, {
+        method: "POST",
+        body: JSON.stringify(newItem),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        fetchData();
+        setActiveTab('managed');
+      }
+    } catch (error) {
+      console.error("Failed to register recommended item:", error);
+      alert("등록에 실패했습니다.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -549,32 +595,59 @@ export default function LongTermInventoryPage() {
       <div className="space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-              <Package className="w-5 h-5 text-zinc-400" /> 장기재고 목록
-            </h3>
-            <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 p-1 rounded-lg">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
-                    activeCategory === cat
-                      ? "bg-white dark:bg-zinc-700 text-blue-600 dark:text-blue-400 shadow-sm"
-                      : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+            <div className="flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
+              <button
+                onClick={() => setActiveTab('managed')}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  activeTab === 'managed'
+                    ? "bg-white dark:bg-zinc-700 text-blue-600 dark:text-blue-400 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                }`}
+              >
+                <Package className="w-4 h-4" />
+                관리 목록 ({filteredItems.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('recommended')}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  activeTab === 'recommended'
+                    ? "bg-white dark:bg-zinc-700 text-purple-600 dark:text-purple-400 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                }`}
+              >
+                <Calculator className="w-4 h-4" />
+                분석 추천 ({data?.recommendations?.length || 0})
+              </button>
             </div>
-            
-            <button
-              onClick={handleCarryOver}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-xs font-semibold rounded-lg transition-colors border border-zinc-200 dark:border-zinc-700"
-              title="지난달 목록 불러오기"
-            >
-              <Plus className="w-3 h-3" /> 지난달 복사
-            </button>
+
+            {activeTab === 'managed' && (
+              <>
+                <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-700 mx-2" />
+                <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 p-1 rounded-lg">
+                  {categories.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setActiveCategory(cat)}
+                      className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                        activeCategory === cat
+                          ? "bg-white dark:bg-zinc-700 text-blue-600 dark:text-blue-400 shadow-sm"
+                          : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+                
+                <button
+                  onClick={handleCarryOver}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-xs font-semibold rounded-lg transition-colors border border-zinc-200 dark:border-zinc-700"
+                  title="지난달 목록 불러오기"
+                >
+                  <Plus className="w-3 h-3" /> 지난달 복사
+                </button>
+              </>
+            )}
           </div>
           
           <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 shadow-sm min-w-[300px]">
@@ -591,76 +664,137 @@ export default function LongTermInventoryPage() {
 
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-zinc-50 dark:bg-zinc-800/80">
-                <tr>
-                  <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">구분</th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">제품명</th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">규격</th>
-                  <th className="py-3 px-4 text-right text-[10px] font-bold text-zinc-500 uppercase tracking-wider">전재고</th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">비고</th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{selectedMonth.split('-')[1]}월 처리방안</th>
-                  <th className="py-3 px-4 text-right text-[10px] font-bold text-zinc-500 uppercase tracking-wider">관리</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {filteredItems.length === 0 ? (
+            {activeTab === 'managed' ? (
+              <table className="w-full text-sm text-left">
+                <thead className="bg-zinc-50 dark:bg-zinc-800/80">
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-zinc-400">
-                      {activeCategory === "전체" 
-                        ? "등록된 장기재고가 없습니다." 
-                        : `${activeCategory} 카테고리에 등록된 장기재고가 없습니다.`}
-                    </td>
+                    <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">구분</th>
+                    <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">제품명</th>
+                    <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">규격</th>
+                    <th className="py-3 px-4 text-right text-[10px] font-bold text-zinc-500 uppercase tracking-wider">전재고</th>
+                    <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">비고</th>
+                    <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{selectedMonth.split('-')[1]}월 처리방안</th>
+                    <th className="py-3 px-4 text-right text-[10px] font-bold text-zinc-500 uppercase tracking-wider">관리</th>
                   </tr>
-                ) : (
-                  filteredItems.map((item) => (
-                    <tr key={item.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group">
-                      <td className="py-3 px-4">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                          item.category === 'IL' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' :
-                          item.category === 'AL' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
-                          'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400'
-                        }`}>
-                          {item.category}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <p className="font-medium text-zinc-900 dark:text-zinc-100">{item.itemName}</p>
-                        <p className="text-[10px] text-zinc-400 font-mono">{item.itemCode}</p>
-                        <p className="text-[10px] text-blue-500 font-medium mt-0.5">{item.warehouse}</p>
-                      </td>
-                      <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400 text-xs">
-                        {item.spec}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-zinc-900 dark:text-zinc-100">
-                        {fmt(item.quantity)} <span className="text-[10px] text-zinc-400 font-normal ml-0.5">{item.unit}</span>
-                      </td>
-                      <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400 text-xs min-w-[150px]">
-                        <EditableCell 
-                          value={item.remarks} 
-                          onSave={(val) => handleUpdate(item.id, { remarks: val })}
-                        />
-                      </td>
-                      <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400 text-xs min-w-[200px]">
-                        <EditableCell 
-                          value={item.actionPlan} 
-                          onSave={(val) => handleUpdate(item.id, { actionPlan: val })}
-                        />
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-all opacity-0 group-hover:opacity-100"
-                          title="삭제"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {filteredItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-zinc-400">
+                        {activeCategory === "전체" 
+                          ? "등록된 장기재고가 없습니다." 
+                          : `${activeCategory} 카테고리에 등록된 장기재고가 없습니다.`}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredItems.map((item) => (
+                      <tr key={item.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group">
+                        <td className="py-3 px-4">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            item.category === 'IL' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' :
+                            item.category === 'AL' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
+                            'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400'
+                          }`}>
+                            {item.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <p className="font-medium text-zinc-900 dark:text-zinc-100">{item.itemName}</p>
+                          <p className="text-[10px] text-zinc-400 font-mono">{item.itemCode}</p>
+                          <p className="text-[10px] text-blue-500 font-medium mt-0.5">{item.warehouse}</p>
+                        </td>
+                        <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400 text-xs">
+                          {item.spec}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                          {fmt(item.quantity)} <span className="text-[10px] text-zinc-400 font-normal ml-0.5">{item.unit}</span>
+                        </td>
+                        <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400 text-xs min-w-[150px]">
+                          <EditableCell 
+                            value={item.remarks} 
+                            onSave={(val) => handleUpdate(item.id, { remarks: val })}
+                          />
+                        </td>
+                        <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400 text-xs min-w-[200px]">
+                          <EditableCell 
+                            value={item.actionPlan} 
+                            onSave={(val) => handleUpdate(item.id, { actionPlan: val })}
+                          />
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                            title="삭제"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-sm text-left">
+                <thead className="bg-zinc-50 dark:bg-zinc-800/80">
+                  <tr>
+                    <th className="py-3 px-4 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">제품명</th>
+                    <th className="py-3 px-4 text-right text-[10px] font-bold text-zinc-500 uppercase tracking-wider">현재 재고</th>
+                    <th className="py-3 px-4 text-right text-[10px] font-bold text-zinc-500 uppercase tracking-wider">마지막 판매일</th>
+                    <th className="py-3 px-4 text-right text-[10px] font-bold text-zinc-500 uppercase tracking-wider">회전율 (6개월)</th>
+                    <th className="py-3 px-4 text-right text-[10px] font-bold text-zinc-500 uppercase tracking-wider">상태</th>
+                    <th className="py-3 px-4 text-right text-[10px] font-bold text-zinc-500 uppercase tracking-wider">관리</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {data?.recommendations?.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-zinc-400">
+                        자동분석된 장기재고 추천 항목이 없습니다.
+                      </td>
+                    </tr>
+                  ) : (
+                    data?.recommendations.map((item) => (
+                      <tr key={`${item.itemCode}-${item.warehouse}`} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group">
+                        <td className="py-3 px-4">
+                          <p className="font-medium text-zinc-900 dark:text-zinc-100">{item.itemName}</p>
+                          <p className="text-[10px] text-zinc-400 font-mono">{item.itemCode}</p>
+                          <p className="text-[10px] text-blue-500 font-medium mt-0.5">{item.warehouse}</p>
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                          {fmt(item.quantity)}
+                        </td>
+                        <td className="py-3 px-4 text-right text-zinc-600 dark:text-zinc-400 text-xs">
+                          {item.lastSoldDate || <span className="text-red-500 font-semibold">판매기록 없음</span>}
+                        </td>
+                        <td className="py-3 px-4 text-right text-zinc-600 dark:text-zinc-400 text-xs font-mono">
+                          {item.turnoverRatio.toFixed(3)}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            !item.lastSoldDate || item.turnoverRatio === 0 
+                              ? 'bg-red-100 text-red-700 dark:bg-red-900/40' 
+                              : 'bg-orange-100 text-orange-700 dark:bg-orange-900/40'
+                          }`}>
+                            {!item.lastSoldDate || item.turnoverRatio === 0 ? '데드스탁' : '저회전'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => handleRegisterRecommended(item)}
+                            disabled={isSaving}
+                            className="px-2 py-1 bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/20 dark:text-purple-400 rounded text-[10px] font-bold transition-colors"
+                          >
+                            관리목록 등록
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>

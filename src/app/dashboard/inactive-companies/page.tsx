@@ -13,6 +13,7 @@ interface InactiveCompanyData {
   client_code?: string;
   client_name?: string;
   inactive_count?: number;
+  inactive_company_names?: string;
   last_period_sales: number;
   avg_days_inactive?: number;
   max_days_inactive?: number;
@@ -74,10 +75,11 @@ export default function InactiveCompaniesPage() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
+      // Always fetch client-level data to build hierarchy on frontend
       const params = new URLSearchParams({
         month: selectedMonth,
         inactiveMonths: String(inactiveMonths),
-        groupBy: groupBy,
+        groupBy: 'client',
         branches: selectedBranches.join(','),
       });
 
@@ -94,18 +96,7 @@ export default function InactiveCompaniesPage() {
   };
 
   const hierarchicalData = useMemo(() => {
-    if (groupBy === 'branch') {
-      return data.map(item => ({
-        key: item.branch_name,
-        label: item.branch_name,
-        level: 'branch' as const,
-        data: item,
-        children: [],
-        isExpanded: false,
-      }));
-    }
-
-    // Build hierarchy for employee or client grouping
+    // Build hierarchy based on selected groupBy
     const branchMap = new Map<string, HierarchicalNode>();
 
     data.forEach(item => {
@@ -130,54 +121,28 @@ export default function InactiveCompaniesPage() {
 
       const branch = branchMap.get(branchKey)!;
 
-      if (groupBy === 'employee' && item.employee_name) {
-        const employeeKey = `${branchKey}-${item.employee_code}`;
-        let employee = branch.children.find(c => c.key === employeeKey);
-
-        if (!employee) {
-          employee = {
-            key: employeeKey,
-            label: item.employee_name,
-            level: 'employee',
-            data: {
-              branch_name: branchKey,
-              employee_code: item.employee_code,
-              employee_name: item.employee_name,
-              inactive_count: 0,
-              last_period_sales: 0,
-              avg_days_inactive: 0,
-              max_days_inactive: 0,
-            },
-            children: [],
-            isExpanded: false,
-          };
-          branch.children.push(employee);
-        }
-
-        // Aggregate to employee
-        employee.data.inactive_count = (employee.data.inactive_count || 0) + (item.inactive_count || 0);
-        employee.data.last_period_sales += item.last_period_sales;
-        if (item.avg_days_inactive !== undefined) {
-          employee.data.avg_days_inactive = Math.max(employee.data.avg_days_inactive || 0, item.avg_days_inactive);
-        }
-        if (item.max_days_inactive !== undefined) {
-          employee.data.max_days_inactive = Math.max(employee.data.max_days_inactive || 0, item.max_days_inactive);
-        }
+      if (groupBy === 'branch') {
+        // Branch -> Client
+        branch.children.push({
+          key: `${branchKey}-${item.client_code}`,
+          label: item.client_name || '미지정',
+          level: 'client',
+          data: item,
+          children: [],
+          isExpanded: false,
+        });
 
         // Aggregate to branch
-        branch.data.inactive_count = (branch.data.inactive_count || 0) + (item.inactive_count || 0);
+        branch.data.inactive_count = (branch.data.inactive_count || 0) + 1;
         branch.data.last_period_sales += item.last_period_sales;
-        if (item.avg_days_inactive !== undefined) {
-          branch.data.avg_days_inactive = Math.max(branch.data.avg_days_inactive || 0, item.avg_days_inactive);
+        if (item.days_inactive !== undefined) {
+          branch.data.avg_days_inactive = (branch.data.avg_days_inactive || 0) + item.days_inactive;
+          branch.data.max_days_inactive = Math.max(branch.data.max_days_inactive || 0, item.days_inactive);
         }
-        if (item.max_days_inactive !== undefined) {
-          branch.data.max_days_inactive = Math.max(branch.data.max_days_inactive || 0, item.max_days_inactive);
-        }
-      } else if (groupBy === 'client' && item.client_name) {
-        const clientKey = `${branchKey}-${item.employee_code}-${item.client_code}`;
-
-        // Find or create employee node
-        const employeeKey = `${branchKey}-${item.employee_code}`;
+      } else {
+        // groupBy === 'employee' or 'client'
+        // Both show Branch -> Employee -> Client for better organization
+        const employeeKey = `${branchKey}-${item.employee_code || 'none'}`;
         let employee = branch.children.find(c => c.key === employeeKey);
 
         if (!employee) {
@@ -202,8 +167,8 @@ export default function InactiveCompaniesPage() {
 
         // Add client node
         employee.children.push({
-          key: clientKey,
-          label: item.client_name,
+          key: `${employeeKey}-${item.client_code}`,
+          label: item.client_name || '미지정',
           level: 'client',
           data: item,
           children: [],
@@ -214,6 +179,7 @@ export default function InactiveCompaniesPage() {
         employee.data.inactive_count = (employee.data.inactive_count || 0) + 1;
         employee.data.last_period_sales += item.last_period_sales;
         if (item.days_inactive !== undefined) {
+          employee.data.avg_days_inactive = (employee.data.avg_days_inactive || 0) + item.days_inactive;
           employee.data.max_days_inactive = Math.max(employee.data.max_days_inactive || 0, item.days_inactive);
         }
 
@@ -221,12 +187,27 @@ export default function InactiveCompaniesPage() {
         branch.data.inactive_count = (branch.data.inactive_count || 0) + 1;
         branch.data.last_period_sales += item.last_period_sales;
         if (item.days_inactive !== undefined) {
+          branch.data.avg_days_inactive = (branch.data.avg_days_inactive || 0) + item.days_inactive;
           branch.data.max_days_inactive = Math.max(branch.data.max_days_inactive || 0, item.days_inactive);
         }
       }
     });
 
-    return Array.from(branchMap.values());
+    // Final pass to calculate averages
+    branchMap.forEach(branch => {
+      if (branch.data.inactive_count && branch.data.inactive_count > 0) {
+        branch.data.avg_days_inactive = (branch.data.avg_days_inactive || 0) / branch.data.inactive_count;
+      }
+      branch.children.forEach(child => {
+        if (child.level === 'employee' && child.data.inactive_count && child.data.inactive_count > 0) {
+          child.data.avg_days_inactive = (child.data.avg_days_inactive || 0) / child.data.inactive_count;
+        }
+      });
+    });
+
+    return Array.from(branchMap.values()).sort((a, b) => 
+      (b.data.inactive_count || 0) - (a.data.inactive_count || 0)
+    );
   }, [data, groupBy]);
 
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
@@ -285,7 +266,9 @@ export default function InactiveCompaniesPage() {
               {node.level === 'branch' && <Building className="w-4 h-4 text-blue-500" />}
               {node.level === 'employee' && <User className="w-4 h-4 text-green-500" />}
               {node.level === 'client' && <AlertCircle className="w-4 h-4 text-orange-500" />}
-              <span className={hasChildren ? 'font-semibold' : ''}>{node.label}</span>
+              <div className="flex flex-col">
+                <span className={hasChildren ? 'font-semibold' : ''}>{node.label}</span>
+              </div>
             </div>
           </td>
           <td className="px-4 py-3 text-sm text-right text-red-600 dark:text-red-400 font-bold">
@@ -330,6 +313,7 @@ export default function InactiveCompaniesPage() {
       '담당자': item.employee_name || '',
       '거래처': item.client_name || '',
       '미거래업체 수': item.inactive_count || 1,
+      '미거래업체 목록': item.inactive_company_names || '',
       '마지막 거래일': item.last_transaction_date || '',
       '미거래 일수': Math.round(item.days_inactive || item.avg_days_inactive || 0),
       '이전 거래액': item.last_period_sales || 0,
@@ -534,22 +518,20 @@ export default function InactiveCompaniesPage() {
             {groupBy === 'employee' && `담당자별 현황 (${hierarchicalData.length}개 사업소)`}
             {groupBy === 'client' && `거래처별 현황 (${hierarchicalData.length}개 사업소)`}
           </h3>
-          {groupBy !== 'branch' && (
-            <div className="flex gap-2">
-              <button
-                onClick={expandAll}
-                className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
-              >
-                모두 펼치기
-              </button>
-              <button
-                onClick={collapseAll}
-                className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-              >
-                모두 접기
-              </button>
-            </div>
-          )}
+          <div className="flex gap-2">
+            <button
+              onClick={expandAll}
+              className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+            >
+              모두 펼치기
+            </button>
+            <button
+              onClick={collapseAll}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              모두 접기
+            </button>
+          </div>
         </div>
 
         {isLoading ? (

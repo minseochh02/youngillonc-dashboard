@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/db';
+import { executeSQL } from '@/egdesk-helpers';
 
 export const dynamic = 'force-dynamic';
+
+function interpolateQuery(query: string, params: any[]): string {
+  let index = 0;
+  return query.replace(/\?/g, () => {
+    const val = params[index++];
+    if (typeof val === 'string') {
+      return `'${val.replace(/'/g, "''")}'`;
+    }
+    return val;
+  });
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,8 +22,6 @@ export async function GET(request: NextRequest) {
     const groupBy = searchParams.get('groupBy') || 'branch';
     const branchesParam = searchParams.get('branches') || '';
     const selectedBranches = branchesParam ? branchesParam.split(',').filter(Boolean) : [];
-
-    const db = await getDatabase();
 
     // Calculate the cutoff date (X months ago from selected month)
     const selectedDate = new Date(month + '-01');
@@ -42,8 +51,16 @@ export async function GET(request: NextRequest) {
     let params: any[] = [];
 
     if (groupBy === 'branch') {
-      query = `
-        WITH last_transactions AS (
+      query = `SELECT
+          branch_name,
+          COUNT(DISTINCT 거래처코드) as inactive_count,
+          GROUP_CONCAT(거래처명, ', ') as inactive_company_names,
+          SUM(total_sales_amount) as last_period_sales,
+          AVG(JULIANDAY(?) - JULIANDAY(last_transaction_date)) as avg_days_inactive,
+          MAX(JULIANDAY(?) - JULIANDAY(last_transaction_date)) as max_days_inactive,
+          MIN(last_transaction_date) as earliest_last_transaction,
+          MAX(last_transaction_date) as latest_last_transaction
+        FROM (
           SELECT
             c.거래처코드,
             c.거래처명,
@@ -66,13 +83,13 @@ export async function GET(request: NextRequest) {
             COUNT(DISTINCT s.일자) as transaction_count
           FROM clients c
           LEFT JOIN (
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
+            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM sales
             UNION ALL
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
+            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM east_division_sales
             UNION ALL
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
+            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM west_division_sales
             UNION ALL
-            SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
+            SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 합계 FROM south_division_sales
           ) s ON c.거래처코드 = s.거래처코드
             AND s.일자 <= ?
           LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
@@ -82,24 +99,22 @@ export async function GET(request: NextRequest) {
             ${branchFilter}
           GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드, ec.전체사업소
           HAVING last_transaction_date IS NULL OR last_transaction_date < ?
-        )
-        SELECT
-          branch_name,
-          COUNT(DISTINCT 거래처코드) as inactive_count,
-          SUM(total_sales_amount) as last_period_sales,
-          AVG(JULIANDAY(?) - JULIANDAY(last_transaction_date)) as avg_days_inactive,
-          MAX(JULIANDAY(?) - JULIANDAY(last_transaction_date)) as max_days_inactive,
-          MIN(last_transaction_date) as earliest_last_transaction,
-          MAX(last_transaction_date) as latest_last_transaction
-        FROM last_transactions
+        ) AS last_transactions
         WHERE branch_name IS NOT NULL
         GROUP BY branch_name
-        ORDER BY inactive_count DESC
-      `;
-      params = [selectedMonthEnd, cutoffDateStr, ...selectedBranches, selectedMonthEnd, selectedMonthEnd];
+        ORDER BY inactive_count DESC`;
+      params = [selectedMonthEnd, ...selectedBranches, cutoffDateStr, selectedMonthEnd, selectedMonthEnd];
     } else if (groupBy === 'employee') {
-      query = `
-        WITH last_transactions AS (
+      query = `SELECT
+          branch_name,
+          employee_code,
+          employee_name,
+          COUNT(DISTINCT 거래처코드) as inactive_count,
+          GROUP_CONCAT(거래처명, ', ') as inactive_company_names,
+          SUM(total_sales_amount) as last_period_sales,
+          AVG(JULIANDAY(?) - JULIANDAY(last_transaction_date)) as avg_days_inactive,
+          MAX(JULIANDAY(?) - JULIANDAY(last_transaction_date)) as max_days_inactive
+        FROM (
           SELECT
             c.거래처코드,
             c.거래처명,
@@ -121,13 +136,13 @@ export async function GET(request: NextRequest) {
             SUM(CAST(REPLACE(REPLACE(s.합계, ',', ''), '-', '') AS REAL)) as total_sales_amount
           FROM clients c
           LEFT JOIN (
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
+            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM sales
             UNION ALL
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
+            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM east_division_sales
             UNION ALL
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
+            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM west_division_sales
             UNION ALL
-            SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
+            SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 합계 FROM south_division_sales
           ) s ON c.거래처코드 = s.거래처코드
             AND s.일자 <= ?
           LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
@@ -137,24 +152,13 @@ export async function GET(request: NextRequest) {
             ${branchFilter}
           GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드, ec.전체사업소
           HAVING last_transaction_date IS NULL OR last_transaction_date < ?
-        )
-        SELECT
-          branch_name,
-          employee_code,
-          employee_name,
-          COUNT(DISTINCT 거래처코드) as inactive_count,
-          SUM(total_sales_amount) as last_period_sales,
-          AVG(JULIANDAY(?) - JULIANDAY(last_transaction_date)) as avg_days_inactive,
-          MAX(JULIANDAY(?) - JULIANDAY(last_transaction_date)) as max_days_inactive
-        FROM last_transactions
+        ) AS last_transactions
         WHERE branch_name IS NOT NULL AND employee_name IS NOT NULL
         GROUP BY branch_name, employee_code, employee_name
-        ORDER BY branch_name, inactive_count DESC
-      `;
-      params = [selectedMonthEnd, cutoffDateStr, ...selectedBranches, selectedMonthEnd, selectedMonthEnd];
+        ORDER BY branch_name, inactive_count DESC`;
+      params = [selectedMonthEnd, ...selectedBranches, cutoffDateStr, selectedMonthEnd, selectedMonthEnd];
     } else if (groupBy === 'client') {
-      query = `
-        SELECT
+      query = `SELECT
           c.거래처코드 as client_code,
           c.거래처명 as client_name,
           e.사원_담당_명 as employee_name,
@@ -177,13 +181,13 @@ export async function GET(request: NextRequest) {
           COUNT(DISTINCT s.일자) as transaction_count
         FROM clients c
         LEFT JOIN (
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
+          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM sales
           UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
+          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM east_division_sales
           UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
+          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM west_division_sales
           UNION ALL
-          SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
+          SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 합계 FROM south_division_sales
         ) s ON c.거래처코드 = s.거래처코드
           AND s.일자 <= ?
         LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
@@ -193,12 +197,13 @@ export async function GET(request: NextRequest) {
           ${branchFilter}
         GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드, ec.전체사업소
         HAVING last_transaction_date IS NULL OR last_transaction_date < ?
-        ORDER BY days_inactive DESC
-      `;
+        ORDER BY days_inactive DESC`;
       params = [selectedMonthEnd, selectedMonthEnd, ...selectedBranches, cutoffDateStr];
     }
 
-    const data = await db.all(query, params);
+    const finalQuery = interpolateQuery(query, params).trim();
+    const result = await executeSQL(finalQuery);
+    const data = result?.rows || [];
 
     return NextResponse.json({
       success: true,

@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/db';
+import { executeSQL } from '@/egdesk-helpers';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const db = await getDatabase();
-
     const branchesQuery = `
       SELECT DISTINCT
         CASE
@@ -26,7 +24,8 @@ export async function GET() {
       ORDER BY branch_name
     `;
 
-    const branches = (await db.all(branchesQuery))
+    const result = await executeSQL(branchesQuery);
+    const branches = (result?.rows || [])
       .map((row: any) => row.branch_name)
       .filter((b: string) => b && b !== '미분류');
 

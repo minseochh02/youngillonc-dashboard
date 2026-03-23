@@ -28,32 +28,15 @@ export async function GET(request: Request) {
     // Fetch items for selection with category and specification
     const items = await executeSQL(`
       SELECT
-        inv.품목코드,
-        inv.품목명_규격_ as item_name,
-        COALESCE(MAX(spec_map.spec), '') as spec,
+        i.품목코드,
+        i.품목명 as item_name,
+        COALESCE(i.규격정보, '') as spec,
         CASE
-          WHEN MAX(cat_map.품목그룹1코드) = 'IL' THEN 'IL'
-          WHEN MAX(cat_map.품목그룹1코드) IN ('PVL', 'CVL') THEN 'AL'
+          WHEN i.품목그룹1코드 = 'IL' THEN 'IL'
+          WHEN i.품목그룹1코드 IN ('PVL', 'CVL', 'AL') THEN 'AL'
           ELSE '기타'
         END as category
-      FROM inventory inv
-      LEFT JOIN (
-        SELECT s.품목코드, MAX(s.규격명) as spec FROM sales s GROUP BY s.품목코드
-        UNION ALL
-        SELECT 품목코드, MAX(규격_규격명) as spec FROM purchases GROUP BY 품목코드
-      ) spec_map ON inv.품목코드 = spec_map.품목코드
-      LEFT JOIN (
-        SELECT s.품목코드, MAX(i.품목그룹1코드) as 품목그룹1코드
-        FROM sales s
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
-        GROUP BY s.품목코드
-        UNION ALL
-        SELECT p.품목코드, MAX(i.품목그룹1코드) as 품목그룹1코드
-        FROM purchases p
-        LEFT JOIN items i ON p.품목코드 = i.품목코드
-        GROUP BY p.품목코드
-      ) cat_map ON inv.품목코드 = cat_map.품목코드
-      GROUP BY inv.품목코드, inv.품목명_규격_
+      FROM items i
       ORDER BY item_name
     `);
 
@@ -68,11 +51,11 @@ export async function GET(request: Request) {
     // Fetch units for selection
     const units = await executeSQL(`
       SELECT DISTINCT 단위 as unit
-      FROM sales
+      FROM south_division_sales
       WHERE 단위 IS NOT NULL AND 단위 != ''
       UNION
       SELECT DISTINCT 단위 as unit
-      FROM purchases
+      FROM east_division_purchases
       WHERE 단위 IS NOT NULL AND 단위 != ''
     `);
 
@@ -92,6 +75,52 @@ export async function GET(request: Request) {
       category: itemMap.get(si.itemCode) || '기타'
     }));
 
+    // 4. Automated Analysis for Recommendations
+    const inactiveDays = 180;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - inactiveDays);
+    const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+
+    const recommendedItems = await executeSQL(`
+      SELECT 
+        i.품목코드 as itemCode,
+        i.품목명_규격_ as itemName,
+        i.창고명 as warehouse,
+        SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) as quantity,
+        COALESCE(sales_sum.qty, 0) as sales_qty_6m,
+        MAX(last_sales.일자) as lastSoldDate,
+        CASE 
+          WHEN SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) > 0 
+          THEN COALESCE(sales_sum.qty, 0) / SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL))
+          ELSE 0 
+        END as turnoverRatio
+      FROM inventory i
+      LEFT JOIN (
+        SELECT 품목코드, MAX(일자) as 일자 FROM (
+          SELECT 품목코드, 일자 FROM sales
+          UNION ALL SELECT 품목코드, 일자 FROM east_division_sales
+          UNION ALL SELECT 품목코드, 일자 FROM west_division_sales
+          UNION ALL SELECT 품목코드, 일자 FROM south_division_sales
+        ) GROUP BY 품목코드
+      ) last_sales ON i.품목코드 = last_sales.품목코드
+      LEFT JOIN (
+        SELECT 품목코드, SUM(CAST(REPLACE(수량, ',', '') AS REAL)) as qty
+        FROM (
+          SELECT 품목코드, 수량, 일자 FROM sales
+          UNION ALL SELECT 품목코드, 수량, 일자 FROM east_division_sales
+          UNION ALL SELECT 품목코드, 수량, 일자 FROM west_division_sales
+          UNION ALL SELECT 품목코드, 수량, 일자 FROM south_division_sales
+        ) 
+        WHERE 일자 >= '${cutoffDateStr}'
+        GROUP BY 품목코드
+      ) sales_sum ON i.품목코드 = sales_sum.품목코드
+      WHERE i.imported_at = (SELECT MAX(imported_at) FROM inventory)
+      GROUP BY i.품목코드, i.품목명_규격_, i.창고명
+      HAVING (lastSoldDate IS NULL OR lastSoldDate < '${cutoffDateStr}') AND quantity > 0
+      ORDER BY quantity DESC
+      LIMIT 20
+    `);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -99,6 +128,7 @@ export async function GET(request: Request) {
         items: items?.rows || [],
         warehouses: (warehouses?.rows || []).map((r: any) => r.warehouse),
         units: (units?.rows || []).map((r: any) => r.unit),
+        recommendations: recommendedItems?.rows || [],
       },
     });
   } catch (error: any) {
