@@ -56,19 +56,25 @@ export async function GET(request: Request) {
     // branch, category, tier, inv_qty, inv_weight
     let baselineSubquery = "";
     if (isFebruary) {
+      const isFeb1st = date === '2026-02-01';
+      
       baselineSubquery = `
         SELECT branch, category, tier, SUM(qty) as inv_qty, SUM(weight) as inv_weight
         FROM (
-          -- Snapshot Jan 31 (esz018r__6_)
-          SELECT ${branchCase('w.창고명')} as branch, ${categoryCase('p')} as category, ${tierCase('p')} as tier, CAST(REPLACE(e.재고수량, ',', '') AS NUMERIC) as qty, ${weightCalc('e.재고수량', 'p.규격정보')} as weight
-          FROM esz018r__6_ e
-          LEFT JOIN warehouses w ON e.창고코드 = w.창고코드
+          -- Snapshot Feb 1 EOD (esz018r_6)
+          SELECT ${branchCase('w.창고명')} as branch, ${categoryCase('p')} as category, ${tierCase('p')} as tier, 
+                 CAST(REPLACE(e.재고수량, ',', '') AS NUMERIC) as qty, 
+                 ${weightCalc('e.재고수량', 'p.규격정보')} as weight
+          FROM esz018r_6 e
+          LEFT JOIN warehouses w ON e.창고코드 = w.창고코드 OR CAST(e.창고코드 AS TEXT) = CAST(w.창고코드 AS TEXT)
           LEFT JOIN items p ON e.품목코드 = p.품목코드
           
           UNION ALL
           
-          -- Sales Feb 1 to Date-1 (Subtract)
-          SELECT ${branchCase('ec.전체사업소')}, ${categoryCase('i')}, ${tierCase('i')}, -CAST(REPLACE(s.수량, ',', '') AS NUMERIC), -(${weightCalc('s.수량', 'i.규격정보')})
+          -- Roll forward from Feb 2 to Date-1 (or roll back Feb 1st if date is Feb 1st)
+          SELECT ${branchCase('ec.전체사업소')}, ${categoryCase('i')}, ${tierCase('i')}, 
+                 ${isFeb1st ? '' : '-'}CAST(REPLACE(s.수량, ',', '') AS NUMERIC), 
+                 ${isFeb1st ? '' : '-'}(${weightCalc('s.수량', 'i.규격정보')})
           FROM (
             SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 수량, 중량 FROM sales
             UNION ALL SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 수량, 중량 FROM east_division_sales
@@ -78,14 +84,21 @@ export async function GET(request: Request) {
           LEFT JOIN items i ON s.품목코드 = i.품목코드
           LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
           LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-          WHERE s.일자 >= '2026-02-01' AND s.일자 < '${date}'
-            AND (ec.전체사업소 LIKE '%사업소%' OR ec.전체사업소 LIKE '%지사%' OR ec.전체사업소 = '벤츠')
-            AND e.사원_담당_명 != '김도량'
+          WHERE (
+            ${isFeb1st 
+              ? `s.일자 = '2026-02-01'` // To get Start of Feb 1: Snapshot Feb 1 (EOD) + Sales Feb 1
+              : `s.일자 >= '2026-02-02' AND s.일자 < '${date}'`
+            }
+          )
+          AND (ec.전체사업소 LIKE '%사업소%' OR ec.전체사업소 LIKE '%지사%' OR ec.전체사업소 = '벤츠' OR ec.전체사업소 = 'MB')
+          AND e.사원_담당_명 != '김도량'
             
           UNION ALL
           
-          -- Purchases Feb 1 to Date-1 (Add)
-          SELECT ${branchCase('c.거래처그룹1명')}, ${categoryCase('i')}, ${tierCase('i')}, CAST(REPLACE(p.수량, ',', '') AS NUMERIC), ${weightCalc('p.수량', 'i.규격정보')}
+          -- Purchases Roll forward/back
+          SELECT ${branchCase('c.거래처그룹1명')}, ${categoryCase('i')}, ${tierCase('i')}, 
+                 ${isFeb1st ? '-' : ''}CAST(REPLACE(p.수량, ',', '') AS NUMERIC), 
+                 ${isFeb1st ? '-' : ''}${weightCalc('p.수량', 'i.규격정보')}
           FROM (
             SELECT 일자, 거래처코드, 품목코드, 수량, 중량 FROM purchases
             UNION ALL SELECT 일자, 거래처코드, 품목코드, 수량, 중량 FROM east_division_purchases
@@ -94,23 +107,42 @@ export async function GET(request: Request) {
           ) p
           LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
           LEFT JOIN items i ON p.품목코드 = i.품목코드
-          WHERE p.일자 >= '2026-02-01' AND p.일자 < '${date}'
-            AND (c.거래처그룹1명 LIKE '%사업소%' OR c.거래처그룹1명 LIKE '%지사%' OR c.거래처그룹1명 = 'MB' OR c.거래처그룹1명 LIKE '%화성%' OR c.거래처그룹1명 LIKE '%창원%' OR c.거래처그룹1명 LIKE '%남부%' OR c.거래처그룹1명 LIKE '%중부%' OR c.거래처그룹1명 LIKE '%서부%' OR c.거래처그룹1명 LIKE '%동부%' OR c.거래처그룹1명 LIKE '%제주%' OR c.거래처그룹1명 LIKE '%부산%')
+          WHERE (
+            ${isFeb1st 
+              ? `p.일자 = '2026-02-01'` // To get Start of Feb 1: Snapshot Feb 1 (EOD) - Purch Feb 1
+              : `p.일자 >= '2026-02-02' AND p.일자 < '${date}'`
+            }
+          )
+          AND (c.거래처그룹1명 LIKE '%사업소%' OR c.거래처그룹1명 LIKE '%지사%' OR c.거래처그룹1명 = 'MB' OR c.거래처그룹1명 LIKE '%화성%' OR c.거래처그룹1명 LIKE '%창원%' OR c.거래처그룹1명 LIKE '%남부%' OR c.거래처그룹1명 LIKE '%중부%' OR c.거래처그룹1명 LIKE '%서부%' OR c.거래처그룹1명 LIKE '%동부%' OR c.거래처그룹1명 LIKE '%제주%' OR c.거래처그룹1명 LIKE '%부산%')
             
           UNION ALL
           
-          -- Transfers Feb 1 to Date-1 (Net)
-          SELECT ${branchCase('t.출고창고명')}, ${categoryCase('i')}, ${tierCase('i')}, -CAST(REPLACE(t.수량, ',', '') AS NUMERIC), -(${weightCalc('t.수량', 'i.규격정보')})
+          -- Transfers Roll forward/back
+          SELECT ${branchCase('t.출고창고명')}, ${categoryCase('i')}, ${tierCase('i')}, 
+                 ${isFeb1st ? '' : '-'}CAST(REPLACE(t.수량, ',', '') AS NUMERIC), 
+                 ${isFeb1st ? '' : '-'}(${weightCalc('t.수량', 'i.규격정보')})
           FROM inventory_transfers t
           LEFT JOIN items i ON t.품목명_규격 = (i.품목명 || ' ' || COALESCE(i.규격정보, ''))
-          WHERE t.일자 >= '2026-02-01' AND t.일자 < '${date}'
+          WHERE (
+            ${isFeb1st 
+              ? `t.일자 = '2026-02-01'`
+              : `t.일자 >= '2026-02-02' AND t.일자 < '${date}'`
+            }
+          )
           
           UNION ALL
           
-          SELECT ${branchCase('t.입고창고명')}, ${categoryCase('i')}, ${tierCase('i')}, CAST(REPLACE(t.수량, ',', '') AS NUMERIC), ${weightCalc('t.수량', 'i.규격정보')}
+          SELECT ${branchCase('t.입고창고명')}, ${categoryCase('i')}, ${tierCase('i')}, 
+                 ${isFeb1st ? '-' : ''}CAST(REPLACE(t.수량, ',', '') AS NUMERIC), 
+                 ${isFeb1st ? '-' : ''}${weightCalc('t.수량', 'i.규격정보')}
           FROM inventory_transfers t
           LEFT JOIN items i ON t.품목명_규격 = (i.품목명 || ' ' || COALESCE(i.규격정보, ''))
-          WHERE t.일자 >= '2026-02-01' AND t.일자 < '${date}'
+          WHERE (
+            ${isFeb1st 
+              ? `t.일자 = '2026-02-01'`
+              : `t.일자 >= '2026-02-02' AND t.일자 < '${date}'`
+            }
+          )
         ) GROUP BY 1, 2, 3
       `;
     } else {

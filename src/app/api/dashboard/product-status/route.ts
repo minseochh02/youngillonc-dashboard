@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { executeSQL } from '@/egdesk-helpers';
+import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
 
 /**
  * API Endpoint for Product Status
@@ -11,17 +11,7 @@ export async function GET(request: Request) {
     const lastYear = currentYear - 1;
 
     // Unified sales subquery across all four tables
-    const combinedSales = `
-      (
-        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
-        UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
-        UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
-        UNION ALL
-        SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
-      )
-    `;
+    const combinedSales = UNIFIED_SALES_SUBQUERY;
 
     // Section 1: Auto by B2C vs B2B
     const autoQuery = `

@@ -22,34 +22,45 @@ function parseAmount(v: unknown): number {
 }
 
 /**
- * Starting balances (이월잔액) from 계정별원장.csv as of 2026/01/01.
+ * Starting balances (이월잔액) from 계정별원장-거래처코드포함2.xlsx as of 2026/02/01.
  * Values are in KRW.
  */
 const CARRIED_FORWARD_BALANCES: Record<string, number> = {
-  /** 현금 시재금 (서울+창원+화성) */
-  '현금 시재금': 574760,
-  /** 보통예금 (Line 41) */
-  '보통예금': 1785378579,
-  /** 외화예금 (Line 2766) */
-  '외화예금': 527217883,
-  /** 받을어음 (Line 5868) */
-  '받을어음': 1192789752,
-  /** 외담대 (Implied from Feb 26 verified 전잔) */
-  '외담대': 1155434382,
-  /** 전자어음 (Implied from total - 외담대) */
-  '전자어음': 37355370,
-  /** 적금 (정기예.적금 Line 2779) */
+  /** 현금 시재금 (서울+창원+화성) - Feb 1st total */
+  '현금 시재금': 2406000,
+  /** 보통예금 (Feb 1st) */
+  '보통예금': 1114812666,
+  /** 외화예금 (Feb 1st totals by currency from image) */
+  '외화예금_USD': 461029209, // 303,545,509 (current) + 157,483,700 (fixed)
+  '외화예금_EUR': 62716576,  // 62,716,543 (current) + 33 (other)
+  '외화예금_JPY': 4968937,
+  '외화예금_GBP': 38,
+  /** 받을어음 (Feb 1st total) */
+  '받을어음': 1107221919,
+  /** 외담대 (Baseline split from Feb 1st total - TBD) */
+  '외담대': 1070000000,
+  /** 전자어음 (Baseline split from Feb 1st total - TBD) */
+  '전자어음': 37221919,
+  /** 적금 (정기예.적금 Feb 1st) */
   '정기예.적금': 700000000,
-  /** 보험 (장기금융상품 Line 7375) */
-  '장기금융상품': 278484800,
-  /** CMA (기타단기금융상품 Line 2781) */
+  /** 보험 (장기금융상품 Feb 1st) */
+  '장기금융상품': 284928000,
+  /** CMA (기타단기금융상품 Feb 1st) */
   '기타단기금융상품': 3570587122,
-  /** 퇴직연금운용자산 (From 1iKvrLravEbuFmPY.xlsx Line 4716) */
+  /** 퇴직연금운용자산 (Feb 1st) */
   '퇴직연금운용자산': 891061296,
-  /** 단기차입금 (Line 7598) */
+  /** 단기차입금 (Feb 1st) */
   '단기차입금': 9300000000,
-  /** 장기차입금 (Not found in CSV, default to 0) */
+  /** 장기차입금 (Feb 1st) */
   '장기차입금': 0,
+};
+
+/** Foreign baseline amounts for display only (as of Feb 1st) */
+const FOREIGN_BASELINES: Record<string, { amount: number, currency: string }> = {
+  'USD': { amount: 313844, currency: 'USD' }, // 211,342 + 102,502
+  'EUR': { amount: 41150, currency: 'EUR' },
+  'JPY': { amount: 530620, currency: 'JPY' },
+  'GBP': { amount: 0, currency: 'GBP' }
 };
 
 /**
@@ -77,63 +88,60 @@ function aggregateLedgerDay(
   return { current: currentBalance, inc, dec };
 }
 
-/** Ledger row type (DB_KNOWLEDGE §8) */
-type LedgerRow = { id: number; 일자: string; 계정명: string; 적요?: string; 차변금액: unknown; 대변금액: unknown };
-
-/** Funds-relevant 계정명 mapping (DB_KNOWLEDGE §8.2). Cash uses prefix; others exact match. */
-const FUNDS_계정명 = {
-  /** 현금 시재금: prefix match (현금 시재금-서울, 현금 시재금-창원, 현금 시재금-화성) */
-  cashPrefix: '현금 시재금',
-  /** KRW deposit */
-  보통예금: '보통예금',
-  /** 퇴직연금 */
-  퇴직연금: '퇴직연금운용자산',
-  /** 받을어음: exact match */
-  받을어음: '받을어음',
-  /** Foreign-currency / 외화: split by currency marker in 거래처명 */
-  foreignBase: '외화예금',
-  foreignExtra: '외환차익',
-  /** Other specific categories (Ledger Analysis Guide) */
-  savings: '정기예.적금',
-  insurance: '장기금융상품',
-  cma: '기타단기금융상품',
-  /** Liabilities / 차입금·부채: exact 계정명 list */
-  loans: [
-    '단기차입금',
-    '장기차입금',
-    // '미지급금',
-    // '미지급비용',
-    // '외상매입금',
-    // '예수금',
-    // '부가세예수금'
-  ] as const,
+/** Account codes for ledger filtering (DB_KNOWLEDGE §8.2) */
+const ACCOUNT_CODES = {
+  CASH_HAND_ALL: ['1019', '1023', '1024', '1025'],
+  ORDINARY_DEPOSIT: '1039',
+  PENSION_ASSETS: '3350',
+  PROMISSORY_NOTES: '1109',
+  FOREIGN_DEPOSIT: '1040',
+  SAVINGS: '1059',
+  INSURANCE: '1774',
+  CMA: '1063',
+  LOANS: ['2515', '2519', '2539', '2549', '2559', '2629'], // Added common loan codes starting with 2
 } as const;
 
-/** Extract currency from 적요 (e.g. "기업-외화(USD)" -> "USD") */
+/** Ledger row type (DB_KNOWLEDGE §8) */
+type LedgerRow = { id: number; 일자: string; 계정코드: string; 거래처코드: string; 적요?: string; 차변금액: unknown; 대변금액: unknown };
+
+/** Map bank account codes to currencies from bank_accounts table */
+const CURRENCY_ACCOUNT_MAP: Record<string, string> = {
+  // USD
+  '3110161465600017': 'USD',
+  '3110161465600017(10001': 'USD',
+  // JPY
+  '3110161465600017-1': 'JPY',
+  '3110161465600024': 'JPY',
+  // EUR
+  '3110161465600017-2': 'EUR',
+  '3110161465600031': 'EUR',
+  // GBP
+  '31101614656000173': 'GBP'
+};
+
+/** Extract currency from transaction metadata */
 function detectCurrency(row: LedgerRow): string {
+  // 1. Try mapping by bank account code (거래처코드 for bank entries)
+  const codeMatch = CURRENCY_ACCOUNT_MAP[row.거래처코드];
+  if (codeMatch) return codeMatch;
+
+  // 2. Fallback to regex on 적요
   const name = row.적요 || '';
   const match = name.match(/\((USD|JPY|EUR|GBP)\)/i);
   return match ? match[1].toUpperCase() : 'USD'; // Default to USD if not found
 }
 
-function filterBy계정명(rows: LedgerRow[], filter: string | { prefix?: string; exact?: string[] }): LedgerRow[] {
-  const normalize = (s: string) => (s ?? '').trim();
-  if (typeof filter === 'string') {
-    return rows.filter((r) => normalize(r.계정명).startsWith(filter));
+function filterBy계정코드(rows: LedgerRow[], filter: string | string[]): LedgerRow[] {
+  if (Array.isArray(filter)) {
+    const set = new Set(filter);
+    return rows.filter((r) => set.has(r.계정코드));
   }
-  if (filter.prefix) {
-    return rows.filter((r) => normalize(r.계정명).startsWith(filter.prefix!));
-  }
-  if (filter.exact?.length) {
-    const set = new Set(filter.exact.map(s => s.trim()));
-    return rows.filter((r) => set.has(normalize(r.계정명)));
-  }
-  return [];
+  return rows.filter((r) => r.계정코드 === filter);
 }
 
 /**
  * API Endpoint to fetch Daily Funds Status (자금현황)
- * DB_KNOWLEDGE §8: ledger filtered by 계정명 (현금 시재금%, 보통예금, 외화예금). 받을어음 당일 flow from promissory_notes.
+ * DB_KNOWLEDGE §8: ledger filtered by 계정코드. 받을어음 당일 flow from promissory_notes.
  */
 export async function GET(request: Request) {
   try {
@@ -146,10 +154,10 @@ export async function GET(request: Request) {
     //    - "flow" rows: only the selected/prev day (for 당일 inc/dec)
     //    - "balance as-of" rows: all rows up to selected/prev day (for running 잔액 calculation)
     //    Using 일자 column which stores dates in YYYY-MM-DD format
-    const ledgerCurFlowQuery   = `SELECT id, 일자, 계정명, 적요, 차변금액, 대변금액 FROM ledger WHERE 일자 = '${ledgerDate}'`;
-    const ledgerCurBalQuery    = `SELECT id, 일자, 계정명, 적요, 차변금액, 대변금액 FROM ledger WHERE 일자 <= '${ledgerDate}'`;
-    const ledgerPrevFlowQuery  = `SELECT id, 일자, 계정명, 적요, 차변금액, 대변금액 FROM ledger WHERE 일자 = '${ledgerPrevDate}'`;
-    const ledgerPrevBalQuery   = `SELECT id, 일자, 계정명, 적요, 차변금액, 대변금액 FROM ledger WHERE 일자 <= '${ledgerPrevDate}'`;
+    const ledgerCurFlowQuery   = `SELECT id, 일자, 계정코드, 거래처코드, 적요, 차변금액, 대변금액 FROM ledger WHERE 일자 = '${ledgerDate}'`;
+    const ledgerCurBalQuery    = `SELECT id, 일자, 계정코드, 거래처코드, 적요, 차변금액, 대변금액 FROM ledger WHERE 일자 <= '${ledgerDate}'`;
+    const ledgerPrevFlowQuery  = `SELECT id, 일자, 계정코드, 거래처코드, 적요, 차변금액, 대변금액 FROM ledger WHERE 일자 = '${ledgerPrevDate}'`;
+    const ledgerPrevBalQuery   = `SELECT id, 일자, 계정코드, 거래처코드, 적요, 차변금액, 대변금액 FROM ledger WHERE 일자 <= '${ledgerPrevDate}'`;
 
     const [curFlowRes, curBalRes, prevFlowRes, prevBalRes] = await Promise.all([
       executeSQL(ledgerCurFlowQuery),
@@ -164,32 +172,32 @@ export async function GET(request: Request) {
     const prevBalRows  = (prevBalRes?.rows  ?? []) as LedgerRow[];
 
     // Helper: build aggregated account for one category
-    function buildAccount(filter: string | { prefix?: string; exact?: string[] }, accountKey?: string) {
+    function buildAccount(codeFilter: string | string[], accountKey?: string) {
       return {
         cur: aggregateLedgerDay(
-          filterBy계정명(curFlowRows, filter),
-          filterBy계정명(curBalRows, filter),
+          filterBy계정코드(curFlowRows, codeFilter),
+          filterBy계정코드(curBalRows, codeFilter),
           accountKey
         ),
         prev: aggregateLedgerDay(
-          filterBy계정명(prevFlowRows, filter),
-          filterBy계정명(prevBalRows, filter),
+          filterBy계정코드(prevFlowRows, codeFilter),
+          filterBy계정코드(prevBalRows, codeFilter),
           accountKey
         ),
       };
     }
 
-    const cash = buildAccount(FUNDS_계정명.cashPrefix, '현금 시재금');
-    const bogu = buildAccount({ exact: [FUNDS_계정명.보통예금] }, '보통예금');
-    const pension = buildAccount({ exact: [FUNDS_계정명.퇴직연금] }, '퇴직연금운용자산');
+    const cash = buildAccount(ACCOUNT_CODES.CASH_HAND_ALL as any, '현금 시재금');
+    const bogu = buildAccount(ACCOUNT_CODES.ORDINARY_DEPOSIT, '보통예금');
+    const pension = buildAccount(ACCOUNT_CODES.PENSION_ASSETS, '퇴직연금운용자산');
 
     // 2. 받을어음 logic (Split into 외담대 and 전자어음)
-    const allNotesFlow = filterBy계정명(curFlowRows, { exact: [FUNDS_계정명.받을어음] });
-    const allNotesPrevFlow = filterBy계정명(prevFlowRows, { exact: [FUNDS_계정명.받을어음] });
-    const allNotesBal = filterBy계정명(curBalRows, { exact: [FUNDS_계정명.받을어음] });
-    const allNotesPrevBal = filterBy계정명(prevBalRows, { exact: [FUNDS_계정명.받을어음] });
+    const allNotesFlow = filterBy계정코드(curFlowRows, ACCOUNT_CODES.PROMISSORY_NOTES);
+    const allNotesPrevFlow = filterBy계정코드(prevFlowRows, ACCOUNT_CODES.PROMISSORY_NOTES);
+    const allNotesBal = filterBy계정코드(curBalRows, ACCOUNT_CODES.PROMISSORY_NOTES);
+    const allNotesPrevBal = filterBy계정코드(prevBalRows, ACCOUNT_CODES.PROMISSORY_NOTES);
 
-    const notesLedger = buildAccount({ exact: [FUNDS_계정명.받을어음] }, '받을어음');
+    const notesLedger = buildAccount(ACCOUNT_CODES.PROMISSORY_NOTES, '받을어음');
 
     // 외담대 (Accounts Receivable Secured Loans)
     // Inc: 차변금액 for "매출채권", Dec: 대변금액 for "어음만기"
@@ -202,8 +210,6 @@ export async function GET(request: Request) {
       dec: allNotesPrevFlow.filter(r => (r.적요 || '').includes('어음만기')).reduce((s, r) => s + parseAmount(r.대변금액), 0),
     };
 
-    // Since we need sub-filtered balance, we must calculate it manually from all rows or use guide's logic:
-    // "전자어음 balance is the portion NOT tagged as 매출채권"
     const calculateOedamBalance = (rows: LedgerRow[]) => {
       let bal = CARRIED_FORWARD_BALANCES['외담대'] || 0;
       for (const r of rows) {
@@ -231,13 +237,13 @@ export async function GET(request: Request) {
     const eNotePrevBalance = notesLedger.prev.current - oedamPrevBalance;
 
     // 3. Other Specific Categories (적금, 보험, CMA)
-    const savings = buildAccount({ exact: [FUNDS_계정명.savings] }, '정기예.적금');
-    const insurance = buildAccount({ exact: [FUNDS_계정명.insurance] }, '장기금융상품');
-    const cma = buildAccount({ exact: [FUNDS_계정명.cma] }, '기타단기금융상품');
+    const savings = buildAccount(ACCOUNT_CODES.SAVINGS, '정기예.적금');
+    const insurance = buildAccount(ACCOUNT_CODES.INSURANCE, '장기금융상품');
+    const cma = buildAccount(ACCOUNT_CODES.CMA, '기타단기금융상품');
 
     // 4. 받을어음 당일 flow (promissory_notes) as cross-check
     const notesQuery = `
-      SELECT SUM(CAST(REPLACE(COALESCE(증가금액,'0'), ',', '') AS NUMERIC)) as notesInc
+      SELECT SUM(COALESCE(증가금액, 0)) as notesInc
       FROM promissory_notes WHERE 일자 = '${date}' AND 증감구분 = '증가'
     `;
     const notesResult = await executeSQL(notesQuery);
@@ -245,10 +251,10 @@ export async function GET(request: Request) {
     const finalNotesInc = notesLedger.cur.inc || notesIncRaw;
 
     // 3. Foreign (외화): detect currencies from 외화예금 거래처명
-    const foreignBaseRowsCur = filterBy계정명(curFlowRows, { exact: [FUNDS_계정명.foreignBase] });
-    const foreignBaseRowsBal = filterBy계정명(curBalRows, { exact: [FUNDS_계정명.foreignBase] });
-    const foreignBaseRowsPrevFlow = filterBy계정명(prevFlowRows, { exact: [FUNDS_계정명.foreignBase] });
-    const foreignBaseRowsPrevBal = filterBy계정명(prevBalRows, { exact: [FUNDS_계정명.foreignBase] });
+    const foreignBaseRowsCur = filterBy계정코드(curFlowRows, ACCOUNT_CODES.FOREIGN_DEPOSIT);
+    const foreignBaseRowsBal = filterBy계정코드(curBalRows, ACCOUNT_CODES.FOREIGN_DEPOSIT);
+    const foreignBaseRowsPrevFlow = filterBy계정코드(prevFlowRows, ACCOUNT_CODES.FOREIGN_DEPOSIT);
+    const foreignBaseRowsPrevBal = filterBy계정코드(prevBalRows, ACCOUNT_CODES.FOREIGN_DEPOSIT);
 
     // Find all currencies mentioned across all relevant rows, but always include USD, JPY, EUR, GBP
     const allForeignRows = [...foreignBaseRowsBal, ...foreignBaseRowsPrevBal];
@@ -259,49 +265,42 @@ export async function GET(request: Request) {
       const cur = aggregateLedgerDay(
         foreignBaseRowsCur.filter(r => detectCurrency(r) === ccy),
         foreignBaseRowsBal.filter(r => detectCurrency(r) === ccy),
-        ccy === 'USD' ? '외화예금' : undefined // Assuming USD is the primary foreign account for now
+        `외화예금_${ccy}`
       );
       const prev = aggregateLedgerDay(
         foreignBaseRowsPrevFlow.filter(r => detectCurrency(r) === ccy),
         foreignBaseRowsPrevBal.filter(r => detectCurrency(r) === ccy),
-        ccy === 'USD' ? '외화예금' : undefined
+        `외화예금_${ccy}`
       );
+
+      // Estimate foreign amounts based on baseline rate
+      const baseline = FOREIGN_BASELINES[ccy];
+      const baselineKRW = CARRIED_FORWARD_BALANCES[`외화예금_${ccy}`] || 0;
+      const rate = baseline && baseline.amount > 0 ? baselineKRW / baseline.amount : 0;
+      
+      const calcForeign = (krw: number) => rate > 0 ? krw / rate : 0;
+
       return {
         category: `외화예금 (${ccy})`,
         prev: prev.current,
         inc: cur.inc,
         dec: cur.dec,
         current: cur.current,
-        currency: 'KRW', // Ledger stores the converted KRW value
+        currency: 'KRW',
+        foreignPrev: Number(calcForeign(prev.current).toFixed(2)),
+        foreignInc: Number(calcForeign(cur.inc).toFixed(2)),
+        foreignDec: Number(calcForeign(cur.dec).toFixed(2)),
+        foreignCurrent: Number(calcForeign(cur.current).toFixed(2)),
+        foreignCurrency: ccy
       };
-    }).filter(item => {
-      // Hide JPY, EUR, GBP if all values are zero as requested by user
-      const isTargetCcy = item.category.includes('JPY') || item.category.includes('EUR') || item.category.includes('GBP');
-      if (isTargetCcy) {
-        return item.prev !== 0 || item.inc !== 0 || item.dec !== 0 || item.current !== 0;
-      }
-      return true;
     });
 
-    // Add 외환차익 as a separate item if it has any non-zero values
-    const extraCcy = buildAccount({ exact: [FUNDS_계정명.foreignExtra] });
-    if (extraCcy.cur.current !== 0 || extraCcy.cur.inc !== 0 || extraCcy.cur.dec !== 0) {
-      foreignItems.push({
-        category: FUNDS_계정명.foreignExtra,
-        prev: extraCcy.prev.current,
-        inc: extraCcy.cur.inc,
-        dec: extraCcy.cur.dec,
-        current: extraCcy.cur.current,
-        currency: 'KRW',
-      });
-    }
-
     // 4. Loans / liabilities (차입금·부채): sum as (Credit - Debit) for positive display
-    const loanItems = FUNDS_계정명.loans.map((계정명) => {
-      const flow = filterBy계정명(curFlowRows, { exact: [계정명] });
-      const prevFlow = filterBy계정명(prevFlowRows, { exact: [계정명] });
-      const bal = filterBy계정명(curBalRows, { exact: [계정명] });
-      const prevBal = filterBy계정명(prevBalRows, { exact: [계정명] });
+    const loanItems = ACCOUNT_CODES.LOANS.map((code) => {
+      const flow = filterBy계정코드(curFlowRows, code);
+      const prevFlow = filterBy계정코드(prevFlowRows, code);
+      const bal = filterBy계정코드(curBalRows, code);
+      const prevBal = filterBy계정코드(prevBalRows, code);
       
       const aggregateLoan = (fRows: LedgerRow[], bRows: LedgerRow[], accountKey?: string) => {
         let balance = accountKey ? (CARRIED_FORWARD_BALANCES[accountKey] || 0) : 0;
@@ -317,11 +316,21 @@ export async function GET(request: Request) {
         return { current: balance, inc, dec };
       };
 
-      const cur = aggregateLoan(flow, bal, 계정명);
-      const prev = aggregateLoan(prevFlow, prevBal, 계정명);
+      const cur = aggregateLoan(flow, bal, code === '2515' ? '단기차입금' : undefined);
+      const prev = aggregateLoan(prevFlow, prevBal, code === '2515' ? '단기차입금' : undefined);
+
+      // Map codes back to display names for UI
+      const displayMap: Record<string, string> = {
+        '2515': '단기차입금',
+        '2519': '기타단기차입금',
+        '2539': '미지급금',
+        '2549': '미지급비용',
+        '2559': '예수금',
+        '2629': '장기차입금'
+      };
 
       return {
-        category: 계정명,
+        category: displayMap[code] || `차입금(${code})`,
         prev: prev.current,
         inc: cur.inc,
         dec: cur.dec,

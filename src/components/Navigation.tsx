@@ -54,14 +54,19 @@ const Navigation = () => {
 
   const standaloneItems: NavItem[] = [
     {
-      name: "직원별 현황",
-      href: "/dashboard/employees",
-      icon: <Users className="w-5 h-5" />,
-    },
-    {
       name: "일일현황",
       href: "/dashboard/daily-status",
       icon: <ClipboardList className="w-5 h-5" />,
+    },
+    {
+      name: "일일매출수금현황",
+      href: "/dashboard/daily-status/sales",
+      icon: <Receipt className="w-5 h-5" />,
+    },
+    {
+      name: "직원별 현황",
+      href: "/dashboard/employees",
+      icon: <Users className="w-5 h-5" />,
     },
   ];
 
@@ -74,11 +79,6 @@ const Navigation = () => {
           name: "판매현황",
           href: "/dashboard/sales-inventory",
           icon: <ShoppingCart className="w-5 h-5" />,
-        },
-        {
-          name: "매출 수금 현황",
-          href: "/dashboard/daily-sales",
-          icon: <Receipt className="w-5 h-5" />,
         },
         {
           name: "B2B 매출 분석",

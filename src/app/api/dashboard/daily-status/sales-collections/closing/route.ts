@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { executeSQL } from '@/egdesk-helpers';
+import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
 
 /**
  * API Endpoint to fetch Daily Closing Status (Excel rendition)
- * Specifically for the /dashboard/daily-sales page
+ * Specifically for the /dashboard/daily-status/sales page
  */
 export async function GET(request: Request) {
   try {
@@ -16,34 +16,31 @@ export async function GET(request: Request) {
 
     const getSalesBranchFilter = () => {
       if (division === '전체') return "1=1";
-      if (division === '창원') return "(ec.전체사업소 = '경남사업소' OR w.창고명 = '창원' OR c.거래처명 = '테크젠 주식회사')";
-      if (division === 'MB') return "ec.전체사업소 = '벤츠'";
-      if (division === '화성') return "ec.전체사업소 LIKE '%화성%'";
-      return `(ec.전체사업소 LIKE '%${division}%' OR w.창고명 LIKE '%${division}%')`;
+      if (division === '창원') return "(COALESCE(c2.거래처그룹1명, c.거래처그룹1명) LIKE '%창원%' OR COALESCE(c2.거래처그룹1명, c.거래처그룹1명) = '경남사업소' OR COALESCE(c2.거래처명, c.거래처명) = '테크젠 주식회사')";
+      if (division === 'MB') return "(COALESCE(c2.거래처그룹1명, c.거래처그룹1명) LIKE '%벤츠%' OR COALESCE(c2.거래처그룹1명, c.거래처그룹1명) LIKE '%MB%')";
+      if (division === '화성') return "COALESCE(c2.거래처그룹1명, c.거래처그룹1명) LIKE '%화성%'";
+      return `COALESCE(c2.거래처그룹1명, c.거래처그룹1명) LIKE '%${division}%'`;
     };
 
     const getPurchBranchFilter = () => {
       if (division === '전체') return "1=1";
-      return `(거래처그룹1명 LIKE '%${division}%' OR 창고명 LIKE '%${division}%')`;
+      if (division === '창원') return "창고명 LIKE '%창원%'";
+      return `창고명 LIKE '%${division}%'`;
     };
 
-    const getDepBranchFilter = (alias: string = '') => {
+    const getDepBranchFilter = (alias: string = '', isLedger: boolean = false) => {
       const prefix = alias ? `${alias}.` : '';
       if (division === '전체') return "1=1";
+      if (isLedger) {
+        if (division === 'MB') return `(${prefix}거래처그룹1명 LIKE '%MB%' OR ${prefix}거래처그룹1명 LIKE '%벤츠%')`;
+        return `${prefix}거래처그룹1명 LIKE '%${division}%'`;
+      }
       if (division === 'MB') return `${prefix}부서명 = 'MB'`;
       return `${prefix}부서명 LIKE '%${division}%'`;
     };
 
-    // 0. Base subquery for sales with UNION across all division tables
-    const baseSalesSubquery = `
-      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
-      UNION ALL
-      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
-      UNION ALL
-      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
-      UNION ALL
-      SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
-    `;
+    // 0. Base subquery for sales - simplified to use only the main sales table for this API
+    const baseSalesSubquery = `(SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 중량, 합계, 출하창고코드, 실납업체 FROM sales)`;
 
     // 1. Sales Status Aggregation
     const salesQuery = `
@@ -56,14 +53,14 @@ export async function GET(request: Request) {
       FROM (
         SELECT
           CASE
-            WHEN c.거래처명 LIKE '메르세데스벤츠%' OR i.품목그룹1코드 = 'MB' THEN 'Mobil-MB'
-            WHEN c.거래처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR i.품목그룹1코드 = 'FU' THEN '훅스'
+            WHEN i.품목그룹1코드 = 'MB' THEN 'Mobil-MB'
+            WHEN i.품목그룹1코드 = 'FU' THEN '훅스'
             WHEN i.품목그룹1코드 = 'BL' THEN '블라자'
-            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL') OR (i.품목그룹1코드 IS NULL AND (c.거래처명 = '테크젠 주식회사' OR w.창고명 = '창원')) THEN 'Mobil'
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI', 'MAR') THEN 'Mobil'
             ELSE '기타(셸 외 타사제품)'
           END as category,
           CASE
-            WHEN c.거래처명 LIKE '메르세데스벤츠%' OR i.품목그룹1코드 = 'MB' THEN 0
+            WHEN i.품목그룹1코드 = 'MB' THEN 0
             ELSE CAST(REPLACE(s.합계, ',', '') AS NUMERIC)
           END as amount,
           CAST(REPLACE(s.중량, ',', '') AS NUMERIC) as weight,
@@ -71,6 +68,7 @@ export async function GET(request: Request) {
         FROM (${baseSalesSubquery}) s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN clients c2 ON (s.실납업체 IS NOT NULL AND s.실납업체 != '' AND s.실납업체 = c2.거래처코드)
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
         LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
@@ -80,8 +78,8 @@ export async function GET(request: Request) {
       GROUP BY category
     `;
 
-    // 2. Collection Status Aggregation (using deposits and promissory_notes for better metadata)
-    // Note: deposits table schema updated (전표번호 -> 일자, 부서명 moved to ledger)
+    // 2. Collection Status Aggregation (using ledger and promissory_notes)
+    // Updated Mar 24: Pulling customer collections directly from ledger (Account 1089)
     const collectionQuery = `
       SELECT
         method,
@@ -91,16 +89,20 @@ export async function GET(request: Request) {
       FROM (
         SELECT
           CASE
-            WHEN d.계좌 LIKE '%카드%' OR d.계좌 LIKE '%이니시스%' OR d.적요 LIKE '%이니시스%' THEN '카드'
+            WHEN l.적요 LIKE '%카드%' OR l.적요 LIKE '%이니시스%' OR l.적요 LIKE '%삼성%' OR l.적요 LIKE '%비씨%' 
+              OR l.적요 LIKE '%현대%' OR l.적요 LIKE '%신한%' OR l.적요 LIKE '%국민%' OR l.적요 LIKE '%롯데%' OR l.적요 LIKE '%하나%' 
+            THEN '카드'
             ELSE 'Cash'
           END as method,
-          CAST(REPLACE(d.금액, ',', '') AS NUMERIC) as amount,
-          d.일자 as 일자
-        FROM deposits d
-        LEFT JOIN ledger l ON d.일자 = l.일자 AND d.적요 = l.적요 AND d.계정명 = l.계정명 AND REPLACE(d.금액, ',', '') = REPLACE(l.대변금액, ',', '')
-        WHERE d.계정명 = '외상매출금'
-          AND ${getDepBranchFilter('l')}
-          AND d.일자 >= '${startDate}' AND d.일자 <= '${date}'
+          COALESCE(l.대변금액, 0) as amount,
+          l.일자 as 일자
+        FROM ledger l
+        LEFT JOIN clients c ON l.거래처코드 = c.거래처코드
+        WHERE l.계정코드 = '1089'
+          AND l.대변금액 > 0
+          AND l.적요 NOT LIKE '%할인%'
+          AND ${getDepBranchFilter('c', true)}
+          AND l.일자 >= '${startDate}' AND l.일자 <= '${date}'
 
         UNION ALL
 
@@ -116,46 +118,68 @@ export async function GET(request: Request) {
       GROUP BY method
     `;
 
-    // 3. Inventory Status Aggregation (Inventory always needs historical data for beginning stock)
+    // 3. Inventory Status Aggregation (Using Feb 01 baseline from esz018r_6)
+    const BASELINE_DATE = '2026-02-01';
     const inventoryQuery = `
       SELECT
         category,
-        SUM(CASE WHEN 일자 < '${date}' AND type = 'in' THEN amount WHEN 일자 < '${date}' AND type = 'out' THEN -amount ELSE 0 END) as prevStock,
+        SUM(CASE WHEN type = 'baseline' THEN amount 
+                 WHEN 일자 < '${date}' AND type = 'in' THEN amount 
+                 WHEN 일자 < '${date}' AND type = 'out' THEN -amount 
+                 ELSE 0 END) as prevStock,
         SUM(CASE WHEN 일자 = '${date}' AND type = 'in' THEN amount ELSE 0 END) as inflow,
         SUM(CASE WHEN 일자 = '${date}' AND type = 'out' THEN amount ELSE 0 END) as outflow,
-        SUM(CASE WHEN type = 'in' THEN amount ELSE -amount END) as stock
+        SUM(CASE WHEN type = 'baseline' OR type = 'in' THEN amount 
+                 WHEN type = 'out' THEN -amount 
+                 ELSE 0 END) as stock
       FROM (
+        -- 1. Baseline (Feb 1st)
         SELECT
           CASE
-            WHEN 구매처명 LIKE '메르세데스벤츠%' OR 품목그룹1코드 = 'MB' THEN 'Mobil-MB'
-            WHEN 구매처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR 품목그룹1코드 = 'FU' THEN '훅스'
-            WHEN 품목그룹1코드 = 'BL' THEN '블라자'
-            WHEN 품목그룹1코드 IN ('IL', 'PVL', 'CVL') OR (품목그룹1코드 IS NULL AND (창고명 = '창원')) THEN 'Mobil'
-            ELSE '기타'
+            WHEN i.품목그룹1코드 = 'MB' THEN 'Mobil-MB'
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI', 'MAR') THEN 'Mobil'
+            WHEN i.품목그룹1코드 = 'FU' THEN '훅스'
+            WHEN i.품목그룹1코드 = 'BL' THEN '블라자'
+            ELSE '기타(셸 외 타사제품)'
           END as category,
-          CAST(REPLACE(중량, ',', '') AS NUMERIC) / 200.0 as amount,
-          'in' as type,
-          일자
-        FROM (
-          SELECT 일자, 거래처그룹1명, 창고명, 중량, 품목그룹1코드, 구매처명 FROM purchases
-          UNION ALL
-          SELECT 일자, 거래처그룹1명, 창고명, 중량, 품목그룹1코드, 구매처명 FROM east_division_purchases
-          UNION ALL
-          SELECT 일자, 거래처그룹1명, 창고명, 중량, 품목그룹1코드, 구매처명 FROM west_division_purchases
-          UNION ALL
-          SELECT 일자, 거래처그룹1명, 창고명, 중량, 품목그룹1코드, 구매처명 FROM south_division_purchases
-        )
-        WHERE ${getPurchBranchFilter()} AND 일자 <= '${date}'
+          CAST(REPLACE(CAST(b.중량 AS TEXT), ',', '') AS NUMERIC) / 200.0 as amount,
+          'baseline' as type,
+          '${BASELINE_DATE}' as 일자
+        FROM esz018r_6 b
+        LEFT JOIN items i ON b.품목코드 = i.품목코드
+        LEFT JOIN warehouses w ON b.창고코드 = w.창고코드 OR b.창고코드 = CAST(w.창고코드 AS TEXT)
+        WHERE ${getPurchBranchFilter()}
 
         UNION ALL
 
+        -- 2. Purchases (Feb 1st onwards)
         SELECT
           CASE
-            WHEN c.거래처명 LIKE '메르세데스벤츠%' OR i.품목그룹1코드 = 'MB' THEN 'Mobil-MB'
-            WHEN c.거래처명 IN ('셰플러코리아 유한책임회사', '한백윤활유') OR i.품목그룹1코드 = 'FU' THEN '훅스'
+            WHEN i.품목그룹1코드 = 'MB' THEN 'Mobil-MB'
+            WHEN i.품목그룹1코드 = 'FU' THEN '훅스'
             WHEN i.품목그룹1코드 = 'BL' THEN '블라자'
-            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL') OR (i.품목그룹1코드 IS NULL AND (c.거래처명 = '테크젠 주식회사' OR w.창고명 = '창원')) THEN 'Mobil'
-            ELSE '기타'
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI', 'MAR') THEN 'Mobil'
+            ELSE '기타(셸 외 타사제품)'
+          END as category,
+          CAST(REPLACE(p.중량, ',', '') AS NUMERIC) / 200.0 as amount,
+          'in' as type,
+          p.일자
+        FROM purchases p
+        LEFT JOIN items i ON p.품목코드 = i.품목코드
+        LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
+        LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
+        WHERE ${getPurchBranchFilter()} AND p.일자 >= '${BASELINE_DATE}' AND p.일자 <= '${date}'
+
+        UNION ALL
+
+        -- 3. Sales (Feb 1st onwards)
+        SELECT
+          CASE
+            WHEN i.품목그룹1코드 = 'MB' THEN 'Mobil-MB'
+            WHEN i.품목그룹1코드 = 'FU' THEN '훅스'
+            WHEN i.품목그룹1코드 = 'BL' THEN '블라자'
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'AVI', 'MAR') THEN 'Mobil'
+            ELSE '기타(셸 외 타사제품)'
           END as category,
           CAST(REPLACE(s.중량, ',', '') AS NUMERIC) / 200.0 as amount,
           'out' as type,
@@ -163,10 +187,11 @@ export async function GET(request: Request) {
         FROM (${baseSalesSubquery}) s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN clients c2 ON (s.실납업체 IS NOT NULL AND s.실납업체 != '' AND s.실납업체 = c2.거래처코드)
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
         LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        WHERE ${getSalesBranchFilter()} AND s.일자 <= '${date}'
+        WHERE ${getSalesBranchFilter()} AND s.일자 >= '${BASELINE_DATE}' AND s.일자 <= '${date}'
       )
       GROUP BY category
     `;
@@ -183,22 +208,17 @@ export async function GET(request: Request) {
         FROM (${baseSalesSubquery}) s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN clients c2 ON (s.실납업체 IS NOT NULL AND s.실납업체 != '' AND s.실납업체 = c2.거래처코드)
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
         LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 >= '${startDate}' AND s.일자 <= '${date}' AND i.품목그룹3코드 = 'FLA' AND i.품목그룹1코드 = 'IL' AND ${getSalesBranchFilter()}
         UNION ALL
-        SELECT CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume, 'purchase' as type, 일자
-        FROM (
-          SELECT 일자, 중량, 품목그룹3코드, 품목그룹1코드, 거래처그룹1명, 창고명 FROM purchases
-          UNION ALL
-          SELECT 일자, 중량, 품목그룹3코드, 품목그룹1코드, 거래처그룹1명, 창고명 FROM east_division_purchases
-          UNION ALL
-          SELECT 일자, 중량, 품목그룹3코드, 품목그룹1코드, 거래처그룹1명, 창고명 FROM west_division_purchases
-          UNION ALL
-          SELECT 일자, 중량, 품목그룹3코드, 품목그룹1코드, 거래처그룹1명, 창고명 FROM south_division_purchases
-        )
-        WHERE 일자 >= '${startDate}' AND 일자 <= '${date}' AND 품목그룹3코드 = 'FLA' AND 품목그룹1코드 = 'IL' AND ${getPurchBranchFilter()}
+        SELECT CAST(REPLACE(p.중량, ',', '') AS NUMERIC) as volume, 'purchase' as type, p.일자
+        FROM purchases p
+        LEFT JOIN items i ON p.품목코드 = i.품목코드
+        LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
+        WHERE p.일자 >= '${startDate}' AND p.일자 <= '${date}' AND i.품목그룹3코드 = 'FLA' AND i.품목그룹1코드 = 'IL' AND ${getPurchBranchFilter()}
       )
     `;
 
@@ -209,20 +229,14 @@ export async function GET(request: Request) {
         SUM(CASE WHEN 일자 = '${date}' THEN amount ELSE 0 END) as todayAmount
       FROM (
         SELECT
-          CAST(REPLACE(중량, ',', '') AS NUMERIC) as volume,
-          CAST(REPLACE(합_계, ',', '') AS NUMERIC) as amount,
-          일자
-        FROM (
-          SELECT 일자, 중량, 합_계, 품목그룹1코드, 거래처그룹1명, 창고명 FROM purchases
-          UNION ALL
-          SELECT 일자, 중량, 합_계, 품목그룹1코드, 거래처그룹1명, 창고명 FROM east_division_purchases
-          UNION ALL
-          SELECT 일자, 중량, 합_계, 품목그룹1코드, 거래처그룹1명, 창고명 FROM west_division_purchases
-          UNION ALL
-          SELECT 일자, 중량, 합_계, 품목그룹1코드, 거래처그룹1명, 창고명 FROM south_division_purchases
-        )
-        WHERE 일자 >= '${startDate}' AND 일자 <= '${date}'
-          AND 품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'MB')
+          CAST(REPLACE(p.중량, ',', '') AS NUMERIC) as volume,
+          CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) as amount,
+          p.일자
+        FROM purchases p
+        LEFT JOIN items i ON p.품목코드 = i.품목코드
+        LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
+        WHERE p.일자 >= '${startDate}' AND p.일자 <= '${date}'
+          AND i.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'MB', 'AVI', 'MAR')
           AND ${getPurchBranchFilter()}
       )
     `;
@@ -261,7 +275,7 @@ export async function GET(request: Request) {
     });
 
     // Map Inventory Results
-    const invCategories = ['Mobil', 'Mobil-MB', '블라자', '훅스', '기타'];
+    const invCategories = ['Mobil', 'Mobil-MB', '블라자', '훅스', '기타(셸 외 타사제품)'];
     const inventoryData = invCategories.map(cat => {
       const row = invRes?.rows?.find((r: any) => r.category === cat) || { prevStock: 0, inflow: 0, outflow: 0, stock: 0 };
       return {

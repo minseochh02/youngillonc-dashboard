@@ -42,7 +42,7 @@ export default function DailySalesPage() {
       const divisionLabel = activeDivision.label;
       
       if (viewMode === "report") {
-        const response = await apiFetch(`/api/dashboard/daily-sales/closing?date=${selectedDate}&division=${divisionLabel}`);
+        const response = await apiFetch(`/api/dashboard/daily-status/sales-collections/closing?date=${selectedDate}&division=${divisionLabel}`);
         const result = await response.json();
         if (result.success) {
           setClosingData({
@@ -54,7 +54,7 @@ export default function DailySalesPage() {
           });
         }
       } else {
-        const response = await apiFetch(`/api/dashboard/daily-sales/customer-detail?date=${selectedDate}&division=${divisionLabel}`);
+        const response = await apiFetch(`/api/dashboard/daily-status/sales-collections/customer-detail?date=${selectedDate}&division=${divisionLabel}`);
         const result = await response.json();
         if (result.success) {
           setTableData(result.data || []);

@@ -140,7 +140,7 @@ function detectQueryIntent(sql: string): string {
     return 'inventory_status';
   }
 
-  if (lowerSQL.includes('수금') || lowerSQL.includes('deposits')) {
+  if (lowerSQL.includes('수금') || lowerSQL.includes('ledger')) {
     return 'collections';
   }
 

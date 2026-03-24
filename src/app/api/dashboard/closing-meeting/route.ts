@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { executeSQL } from '@/egdesk-helpers';
+import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
 
 export async function GET(request: Request) {
   try {
@@ -7,15 +7,7 @@ export async function GET(request: Request) {
     const tab = searchParams.get('tab') || 'monthly-summary';
 
     // Base subquery to combine all four sales tables
-    const baseSalesSubquery = `
-      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 수량, 중량, 단가, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
-      UNION ALL
-      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 수량, 중량, 단가, 합계, 창고코드 as 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
-      UNION ALL
-      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 수량, 중량, 단가, 합계, 창고코드 as 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
-      UNION ALL
-      SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 수량, 중량, 단가, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
-    `;
+    const baseSalesSubquery = UNIFIED_SALES_SUBQUERY;
 
     if (tab === 'monthly-summary') {
       const now = new Date();

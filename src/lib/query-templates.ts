@@ -208,19 +208,22 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
         intent: 'daily_collections',
         generator: (params) => {
           const divisionFilter = params.division
-            ? `AND 부서명 LIKE '%${params.division}%'`
+            ? `AND c.거래처그룹1명 LIKE '%${params.division}%'`
             : '';
 
           return `
             SELECT
-              부서명 as 사업소,
-              거래처명,
-              SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as 수금액
-            FROM deposits
-            WHERE 전표번호 = '${params.date}'
-              AND 계정명 = '외상매출금'
+              ${normalizeBranch('c.거래처그룹1명')} as 사업소,
+              c.거래처명,
+              SUM(COALESCE(l.대변금액, 0)) as 수금액
+            FROM ledger l
+            LEFT JOIN clients c ON l.거래처코드 = c.거래처코드
+            WHERE l.일자 = '${params.date}'
+              AND l.계정코드 = '1089'
+              AND l.대변금액 > 0
+              AND l.적요 NOT LIKE '%할인%'
               ${divisionFilter}
-            GROUP BY 부서명, 거래처명
+            GROUP BY 1, 2
             ORDER BY 수금액 DESC
           `;
         }
@@ -373,19 +376,22 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     },
     sqlGenerator: (params) => {
       const divisionFilter = params.division
-        ? `AND 부서명 LIKE '%${params.division}%'`
+        ? `AND c.거래처그룹1명 LIKE '%${params.division}%'`
         : '';
 
       return `
         SELECT
-          부서명 as 사업소,
-          거래처명,
-          SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as 수금액
-        FROM deposits
-        WHERE 전표번호 = '${params.date}'
-          AND 계정명 = '외상매출금'
+          ${normalizeBranch('c.거래처그룹1명')} as 사업소,
+          c.거래처명,
+          SUM(COALESCE(l.대변금액, 0)) as 수금액
+        FROM ledger l
+        LEFT JOIN clients c ON l.거래처코드 = c.거래처코드
+        WHERE l.일자 = '${params.date}'
+          AND l.계정코드 = '1089'
+          AND l.대변금액 > 0
+          AND l.적요 NOT LIKE '%할인%'
           ${divisionFilter}
-        GROUP BY 부서명, 거래처명
+        GROUP BY 1, 2
         ORDER BY 수금액 DESC
       `;
     }

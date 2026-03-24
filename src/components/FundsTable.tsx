@@ -8,6 +8,11 @@ interface FundItem {
   dec: number;
   current: number;
   currency?: string;
+  foreignPrev?: number;
+  foreignInc?: number;
+  foreignDec?: number;
+  foreignCurrent?: number;
+  foreignCurrency?: string;
 }
 
 interface FundsData {
@@ -70,24 +75,52 @@ export default function FundsTable({ data }: FundsTableProps) {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-zinc-400">현잔</span>
+                <div className="flex flex-col items-end gap-1">
                   <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100 tabular-nums">
                     {symbol}{formatValue(item.current, item.currency)}
                   </div>
+                  {item.foreignCurrent !== undefined && (
+                    <div className="text-xs font-bold text-blue-500/80 dark:text-blue-400/80 bg-blue-50/50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded">
+                      [{getCurrencySymbol(item.foreignCurrency)}{formatValue(item.foreignCurrent, item.foreignCurrency)}]
+                    </div>
+                  )}
+                </div>
                 </div>
 
                 <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-1">
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-zinc-400">전잔</span>
+                  <div className="flex flex-col items-end">
                     <span className="text-zinc-600 dark:text-zinc-300 font-medium">{symbol}{formatValue(item.prev, item.currency)}</span>
+                    {item.foreignPrev !== undefined && (
+                      <span className="text-[9px] font-bold text-blue-500/60 dark:text-blue-400/60">
+                        [{getCurrencySymbol(item.foreignCurrency)}{formatValue(item.foreignPrev, item.foreignCurrency)}]
+                      </span>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-zinc-400">당입</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-zinc-400">당입</span>
+                  <div className="flex flex-col items-end">
                     <span className="text-green-500 font-bold">+{symbol}{formatValue(item.inc, item.currency)}</span>
+                    {item.foreignInc !== undefined && (
+                      <span className="text-[9px] font-bold text-green-500/60">
+                        [{getCurrencySymbol(item.foreignCurrency)}{formatValue(item.foreignInc, item.foreignCurrency)}]
+                      </span>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-zinc-400">지출</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-zinc-400">지출</span>
+                  <div className="flex flex-col items-end">
                     <span className="text-red-500 font-bold">-{symbol}{formatValue(item.dec, item.currency)}</span>
+                    {item.foreignDec !== undefined && (
+                      <span className="text-[9px] font-bold text-red-500/60">
+                        [{getCurrencySymbol(item.foreignCurrency)}{formatValue(item.foreignDec, item.foreignCurrency)}]
+                      </span>
+                    )}
                   </div>
+                </div>
                 </div>
               </div>
               

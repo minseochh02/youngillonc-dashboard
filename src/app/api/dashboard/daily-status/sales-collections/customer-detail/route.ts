@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { executeSQL } from '@/egdesk-helpers';
+import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
 
 /**
  * API Endpoint to fetch Customer-wise Daily Sales & Collections
- * Specifically for the /dashboard/daily-sales page
+ * Specifically for the /dashboard/daily-status/sales page
  */
 export async function GET(request: Request) {
   try {
@@ -22,23 +22,19 @@ export async function GET(request: Request) {
       return `(ec.전체사업소 LIKE '%${division}%' OR w.창고명 LIKE '%${division}%')`;
     };
 
-    const getDepBranchFilter = (alias: string = '') => {
+    const getDepBranchFilter = (alias: string = '', isLedger: boolean = false) => {
       const prefix = alias ? `${alias}.` : '';
       if (division === '전체') return "1=1";
+      if (isLedger) {
+        if (division === 'MB') return `(${prefix}거래처그룹1명 LIKE '%MB%' OR ${prefix}거래처그룹1명 LIKE '%벤츠%')`;
+        return `${prefix}거래처그룹1명 LIKE '%${division}%'`;
+      }
       if (division === 'MB') return `${prefix}부서명 = 'MB'`;
       return `${prefix}부서명 LIKE '%${division}%'`;
     };
 
-    // 0. Base subquery for sales with UNION across all division tables
-    const baseSalesSubquery = `
-      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM sales
-      UNION ALL
-      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM east_division_sales
-      UNION ALL
-      SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, 신규일, 적요, 적요2 FROM west_division_sales
-      UNION ALL
-      SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 품목코드, 단위, 규격명, 수량, 중량, 단가, 공급가액, 부가세, 합계, 출하창고코드, NULL as 신규일, NULL as 적요, NULL as 적요2 FROM south_division_sales
-    `;
+    // 0. Base subquery for sales - simplified to use only the main sales table for this API
+    const baseSalesSubquery = `(SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계, 출하창고코드 FROM sales)`;
 
     const query = `
       SELECT
@@ -58,19 +54,23 @@ export async function GET(request: Request) {
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE ${getSalesBranchFilter()} AND s.일자 >= '${startDate}' AND s.일자 <= '${date}'
         UNION
-        SELECT DISTINCT c_dep.거래처명 as name, d.거래처코드
-        FROM deposits d
-        LEFT JOIN clients c_dep ON d.거래처코드 = c_dep.거래처코드
-        LEFT JOIN ledger l ON d.일자 = l.일자 AND d.적요 = l.적요 AND d.계정명 = l.계정명 AND REPLACE(d.금액, ',', '') = REPLACE(l.대변금액, ',', '')
-        WHERE ${getDepBranchFilter('l')} AND d.일자 >= '${startDate}' AND d.일자 <= '${date}'
+        SELECT DISTINCT c_dep.거래처명 as name, l.거래처코드
+        FROM ledger l
+        LEFT JOIN clients c_dep ON l.거래처코드 = c_dep.거래처코드
+        WHERE l.계정코드 = '1089'
+          AND l.대변금액 > 0
+          AND ${getDepBranchFilter('c_dep', true)}
+          AND l.일자 >= '${startDate}' AND l.일자 <= '${date}'
       ) cust
       LEFT JOIN (
         SELECT
           거래처코드,
-          SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as amount
-        FROM deposits
+          SUM(COALESCE(대변금액, 0)) as amount
+        FROM ledger
         WHERE 일자 < '${date}'
-          AND 계정명 = '외상매출금'
+          AND 계정코드 = '1089'
+          AND 대변금액 > 0
+          AND 적요 NOT LIKE '%할인%'
         GROUP BY 거래처코드
       ) tc_prev ON cust.거래처코드 = tc_prev.거래처코드
       LEFT JOIN (
@@ -92,10 +92,12 @@ export async function GET(request: Request) {
       LEFT JOIN (
         SELECT
           거래처코드,
-          SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as amount
-        FROM deposits
+          SUM(COALESCE(대변금액, 0)) as amount
+        FROM ledger
         WHERE 일자 = '${date}'
-          AND 계정명 = '외상매출금'
+          AND 계정코드 = '1089'
+          AND 대변금액 > 0
+          AND 적요 NOT LIKE '%할인%'
         GROUP BY 거래처코드
       ) tc ON cust.거래처코드 = tc.거래처코드
       LEFT JOIN (
@@ -109,10 +111,12 @@ export async function GET(request: Request) {
       LEFT JOIN (
         SELECT
           거래처코드,
-          SUM(CAST(REPLACE(금액, ',', '') AS NUMERIC)) as amount
-        FROM deposits
+          SUM(COALESCE(대변금액, 0)) as amount
+        FROM ledger
         WHERE 일자 >= '${startDate}' AND 일자 <= '${date}'
-          AND 계정명 = '외상매출금'
+          AND 계정코드 = '1089'
+          AND 대변금액 > 0
+          AND 적요 NOT LIKE '%할인%'
         GROUP BY 거래처코드
       ) mc ON cust.거래처코드 = mc.거래처코드
       WHERE ts.amount != 0 OR tc.amount != 0 OR ts_prev.amount != 0 OR tc_prev.amount != 0 OR ms.amount != 0 OR mc.amount != 0

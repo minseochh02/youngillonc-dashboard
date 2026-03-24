@@ -9,8 +9,8 @@ interface InOutItem {
 }
 
 interface InOutData {
-  deposits: InOutItem[];
-  withdrawals: InOutItem[];
+  inflows: InOutItem[];
+  outflows: InOutItem[];
 }
 
 interface InOutTableProps {
@@ -25,8 +25,8 @@ const formatNumber = (num: number) => {
 const toNum = (v: unknown) => (typeof v === 'number' && !Number.isNaN(v) ? v : Number(v) || 0);
 
 export default function InOutTable({ data }: InOutTableProps) {
-  const totalIn = (data.deposits || []).reduce((sum, item) => sum + toNum(item.amount), 0);
-  const totalOut = (data.withdrawals || []).reduce((sum, item) => sum + toNum(item.amount), 0);
+  const totalIn = (data.inflows || []).reduce((sum, item) => sum + toNum(item.amount), 0);
+  const totalOut = (data.outflows || []).reduce((sum, item) => sum + toNum(item.amount), 0);
   const netFlow = totalIn - totalOut;
 
   const renderPanel = (title: string, items: InOutItem[], isDeposit: boolean) => {
@@ -86,8 +86,8 @@ export default function InOutTable({ data }: InOutTableProps) {
         )}
       </div>
     </div>
-  );
-};
+    );
+  };
 
   return (
     <div className="space-y-8">
@@ -116,8 +116,8 @@ export default function InOutTable({ data }: InOutTableProps) {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
-        {renderPanel("입금 내역 (Receipts)", data.deposits, true)}
-        {renderPanel("지출 내역 (Payments)", data.withdrawals, false)}
+        {renderPanel("입금 내역 (Receipts)", data.inflows, true)}
+        {renderPanel("지출 내역 (Payments)", data.outflows, false)}
       </div>
 
       <DataLogicInfo 
@@ -129,7 +129,7 @@ export default function InOutTable({ data }: InOutTableProps) {
           "상세 내역 매핑: 단순 금액 외에도 입금 계좌 정보나 지출 사유(윤활유대, 용차운임 등)를 함께 표시하여 전표의 실체를 증명합니다.",
           "일일 수지 정산: 당일 발생한 모든 입금과 출금의 차액(Net Flow)을 계산하여 자금 유동성을 즉시 확인합니다."
         ]}
-        footnote="※ 입금 내역: deposits. 지출 내역: ledger 테이블(대변금액 > 0) 실데이터 연동 (DB_KNOWLEDGE §8.3)."
+        footnote="※ 입금 내역 및 지출 내역: 계정별원장(ledger) 테이블 실데이터 연동 (DB_KNOWLEDGE §8.3)."
       />
     </div>
   );

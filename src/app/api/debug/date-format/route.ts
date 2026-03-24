@@ -14,14 +14,6 @@ export async function GET(request: Request) {
       LIMIT 20
     `;
 
-    // Get sample dates from deposits table
-    const depositsDatesQuery = `
-      SELECT DISTINCT 전표번호
-      FROM deposits
-      ORDER BY 전표번호 DESC
-      LIMIT 20
-    `;
-
     // Get sample dates from purchases table
     const purchasesDatesQuery = `
       SELECT DISTINCT 일자
@@ -32,15 +24,14 @@ export async function GET(request: Request) {
 
     // Get sample dates from ledger table
     const ledgerDatesQuery = `
-      SELECT 일자, 일자_no
+      SELECT DISTINCT 일자
       FROM ledger
       ORDER BY 일자 DESC
       LIMIT 20
     `;
 
-    const [salesRes, depositsRes, purchasesRes, ledgerRes] = await Promise.all([
+    const [salesRes, purchasesRes, ledgerRes] = await Promise.all([
       executeSQL(salesDatesQuery),
-      executeSQL(depositsDatesQuery),
       executeSQL(purchasesDatesQuery),
       executeSQL(ledgerDatesQuery)
     ]);
@@ -48,7 +39,6 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       salesDates: salesRes?.rows || [],
-      depositsDates: depositsRes?.rows || [],
       purchasesDates: purchasesRes?.rows || [],
       ledgerDates: ledgerRes?.rows || []
     });

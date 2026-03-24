@@ -84,7 +84,7 @@ export default function DailyInventorySheet() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await apiFetch(`/api/dashboard/daily-inventory?date=${date}`);
+      const response = await apiFetch(`/api/dashboard/daily-status/inventory-sheet?date=${date}`);
       const result = await response.json();
       if (result.success) {
         setData(result.data);
