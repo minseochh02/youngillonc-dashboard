@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import SalesTable from "@/components/SalesTable";
-import PurchaseTable from "@/components/PurchaseTable";
 import MonthlySalesTable from "@/components/MonthlySalesTable";
 import MonthlyPurchaseTable from "@/components/MonthlyPurchaseTable";
 import CollectionsTable from "@/components/CollectionsTable";
@@ -10,7 +8,8 @@ import MonthlyCollectionsTable from "@/components/MonthlyCollectionsTable";
 import FundsTable from "@/components/FundsTable";
 import InOutTable from "@/components/InOutTable";
 import MobilPaymentsTable from "@/components/MobilPaymentsTable";
-import { Calendar, Loader2, TrendingUp, Wallet, Landmark, Coins, ArrowLeftRight, CreditCard, ShoppingCart, BarChart3 } from "lucide-react";
+import StatusTable from "@/components/StatusTable";
+import { Calendar, Loader2, TrendingUp, Wallet, Landmark, Coins, ArrowLeftRight, CreditCard, ShoppingCart, BarChart3, Building2, Warehouse } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
 import { exportIslandTables, type IslandTable } from "@/lib/excel-export";
@@ -22,19 +21,26 @@ const tabs = [
   { id: "monthly-collections", label: "월별외상매출금현황" },
   { id: "funds", label: "자금현황" },
   { id: "in-out", label: "입출금현황" },
-  { id: "mobil-payments", label: "모빌결제내역" },
 ];
 
 export default function DailyStatusPage() {
   const [activeTab, setActiveTab] = useState(tabs[0].id);
+  const [salesView, setSalesView] = useState<'office' | 'warehouse'>('office');
+  const [purchaseView, setPurchaseView] = useState<'office' | 'warehouse'>('warehouse');
+  const [monthlySalesView, setMonthlySalesView] = useState<'office' | 'warehouse'>('office');
+  const [monthlyPurchaseView, setMonthlyPurchaseView] = useState<'office' | 'warehouse'>('warehouse');
   const [selectedDate, setSelectedDate] = useState("2026-02-04");
   const [includeVat, setIncludeVat] = useState(false);
   
   const [salesData, setSalesData] = useState<any[]>([]);
+  const [salesByWarehouse, setSalesByWarehouse] = useState<any[]>([]);
   const [purchaseData, setPurchaseData] = useState<any[]>([]);
+  const [purchaseByOffice, setPurchaseByOffice] = useState<any[]>([]);
   
   const [monthlySalesData, setMonthlySalesData] = useState<any[]>([]);
+  const [monthlySalesByWarehouse, setMonthlySalesByWarehouse] = useState<any[]>([]);
   const [monthlyPurchaseData, setMonthlyPurchaseData] = useState<any[]>([]);
+  const [monthlyPurchaseByOffice, setMonthlyPurchaseByOffice] = useState<any[]>([]);
   
   const [collectionsData, setCollectionsData] = useState<any[]>([]);
   const [monthlyCollectionsData, setMonthlyCollectionsData] = useState<any[]>([]);
@@ -48,6 +54,7 @@ export default function DailyStatusPage() {
   useEffect(() => {
     if (activeTab === "sales") {
       fetchSalesAndPurchaseData();
+      fetchMobilPaymentsData();
     } else if (activeTab === "monthly") {
       fetchMonthlyData();
     } else if (activeTab === "collections") {
@@ -71,43 +78,34 @@ export default function DailyStatusPage() {
       if (result.success) {
         setMiscMobil(result.miscMobil);
         
-        // Handle Sales Data
-        const rawSales = Array.isArray(result.salesData) ? result.salesData : [];
-        const salesTotal = rawSales.reduce((acc: any, curr: any) => ({
-          totalSales: acc.totalSales + (Number(curr.totalSales) || 0),
-          mobileSalesAmount: acc.mobileSalesAmount + (Number(curr.mobileSalesAmount) || 0),
-          mobileSalesWeight: acc.mobileSalesWeight + (Number(curr.mobileSalesWeight) || 0),
-          flagshipSalesWeight: acc.flagshipSalesWeight + (Number(curr.flagshipSalesWeight) || 0),
-        }), { totalSales: 0, mobileSalesAmount: 0, mobileSalesWeight: 0, flagshipSalesWeight: 0 });
+        // Helper to add total row
+        const addTotalRow = (data: any[], type: 'sales' | 'purchase') => {
+          const raw = Array.isArray(data) ? data : [];
+          const total = raw.reduce((acc: any, curr: any) => ({
+            amount: acc.amount + (Number(type === 'sales' ? curr.totalSales : curr.totalPurchases) || 0),
+            weight: acc.weight + (Number(type === 'sales' ? curr.totalSalesWeight : curr.totalPurchaseWeight) || 0),
+            mobileAmount: acc.mobileAmount + (Number(type === 'sales' ? curr.mobileSalesAmount : curr.mobilePurchaseAmount) || 0),
+            mobileWeight: acc.mobileWeight + (Number(type === 'sales' ? curr.mobileSalesWeight : curr.mobilePurchaseWeight) || 0),
+            flagshipAmount: acc.flagshipAmount + (Number(type === 'sales' ? curr.flagshipSalesAmount : curr.flagshipPurchaseAmount) || 0),
+            flagshipWeight: acc.flagshipWeight + (Number(type === 'sales' ? curr.flagshipSalesWeight : curr.flagshipPurchaseWeight) || 0),
+          }), { amount: 0, weight: 0, mobileAmount: 0, mobileWeight: 0, flagshipAmount: 0, flagshipWeight: 0 });
 
-        const salesTotalRow = { id: 'total', branch: '합계', ...salesTotal, isTotal: true };
-        const salesDmRow = { 
-          id: 'dm', branch: 'D/M계', 
-          totalSales: 0, mobileSalesAmount: 0, 
-          mobileSalesWeight: salesTotal.mobileSalesWeight / 200, 
-          flagshipSalesWeight: salesTotal.flagshipSalesWeight / 200, 
-          isTotal: true 
+          const totalRow = { 
+            id: 'total', branch: '합계', isTotal: true,
+            [type === 'sales' ? 'totalSales' : 'totalPurchases']: total.amount,
+            [type === 'sales' ? 'totalSalesWeight' : 'totalPurchaseWeight']: total.weight,
+            [type === 'sales' ? 'mobileSalesAmount' : 'mobilePurchaseAmount']: total.mobileAmount,
+            [type === 'sales' ? 'mobileSalesWeight' : 'mobilePurchaseWeight']: total.mobileWeight,
+            [type === 'sales' ? 'flagshipSalesAmount' : 'flagshipPurchaseAmount']: total.flagshipAmount,
+            [type === 'sales' ? 'flagshipSalesWeight' : 'flagshipPurchaseWeight']: total.flagshipWeight
+          };
+          return [...raw, totalRow];
         };
-        setSalesData([...rawSales, salesTotalRow, salesDmRow]);
 
-        // Handle Purchase Data
-        const rawPurchases = Array.isArray(result.purchaseData) ? result.purchaseData : [];
-        const purchaseTotal = rawPurchases.reduce((acc: any, curr: any) => ({
-          totalPurchases: acc.totalPurchases + (Number(curr.totalPurchases) || 0),
-          mobilePurchaseAmount: acc.mobilePurchaseAmount + (Number(curr.mobilePurchaseAmount) || 0),
-          mobilePurchaseWeight: acc.mobilePurchaseWeight + (Number(curr.mobilePurchaseWeight) || 0),
-          flagshipPurchaseWeight: acc.flagshipPurchaseWeight + (Number(curr.flagshipPurchaseWeight) || 0),
-        }), { totalPurchases: 0, mobilePurchaseAmount: 0, mobilePurchaseWeight: 0, flagshipPurchaseWeight: 0 });
-
-        const purchaseTotalRow = { id: 'total', branch: '합계', ...purchaseTotal, isTotal: true };
-        const purchaseDmRow = { 
-          id: 'dm', branch: 'D/M계', 
-          totalPurchases: 0, mobilePurchaseAmount: 0, 
-          mobilePurchaseWeight: purchaseTotal.mobilePurchaseWeight / 200, 
-          flagshipPurchaseWeight: purchaseTotal.flagshipPurchaseWeight / 200, 
-          isTotal: true 
-        };
-        setPurchaseData([...rawPurchases, purchaseTotalRow, purchaseDmRow]);
+        setSalesData(addTotalRow(result.salesData, 'sales'));
+        setSalesByWarehouse(addTotalRow(result.salesByWarehouse, 'sales'));
+        setPurchaseData(addTotalRow(result.purchaseData, 'purchase'));
+        setPurchaseByOffice(addTotalRow(result.purchaseByOffice, 'purchase'));
       }
     } catch (error) {
       console.error("Failed to fetch data:", error);
@@ -124,7 +122,9 @@ export default function DailyStatusPage() {
       const result = await response.json();
       if (result.success) {
         setMonthlySalesData(result.salesData || []);
+        setMonthlySalesByWarehouse(result.salesByWarehouse || []);
         setMonthlyPurchaseData(result.purchaseData || []);
+        setMonthlyPurchaseByOffice(result.purchaseByOffice || []);
         setMonthlyMiscMobil(result.miscMobil);
       }
     } catch (error) {
@@ -210,22 +210,42 @@ export default function DailyStatusPage() {
     }
   };
 
-  const sTotals = salesData.find(d => d.id === 'total') || { totalSales: 0, mobileSalesAmount: 0, mobileSalesWeight: 0, flagshipSalesWeight: 0 };
-  const pTotals = purchaseData.find(d => d.id === 'total') || { totalPurchases: 0, mobilePurchaseAmount: 0, mobilePurchaseWeight: 0, flagshipPurchaseWeight: 0 };
+  const sTotals = salesData.find(d => d.id === 'total') || { 
+    totalSales: 0, totalSalesWeight: 0, 
+    mobileSalesAmount: 0, mobileSalesWeight: 0, 
+    flagshipSalesAmount: 0, flagshipSalesWeight: 0 
+  };
+  const pTotals = purchaseData.find(d => d.id === 'total') || { 
+    totalPurchases: 0, totalPurchaseWeight: 0, 
+    mobilePurchaseAmount: 0, mobilePurchaseWeight: 0, 
+    flagshipPurchaseAmount: 0, flagshipPurchaseWeight: 0 
+  };
 
   const msTotals = monthlySalesData.reduce((acc, curr) => ({
     totalSales: acc.totalSales + (Number(curr.totalSales) || 0),
+    totalSalesWeight: acc.totalSalesWeight + (Number(curr.totalSalesWeight) || 0),
     mobileSalesAmount: acc.mobileSalesAmount + (Number(curr.mobileSalesAmount) || 0),
     mobileSalesWeight: acc.mobileSalesWeight + (Number(curr.mobileSalesWeight) || 0),
+    flagshipSalesAmount: acc.flagshipSalesAmount + (Number(curr.flagshipSalesAmount) || 0),
     flagshipSalesWeight: acc.flagshipSalesWeight + (Number(curr.flagshipSalesWeight) || 0),
-  }), { totalSales: 0, mobileSalesAmount: 0, mobileSalesWeight: 0, flagshipSalesWeight: 0 });
+  }), { 
+    totalSales: 0, totalSalesWeight: 0, 
+    mobileSalesAmount: 0, mobileSalesWeight: 0, 
+    flagshipSalesAmount: 0, flagshipSalesWeight: 0 
+  });
 
   const mpTotals = monthlyPurchaseData.reduce((acc, curr) => ({
     totalPurchases: acc.totalPurchases + (Number(curr.totalPurchases) || 0),
+    totalPurchaseWeight: acc.totalPurchaseWeight + (Number(curr.totalPurchaseWeight) || 0),
     mobilePurchaseAmount: acc.mobilePurchaseAmount + (Number(curr.mobilePurchaseAmount) || 0),
     mobilePurchaseWeight: acc.mobilePurchaseWeight + (Number(curr.mobilePurchaseWeight) || 0),
+    flagshipPurchaseAmount: acc.flagshipPurchaseAmount + (Number(curr.flagshipPurchaseAmount) || 0),
     flagshipPurchaseWeight: acc.flagshipPurchaseWeight + (Number(curr.flagshipPurchaseWeight) || 0),
-  }), { totalPurchases: 0, mobilePurchaseAmount: 0, mobilePurchaseWeight: 0, flagshipPurchaseWeight: 0 });
+  }), { 
+    totalPurchases: 0, totalPurchaseWeight: 0, 
+    mobilePurchaseAmount: 0, mobilePurchaseWeight: 0, 
+    flagshipPurchaseAmount: 0, flagshipPurchaseWeight: 0 
+  });
 
   const mobileRatio = sTotals.totalSales > 0 
     ? ((sTotals.mobileSalesAmount / sTotals.totalSales) * 100).toFixed(1) 
@@ -243,29 +263,98 @@ export default function DailyStatusPage() {
       if (salesData.length > 0) {
         islands.push({ 
           title: '매출현황', 
-          headers: ['사업소', '총매출', '모빌매출', '판매용량', '플래그십'], 
-          data: salesData.map(r => [r.branch, r.totalSales, r.mobileSalesAmount, r.mobileSalesWeight, r.flagshipSalesWeight]) 
+          headers: ['사업소', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
+          data: salesData.map(r => [
+            r.branch, 
+            r.totalSales, 
+            r.totalSalesWeight,
+            r.mobileSalesAmount, 
+            r.mobileSalesWeight, 
+            r.flagshipSalesAmount,
+            r.flagshipSalesWeight
+          ]) 
         });
       }
       if (purchaseData.length > 0) {
         islands.push({ 
           title: '매입현황', 
-          headers: ['창고/그룹', '총매입', '모빌매입', '매입용량', '플래그십'], 
-          data: purchaseData.map(r => [r.branch, r.totalPurchases, r.mobilePurchaseAmount, r.mobilePurchaseWeight, r.flagshipPurchaseWeight]) 
+          headers: ['창고/그룹', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
+          data: purchaseData.map(r => [
+            r.branch, 
+            r.totalPurchases, 
+            r.totalPurchaseWeight,
+            r.mobilePurchaseAmount, 
+            r.mobilePurchaseWeight, 
+            r.flagshipPurchaseAmount,
+            r.flagshipPurchaseWeight
+          ]) 
+        });
+      }
+      if (salesByWarehouse.length > 0) {
+        islands.push({ 
+          title: '매출현황(창고)', 
+          headers: ['창고', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
+          data: salesByWarehouse.map(r => [r.branch, r.totalSales, r.totalSalesWeight, r.mobileSalesAmount, r.mobileSalesWeight, r.flagshipSalesAmount, r.flagshipSalesWeight]) 
+        });
+      }
+      if (purchaseByOffice.length > 0) {
+        islands.push({ 
+          title: '매입현황(사업소)', 
+          headers: ['사업소', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
+          data: purchaseByOffice.map(r => [r.branch, r.totalPurchases, r.totalPurchaseWeight, r.mobilePurchaseAmount, r.mobilePurchaseWeight, r.flagshipPurchaseAmount, r.flagshipPurchaseWeight]) 
+        });
+      }
+      if (mobilPaymentsData.length > 0) {
+        islands.push({ 
+          title: '모빌결제내역', 
+          headers: ['사업소', 'IL', 'AUTO', 'MBK', '합계'], 
+          data: mobilPaymentsData.map(r => [r.branch, r.il, r.auto, r.mbk, r.total]) 
         });
       }
       if (monthlySalesData.length > 0) {
         islands.push({ 
           title: '월별매출현황', 
-          headers: ['월', '사업소', '총매출', '모빌매출', '판매용량', '플래그십'], 
-          data: monthlySalesData.map(r => [r.month, r.branch, r.totalSales, r.mobileSalesAmount, r.mobileSalesWeight, r.flagshipSalesWeight]) 
+          headers: ['월', '사업소', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
+          data: monthlySalesData.map(r => [
+            r.month, 
+            r.branch, 
+            r.totalSales, 
+            r.totalSalesWeight,
+            r.mobileSalesAmount, 
+            r.mobileSalesWeight, 
+            r.flagshipSalesAmount,
+            r.flagshipSalesWeight
+          ]) 
         });
       }
       if (monthlyPurchaseData.length > 0) {
         islands.push({ 
           title: '월별매입현황', 
-          headers: ['월', '창고/그룹', '총매입', '모빌매입', '매입용량', '플래그십'], 
-          data: monthlyPurchaseData.map(r => [r.month, r.branch, r.totalPurchases, r.mobilePurchaseAmount, r.mobilePurchaseWeight, r.flagshipPurchaseWeight]) 
+          headers: ['월', '창고/그룹', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
+          data: monthlyPurchaseData.map(r => [
+            r.month, 
+            r.branch, 
+            r.totalPurchases, 
+            r.totalPurchaseWeight,
+            r.mobilePurchaseAmount, 
+            r.mobilePurchaseWeight, 
+            r.flagshipPurchaseAmount,
+            r.flagshipPurchaseWeight
+          ]) 
+        });
+      }
+      if (monthlySalesByWarehouse.length > 0) {
+        islands.push({ 
+          title: '월별매출현황(창고)', 
+          headers: ['월', '창고', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
+          data: monthlySalesByWarehouse.map(r => [r.month, r.branch, r.totalSales, r.totalSalesWeight, r.mobileSalesAmount, r.mobileSalesWeight, r.flagshipSalesAmount, r.flagshipSalesWeight]) 
+        });
+      }
+      if (monthlyPurchaseByOffice.length > 0) {
+        islands.push({ 
+          title: '월별매입현황(사업소)', 
+          headers: ['월', '사업소', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
+          data: monthlyPurchaseByOffice.map(r => [r.month, r.branch, r.totalPurchases, r.totalPurchaseWeight, r.mobilePurchaseAmount, r.mobilePurchaseWeight, r.flagshipPurchaseAmount, r.flagshipPurchaseWeight]) 
         });
       }
       exportIslandTables(islands, `daily-status-${selectedDate}.xlsx`);
@@ -346,20 +435,81 @@ export default function DailyStatusPage() {
               </div>
             </div>
 
-            {/* Sales Section */}
-            <div className="space-y-4">
-              <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                <BarChart3 className="w-6 h-6 text-blue-500" /> 매출 현황 (지사별)
-              </h3>
-              <SalesTable data={salesData} />
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <BarChart3 className="w-6 h-6 text-blue-500" /> 매출 현황
+                </h3>
+                <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
+                  <button 
+                    onClick={() => setSalesView('office')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${salesView === 'office' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" /> 사업소별
+                  </button>
+                  <button 
+                    onClick={() => setSalesView('warehouse')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${salesView === 'warehouse' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                  >
+                    <Warehouse className="w-3.5 h-3.5" /> 창고별
+                  </button>
+                </div>
+              </div>
+              <StatusTable 
+                data={salesView === 'office' ? salesData : salesByWarehouse} 
+                title={salesView === 'office' ? "사업소별 매출" : "창고별 매출"}
+                type="sales"
+                groupingLabel={salesView === 'office' ? "사업소" : "창고"}
+                amountKey="totalSales"
+                weightKey="totalSalesWeight"
+                mobileAmountKey="mobileSalesAmount"
+                mobileWeightKey="mobileSalesWeight"
+                flagshipAmountKey="flagshipSalesAmount"
+                flagshipWeightKey="flagshipSalesWeight"
+              />
             </div>
 
-            {/* Purchase Section */}
-            <div className="space-y-4">
-              <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                <ShoppingCart className="w-6 h-6 text-amber-500" /> 매입 현황 (창고/그룹별)
-              </h3>
-              <PurchaseTable data={purchaseData} />
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <ShoppingCart className="w-6 h-6 text-amber-500" /> 매입 현황
+                </h3>
+                <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
+                  <button 
+                    onClick={() => setPurchaseView('office')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${purchaseView === 'office' ? 'bg-white dark:bg-zinc-700 text-amber-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" /> 사업소별
+                  </button>
+                  <button 
+                    onClick={() => setPurchaseView('warehouse')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${purchaseView === 'warehouse' ? 'bg-white dark:bg-zinc-700 text-amber-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                  >
+                    <Warehouse className="w-3.5 h-3.5" /> 창고별
+                  </button>
+                </div>
+              </div>
+              <StatusTable 
+                data={purchaseView === 'office' ? purchaseByOffice : purchaseData} 
+                title={purchaseView === 'office' ? "사업소별 매입" : "창고별 매입"}
+                type="purchase"
+                groupingLabel={purchaseView === 'office' ? "사업소" : "창고 그룹"}
+                amountKey="totalPurchases"
+                weightKey="totalPurchaseWeight"
+                mobileAmountKey="mobilePurchaseAmount"
+                mobileWeightKey="mobilePurchaseWeight"
+                flagshipAmountKey="flagshipPurchaseAmount"
+                flagshipWeightKey="flagshipPurchaseWeight"
+              />
+            </div>
+
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <CreditCard className="w-6 h-6 text-indigo-500" /> 모빌 결제 내역
+                </h3>
+              </div>
+              <MobilPaymentsTable data={mobilPaymentsData} />
             </div>
 
             {miscMobil && miscMobil.count > 0 && (
@@ -393,19 +543,59 @@ export default function DailyStatusPage() {
             </div>
 
             {/* Monthly Sales Section */}
-            <div className="space-y-4">
-              <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                <BarChart3 className="w-6 h-6 text-blue-500" /> 월별 매출 현황 (지사별)
-              </h3>
-              <MonthlySalesTable data={monthlySalesData} />
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <BarChart3 className="w-6 h-6 text-blue-500" /> 월별 매출 현황
+                </h3>
+                <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
+                  <button 
+                    onClick={() => setMonthlySalesView('office')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${monthlySalesView === 'office' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" /> 사업소별
+                  </button>
+                  <button 
+                    onClick={() => setMonthlySalesView('warehouse')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${monthlySalesView === 'warehouse' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                  >
+                    <Warehouse className="w-3.5 h-3.5" /> 창고별
+                  </button>
+                </div>
+              </div>
+              <MonthlySalesTable 
+                data={monthlySalesView === 'office' ? monthlySalesData : monthlySalesByWarehouse} 
+                title={monthlySalesView === 'office' ? "사업소별 매출" : "창고별 매출"}
+                groupingLabel={monthlySalesView === 'office' ? "사업소" : "창고"}
+              />
             </div>
 
             {/* Monthly Purchase Section */}
-            <div className="space-y-4">
-              <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                <ShoppingCart className="w-6 h-6 text-amber-500" /> 월별 매입 현황 (창고/그룹별)
-              </h3>
-              <MonthlyPurchaseTable data={monthlyPurchaseData} />
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <ShoppingCart className="w-6 h-6 text-amber-500" /> 월별 매입 현황
+                </h3>
+                <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
+                  <button 
+                    onClick={() => setMonthlyPurchaseView('office')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${monthlyPurchaseView === 'office' ? 'bg-white dark:bg-zinc-700 text-amber-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" /> 사업소별
+                  </button>
+                  <button 
+                    onClick={() => setMonthlyPurchaseView('warehouse')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${monthlyPurchaseView === 'warehouse' ? 'bg-white dark:bg-zinc-700 text-amber-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                  >
+                    <Warehouse className="w-3.5 h-3.5" /> 창고별
+                  </button>
+                </div>
+              </div>
+              <MonthlyPurchaseTable 
+                data={monthlyPurchaseView === 'office' ? monthlyPurchaseByOffice : monthlyPurchaseData} 
+                title={monthlyPurchaseView === 'office' ? "사업소별 매입" : "창고별 매입"}
+                groupingLabel={monthlyPurchaseView === 'office' ? "사업소" : "창고 그룹"}
+              />
             </div>
           </div>
         ) : activeTab === "collections" ? (

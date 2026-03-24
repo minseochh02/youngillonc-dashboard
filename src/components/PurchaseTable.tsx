@@ -4,14 +4,16 @@ import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 interface PurchaseRowData {
   branch: string;
   totalPurchases: number;
+  totalPurchaseWeight: number;
   mobilePurchaseAmount: number;
   mobilePurchaseWeight: number;
+  flagshipPurchaseAmount: number;
   flagshipPurchaseWeight: number;
   isTotal?: boolean;
 }
 
 type SortDirection = 'asc' | 'desc' | null;
-type SortColumn = 'branch' | 'totalPurchases' | 'mobilePurchaseAmount' | 'mobilePurchaseWeight' | 'flagshipPurchaseWeight';
+type SortColumn = 'branch' | 'totalPurchases' | 'totalPurchaseWeight' | 'mobilePurchaseAmount' | 'mobilePurchaseWeight' | 'flagshipPurchaseAmount' | 'flagshipPurchaseWeight';
 
 interface SortState {
   column: SortColumn | null;
@@ -71,14 +73,20 @@ export default function PurchaseTable({ data }: { data: PurchaseRowData[] }) {
               <th onClick={() => handleSort('totalPurchases')} className="cursor-pointer px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 text-amber-600 font-bold">
                 <div className="flex items-center justify-center gap-1">총매입액 <SortIcon col="totalPurchases" /></div>
               </th>
+              <th onClick={() => handleSort('totalPurchaseWeight')} className="cursor-pointer px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 font-semibold">
+                <div className="flex items-center justify-center gap-1">총구매량 (L) <SortIcon col="totalPurchaseWeight" /></div>
+              </th>
               <th onClick={() => handleSort('mobilePurchaseAmount')} className="cursor-pointer px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 font-semibold">
                 <div className="flex items-center justify-center gap-1">모빌매입 <SortIcon col="mobilePurchaseAmount" /></div>
               </th>
               <th onClick={() => handleSort('mobilePurchaseWeight')} className="cursor-pointer px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 font-semibold">
-                <div className="flex items-center justify-center gap-1">매입용량 (L) <SortIcon col="mobilePurchaseWeight" /></div>
+                <div className="flex items-center justify-center gap-1">모빌구매량 (L) <SortIcon col="mobilePurchaseWeight" /></div>
               </th>
-              <th onClick={() => handleSort('flagshipPurchaseWeight')} className="cursor-pointer px-4 py-4 border-b border-zinc-200 dark:border-zinc-800 font-semibold">
-                <div className="flex items-center justify-center gap-1">플래그십 (L) <SortIcon col="flagshipPurchaseWeight" /></div>
+              <th onClick={() => handleSort('flagshipPurchaseAmount')} className="cursor-pointer px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 font-semibold text-red-600">
+                <div className="flex items-center justify-center gap-1">플래그십금액 <SortIcon col="flagshipPurchaseAmount" /></div>
+              </th>
+              <th onClick={() => handleSort('flagshipPurchaseWeight')} className="cursor-pointer px-4 py-4 border-b border-zinc-200 dark:border-zinc-800 font-semibold text-red-600">
+                <div className="flex items-center justify-center gap-1">플래그십용량 (L) <SortIcon col="flagshipPurchaseWeight" /></div>
               </th>
             </tr>
           </thead>
@@ -87,9 +95,11 @@ export default function PurchaseTable({ data }: { data: PurchaseRowData[] }) {
               <tr key={idx} className={`${row.isTotal ? 'bg-amber-50/30 dark:bg-amber-900/10 font-bold' : 'hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40'}`}>
                 <td className="sticky left-0 z-10 px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 bg-inherit font-bold text-left">{row.branch}</td>
                 <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums text-amber-600">{formatNumber(row.totalPurchases)}</td>
+                <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">{formatNumber(row.totalPurchaseWeight)}</td>
                 <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">{formatNumber(row.mobilePurchaseAmount)}</td>
                 <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">{formatNumber(row.mobilePurchaseWeight)}</td>
-                <td className="px-4 py-4 text-right tabular-nums">{formatNumber(row.flagshipPurchaseWeight)}</td>
+                <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums text-red-600">{formatNumber(row.flagshipPurchaseAmount)}</td>
+                <td className="px-4 py-4 text-right tabular-nums text-red-600">{formatNumber(row.flagshipPurchaseWeight)}</td>
               </tr>
             ))}
           </tbody>

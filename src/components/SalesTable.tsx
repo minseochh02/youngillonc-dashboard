@@ -5,14 +5,16 @@ interface SalesRowData {
   id: string;
   branch: string;
   totalSales: number;
+  totalSalesWeight: number;
   mobileSalesAmount: number;
   mobileSalesWeight: number;
+  flagshipSalesAmount: number;
   flagshipSalesWeight: number;
   isTotal?: boolean;
 }
 
 type SortDirection = 'asc' | 'desc' | null;
-type SortColumn = 'branch' | 'totalSales' | 'mobileSalesAmount' | 'mobileSalesWeight' | 'flagshipSalesWeight';
+type SortColumn = 'branch' | 'totalSales' | 'totalSalesWeight' | 'mobileSalesAmount' | 'mobileSalesWeight' | 'flagshipSalesAmount' | 'flagshipSalesWeight';
 
 interface SortState {
   column: SortColumn | null;
@@ -89,14 +91,20 @@ export default function SalesTable({ data }: SalesTableProps) {
               <th onClick={() => handleSort('totalSales')} className="cursor-pointer px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 text-blue-600 font-bold">
                 <div className="flex items-center justify-center gap-1">총매출액 <SortIcon col="totalSales" /></div>
               </th>
+              <th onClick={() => handleSort('totalSalesWeight')} className="cursor-pointer px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 font-semibold">
+                <div className="flex items-center justify-center gap-1">총판매량 (L) <SortIcon col="totalSalesWeight" /></div>
+              </th>
               <th onClick={() => handleSort('mobileSalesAmount')} className="cursor-pointer px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 font-semibold">
                 <div className="flex items-center justify-center gap-1">모빌매출 <SortIcon col="mobileSalesAmount" /></div>
               </th>
               <th onClick={() => handleSort('mobileSalesWeight')} className="cursor-pointer px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 font-semibold">
-                <div className="flex items-center justify-center gap-1">판매용량 (L) <SortIcon col="mobileSalesWeight" /></div>
+                <div className="flex items-center justify-center gap-1">모빌판매량 (L) <SortIcon col="mobileSalesWeight" /></div>
               </th>
-              <th onClick={() => handleSort('flagshipSalesWeight')} className="cursor-pointer px-4 py-4 border-b border-zinc-200 dark:border-zinc-800 font-semibold">
-                <div className="flex items-center justify-center gap-1">플래그십 (L) <SortIcon col="flagshipSalesWeight" /></div>
+              <th onClick={() => handleSort('flagshipSalesAmount')} className="cursor-pointer px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 font-semibold text-red-600">
+                <div className="flex items-center justify-center gap-1">플래그십금액 <SortIcon col="flagshipSalesAmount" /></div>
+              </th>
+              <th onClick={() => handleSort('flagshipSalesWeight')} className="cursor-pointer px-4 py-4 border-b border-zinc-200 dark:border-zinc-800 font-semibold text-red-600">
+                <div className="flex items-center justify-center gap-1">플래그십용량 (L) <SortIcon col="flagshipSalesWeight" /></div>
               </th>
             </tr>
           </thead>
@@ -105,9 +113,11 @@ export default function SalesTable({ data }: SalesTableProps) {
               <tr key={idx} className={`${row.isTotal ? 'bg-blue-50/30 dark:bg-blue-900/10 font-bold' : 'hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40'}`}>
                 <td className="sticky left-0 z-10 px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 bg-inherit font-bold">{row.branch}</td>
                 <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums text-blue-600">{formatNumber(row.totalSales)}</td>
+                <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">{formatNumber(row.totalSalesWeight)}</td>
                 <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">{formatNumber(row.mobileSalesAmount)}</td>
                 <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">{formatNumber(row.mobileSalesWeight)}</td>
-                <td className="px-4 py-4 text-right tabular-nums">{formatNumber(row.flagshipSalesWeight)}</td>
+                <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums text-red-600">{formatNumber(row.flagshipSalesAmount)}</td>
+                <td className="px-4 py-4 text-right tabular-nums text-red-600">{formatNumber(row.flagshipSalesWeight)}</td>
               </tr>
             ))}
           </tbody>

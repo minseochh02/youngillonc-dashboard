@@ -4,13 +4,17 @@ interface MonthlyPurchaseRow {
   month: string;
   branch: string;
   totalPurchases: number;
+  totalPurchaseWeight: number;
   mobilePurchaseAmount: number;
   mobilePurchaseWeight: number;
+  flagshipPurchaseAmount: number;
   flagshipPurchaseWeight: number;
 }
 
 interface MonthlyPurchaseTableProps {
   data: MonthlyPurchaseRow[];
+  title?: string;
+  groupingLabel?: string;
 }
 
 const formatNumber = (num: number) => {
@@ -18,7 +22,7 @@ const formatNumber = (num: number) => {
   return Math.round(num).toLocaleString();
 };
 
-export default function MonthlyPurchaseTable({ data }: MonthlyPurchaseTableProps) {
+export default function MonthlyPurchaseTable({ data, title = "매입 실적", groupingLabel = "창고 그룹" }: MonthlyPurchaseTableProps) {
   const months = useMemo(() => Array.from(new Set(data.map(d => d.month))).sort().reverse(), [data]);
 
   return (
@@ -27,15 +31,21 @@ export default function MonthlyPurchaseTable({ data }: MonthlyPurchaseTableProps
         const monthData = data.filter(d => d.month === month);
         const monthTotal = monthData.reduce((acc, curr) => ({
           totalPurchases: acc.totalPurchases + (Number(curr.totalPurchases) || 0),
+          totalPurchaseWeight: acc.totalPurchaseWeight + (Number(curr.totalPurchaseWeight) || 0),
           mobilePurchaseAmount: acc.mobilePurchaseAmount + (Number(curr.mobilePurchaseAmount) || 0),
           mobilePurchaseWeight: acc.mobilePurchaseWeight + (Number(curr.mobilePurchaseWeight) || 0),
+          flagshipPurchaseAmount: acc.flagshipPurchaseAmount + (Number(curr.flagshipPurchaseAmount) || 0),
           flagshipPurchaseWeight: acc.flagshipPurchaseWeight + (Number(curr.flagshipPurchaseWeight) || 0),
-        }), { totalPurchases: 0, mobilePurchaseAmount: 0, mobilePurchaseWeight: 0, flagshipPurchaseWeight: 0 });
+        }), { 
+          totalPurchases: 0, totalPurchaseWeight: 0, 
+          mobilePurchaseAmount: 0, mobilePurchaseWeight: 0, 
+          flagshipPurchaseAmount: 0, flagshipPurchaseWeight: 0 
+        });
 
         return (
           <div key={month} className="space-y-4">
             <div className="flex items-center gap-2 px-1">
-              <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{month.split('-')[1]}월 매입 실적</span>
+              <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{month.split('-')[1]}월 {title}</span>
               <span className="text-xs text-zinc-400 font-medium">({month.split('-')[0]}년)</span>
             </div>
             
@@ -44,11 +54,13 @@ export default function MonthlyPurchaseTable({ data }: MonthlyPurchaseTableProps
                 <table className="w-full text-sm text-center border-separate border-spacing-0">
                   <thead>
                     <tr className="bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-bold">
-                      <th className="px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 w-24 sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900 text-left">창고 그룹 (계층그룹 기준)</th>
+                      <th className="px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 w-24 sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900 text-left">{groupingLabel}</th>
                       <th className="px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 text-amber-600">총 매입액</th>
+                      <th className="px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800">총매입량 (L)</th>
                       <th className="px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800">모빌매입</th>
-                      <th className="px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800">매입용량 (L)</th>
-                      <th className="px-4 py-4 border-b border-zinc-200 dark:border-zinc-800">플래그십 (L)</th>
+                      <th className="px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800">모빌구매량 (L)</th>
+                      <th className="px-4 py-4 border-r border-b border-zinc-200 dark:border-zinc-800 text-red-600">플래그십금액</th>
+                      <th className="px-4 py-4 border-b border-zinc-200 dark:border-zinc-800 text-red-600">플래그십용량 (L)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 text-zinc-600 dark:text-zinc-300">
@@ -61,12 +73,18 @@ export default function MonthlyPurchaseTable({ data }: MonthlyPurchaseTableProps
                           {formatNumber(row.totalPurchases)}
                         </td>
                         <td className="px-4 py-3 border-r border-zinc-200 dark:border-zinc-800 tabular-nums text-right">
+                          {formatNumber(row.totalPurchaseWeight)}
+                        </td>
+                        <td className="px-4 py-3 border-r border-zinc-200 dark:border-zinc-800 tabular-nums text-right">
                           {formatNumber(row.mobilePurchaseAmount)}
                         </td>
                         <td className="px-4 py-3 border-r border-zinc-200 dark:border-zinc-800 tabular-nums text-right">
                           {formatNumber(row.mobilePurchaseWeight)}
                         </td>
-                        <td className="px-4 py-3 tabular-nums text-right">
+                        <td className="px-4 py-3 border-r border-zinc-200 dark:border-zinc-800 tabular-nums text-right text-red-600">
+                          {formatNumber(row.flagshipPurchaseAmount)}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-right text-red-600">
                           {formatNumber(row.flagshipPurchaseWeight)}
                         </td>
                       </tr>
@@ -76,9 +94,11 @@ export default function MonthlyPurchaseTable({ data }: MonthlyPurchaseTableProps
                     <tr>
                       <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-center text-amber-700 dark:text-amber-400 sticky left-0 z-10 bg-inherit">합계</td>
                       <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right text-amber-700 dark:text-amber-400">{formatNumber(monthTotal.totalPurchases)}</td>
+                      <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">{formatNumber(monthTotal.totalPurchaseWeight)}</td>
                       <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right">{formatNumber(monthTotal.mobilePurchaseAmount)}</td>
-                      <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right">{formatNumber(monthTotal.mobilePurchaseWeight)}</td>
-                      <td className="px-4 py-4 text-right">{formatNumber(monthTotal.flagshipPurchaseWeight)}</td>
+                      <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">{formatNumber(monthTotal.mobilePurchaseWeight)}</td>
+                      <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right text-red-600">{formatNumber(monthTotal.flagshipPurchaseAmount)}</td>
+                      <td className="px-4 py-4 text-right text-red-600">{formatNumber(monthTotal.flagshipPurchaseWeight)}</td>
                     </tr>
                     <tr className="bg-zinc-50/50 dark:bg-zinc-800/50">
                       <td className="px-4 py-2 border-r border-zinc-200 dark:border-zinc-800 text-center text-zinc-500 sticky left-0 z-10 bg-inherit text-xs">D/M계</td>
