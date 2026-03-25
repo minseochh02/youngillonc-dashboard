@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
+import { executeSQL } from '@/egdesk-helpers';
 
 /**
  * API Endpoint for Sales Analysis with Three-Way Filtering
@@ -8,6 +8,9 @@ import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+
+    // Base table for sales
+    const baseSalesTable = 'sales';
 
     // Date range
     const startDate = searchParams.get('startDate') || '2025-01-01';
@@ -172,17 +175,17 @@ export async function GET(request: Request) {
       'COUNT(DISTINCT s.거래처코드) as client_count',
       'SUM(CAST(REPLACE(s.수량, \',\', \'\') AS NUMERIC)) as total_quantity',
       'SUM(CAST(REPLACE(s.중량, \',\', \'\') AS NUMERIC)) as total_weight',
-      'SUM(CAST(REPLACE(s.공급가액, \',\', \'\') AS NUMERIC)) as total_supply_amount',
+      'SUM(CAST(REPLACE(s.수량, \',\', \'\') AS NUMERIC) * CAST(REPLACE(s.단가, \',\', \'\') AS NUMERIC)) as total_supply_amount',
       'SUM(CAST(REPLACE(s.합계, \',\', \'\') AS NUMERIC)) as total_amount'
     );
 
     const query = `
       SELECT
         ${selectFields.join(',\n        ')}
-      FROM ${UNIFIED_SALES_SUBQUERY} s
+      FROM ${baseSalesTable} s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
       WHERE s.일자 BETWEEN '${startDate}' AND '${endDate}'

@@ -185,7 +185,7 @@ export default function DailyInventorySheet() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 flex items-center gap-3">
             <Calculator className="w-8 h-8 text-blue-600" />
-            일일재고파악시트
+            일일재고파악
           </h1>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1">
             부서별/카테고리별 실시간 재고 및 수불 현황 (단위: Liter / DM)

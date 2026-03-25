@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Package, ShoppingCart, Archive, ChevronDown, ChevronRight, Pencil } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -43,7 +43,11 @@ interface MonthlySummary {
   };
 }
 
-export default function MonthlySummaryTab() {
+interface MonthlySummaryProps {
+  selectedMonth?: string;
+}
+
+export default function MonthlySummaryTab({ selectedMonth }: MonthlySummaryProps) {
   const [data, setData] = useState<MonthlySummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
@@ -51,12 +55,13 @@ export default function MonthlySummaryTab() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/closing-meeting?tab=monthly-summary`);
+      const url = `/api/dashboard/closing-meeting?tab=monthly-summary${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);
@@ -68,7 +73,8 @@ export default function MonthlySummaryTab() {
     }
   };
 
-  const formatNumber = (num: number) => {
+  const formatNumber = (num: number | null | undefined) => {
+    if (num === null || num === undefined) return "0";
     return num.toLocaleString();
   };
 
@@ -80,17 +86,6 @@ export default function MonthlySummaryTab() {
       newExpanded.add(month);
     }
     setExpandedMonths(newExpanded);
-  };
-
-  const handleTargetChange = (key: string, value: string) => {
-    const numValue = parseFloat(value.replace(/,/g, '')) || 0;
-    const newEditingTargets = new Map(editingTargets);
-    newEditingTargets.set(key, numValue);
-    setEditingTargets(newEditingTargets);
-  };
-
-  const getTargetValue = (key: string, defaultValue: number) => {
-    return editingTargets.has(key) ? editingTargets.get(key)! : defaultValue;
   };
 
   const handleExcelDownload = () => {
@@ -110,8 +105,8 @@ export default function MonthlySummaryTab() {
         '판매용량(L)': month.sales_weight,
         '재고용량(L)': month.inventory_weight,
         '목표용량(L)': month.target_weight,
-        '달성율(%)': month.achievement_rate.toFixed(1),
-        '전년대비(%)': month.yoy_growth_rate.toFixed(1),
+        '달성율(%)': (month.achievement_rate ?? 0).toFixed(1),
+        '전년대비(%)': (month.yoy_growth_rate ?? 0).toFixed(1),
       });
 
       // Add category breakdown
@@ -122,8 +117,8 @@ export default function MonthlySummaryTab() {
           '구매용량(L)': cat.purchase_weight,
           '판매용량(L)': cat.sales_weight,
           '재고용량(L)': cat.inventory_weight,
-          '목표용량(L)': '',
-          '달성율(%)': '',
+          '목표용량(L)': cat.target_weight,
+          '달성율(%)': (cat.achievement_rate ?? 0).toFixed(1),
           '전년대비(%)': '',
         });
       });
@@ -137,7 +132,7 @@ export default function MonthlySummaryTab() {
       '판매용량(L)': data.yearToDate.sales_weight,
       '재고용량(L)': data.yearToDate.inventory_weight,
       '목표용량(L)': data.yearToDate.target_weight,
-      '달성율(%)': data.yearToDate.achievement_rate.toFixed(1),
+      '달성율(%)': (data.yearToDate.achievement_rate ?? 0).toFixed(1),
       '전년대비(%)': '-',
     });
 
@@ -214,7 +209,7 @@ export default function MonthlySummaryTab() {
             </div>
             <div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">금액</p>
-              <p className="text-lg font-semibold text-green-700 dark:text-green-300">
+              <p className="text-lg font-semibold text-green-700 dark:text-blue-300">
                 {formatNumber(currentMonth.sales_amount)} 원
               </p>
             </div>
@@ -238,7 +233,7 @@ export default function MonthlySummaryTab() {
             </div>
             <div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">금액</p>
-              <p className="text-lg font-semibold text-purple-700 dark:text-purple-300">
+              <p className="text-lg font-semibold text-purple-700 dark:text-blue-300">
                 {formatNumber(currentMonth.inventory_amount)} 원
               </p>
             </div>
@@ -253,23 +248,23 @@ export default function MonthlySummaryTab() {
             <div>
               <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">목표 달성율</p>
               <p className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mt-2">
-                {currentMonth.achievement_rate.toFixed(1)}%
+                {(currentMonth.achievement_rate ?? 0).toFixed(1)}%
               </p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                 목표: {formatNumber(currentMonth.target_weight)} L
               </p>
             </div>
             <div className={`p-4 rounded-full ${
-              currentMonth.achievement_rate >= 100
+              (currentMonth.achievement_rate ?? 0) >= 100
                 ? 'bg-green-100 dark:bg-green-900/30'
-                : currentMonth.achievement_rate >= 80
+                : (currentMonth.achievement_rate ?? 0) >= 80
                 ? 'bg-yellow-100 dark:bg-yellow-900/30'
                 : 'bg-red-100 dark:bg-red-900/30'
             }`}>
               <Package className={`w-8 h-8 ${
-                currentMonth.achievement_rate >= 100
+                (currentMonth.achievement_rate ?? 0) >= 100
                   ? 'text-green-600 dark:text-green-400'
-                  : currentMonth.achievement_rate >= 80
+                  : (currentMonth.achievement_rate ?? 0) >= 80
                   ? 'text-yellow-600 dark:text-yellow-400'
                   : 'text-red-600 dark:text-red-400'
               }`} />
@@ -283,16 +278,16 @@ export default function MonthlySummaryTab() {
               <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">전년 대비</p>
               <div className="flex items-baseline gap-2 mt-2">
                 <p className="text-3xl font-bold text-zinc-900 dark:text-zinc-100">
-                  {currentMonth.yoy_growth_rate >= 0 ? '+' : ''}{currentMonth.yoy_growth_rate.toFixed(1)}%
+                  {(currentMonth.yoy_growth_rate ?? 0) >= 0 ? '+' : ''}{(currentMonth.yoy_growth_rate ?? 0).toFixed(1)}%
                 </p>
               </div>
             </div>
             <div className={`p-4 rounded-full ${
-              currentMonth.yoy_growth_rate >= 0
+              (currentMonth.yoy_growth_rate ?? 0) >= 0
                 ? 'bg-green-100 dark:bg-green-900/30'
                 : 'bg-red-100 dark:bg-red-900/30'
             }`}>
-              {currentMonth.yoy_growth_rate >= 0 ? (
+              {(currentMonth.yoy_growth_rate ?? 0) >= 0 ? (
                 <TrendingUp className="w-8 h-8 text-green-600 dark:text-green-400" />
               ) : (
                 <TrendingDown className="w-8 h-8 text-red-600 dark:text-red-400" />
@@ -336,21 +331,17 @@ export default function MonthlySummaryTab() {
                   {formatNumber(data.yearToDate.inventory_weight)}
                 </td>
                 <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                  {formatNumber(
-                    data.monthlyData.reduce((sum, month) =>
-                      sum + getTargetValue(month.month, month.target_weight), 0
-                    )
-                  )}
+                  {formatNumber(data.yearToDate.target_weight)}
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className={`font-bold ${
-                    data.yearToDate.achievement_rate >= 100
+                    (data.yearToDate.achievement_rate ?? 0) >= 100
                       ? 'text-green-600'
-                      : data.yearToDate.achievement_rate >= 80
+                      : (data.yearToDate.achievement_rate ?? 0) >= 80
                       ? 'text-yellow-600'
                       : 'text-red-600'
                   }`}>
-                    {data.yearToDate.achievement_rate.toFixed(1)}%
+                    {(data.yearToDate.achievement_rate ?? 0).toFixed(1)}%
                   </span>
                 </td>
                 <td className="py-3 px-4 text-right text-zinc-500">-</td>
@@ -358,24 +349,13 @@ export default function MonthlySummaryTab() {
 
               {/* Monthly Data - Reverse order (current month first, January last) */}
               {[...data.monthlyData]
-                .filter(month => {
-                  const [year, m] = month.month.split('-').map(Number);
-                  const now = new Date();
-                  const currentYear = now.getFullYear();
-                  const currentMonth = now.getMonth() + 1;
-                  
-                  if (year < currentYear) return true;
-                  if (year === currentYear && m <= currentMonth) return true;
-                  return false;
-                })
                 .reverse()
                 .map((month) => {
                 const isExpanded = expandedMonths.has(month.month);
                 return (
-                  <>
+                  <Fragment key={month.month}>
                     {/* Main month row */}
                     <tr
-                      key={month.month}
                       className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer"
                       onClick={() => toggleMonth(month.month)}
                     >
@@ -401,35 +381,26 @@ export default function MonthlySummaryTab() {
                       <td className="py-3 px-4 text-right font-mono text-purple-700 dark:text-purple-300 font-semibold">
                         {formatNumber(month.inventory_weight)}
                       </td>
-                      <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1">
-                          <input
-                            type="text"
-                            value={formatNumber(getTargetValue(month.month, month.target_weight))}
-                            onChange={(e) => handleTargetChange(month.month, e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-24 text-right font-mono bg-transparent border-b-2 border-zinc-300 dark:border-zinc-600 px-1 pb-0.5 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-                          />
-                          <Pencil className="w-3 h-3 text-zinc-400" />
-                        </div>
+                      <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                        {formatNumber(month.target_weight)}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <span className={`font-medium ${
-                          month.achievement_rate >= 100
+                          (month.achievement_rate ?? 0) >= 100
                             ? 'text-green-600'
-                            : month.achievement_rate >= 80
+                            : (month.achievement_rate ?? 0) >= 80
                             ? 'text-yellow-600'
                             : 'text-red-600'
                         }`}>
-                          {month.achievement_rate.toFixed(1)}%
+                          {(month.achievement_rate ?? 0).toFixed(1)}%
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
                         <span className={`inline-flex items-center gap-1 font-medium ${
-                          month.yoy_growth_rate >= 0 ? 'text-green-600' : 'text-red-600'
+                          (month.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {month.yoy_growth_rate >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                          {month.yoy_growth_rate >= 0 ? '+' : ''}{month.yoy_growth_rate.toFixed(1)}%
+                          {(month.yoy_growth_rate ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {(month.yoy_growth_rate ?? 0) >= 0 ? '+' : ''}{(month.yoy_growth_rate ?? 0).toFixed(1)}%
                         </span>
                       </td>
                     </tr>
@@ -453,12 +424,16 @@ export default function MonthlySummaryTab() {
                         <td className="py-2 px-4 text-right font-mono text-purple-600 dark:text-purple-400 text-xs">
                           {formatNumber(cat.inventory_weight)}
                         </td>
-                        <td className="py-2 px-4 text-right text-zinc-400 text-xs">-</td>
-                        <td className="py-2 px-4 text-right text-zinc-400 text-xs">-</td>
+                        <td className="py-2 px-4 text-right font-mono text-zinc-500 dark:text-zinc-400 text-xs">
+                          {formatNumber(cat.target_weight)}
+                        </td>
+                        <td className="py-2 px-4 text-right text-zinc-500 dark:text-zinc-400 text-xs">
+                          {(cat.achievement_rate ?? 0).toFixed(1)}%
+                        </td>
                         <td className="py-2 px-4 text-right text-zinc-400 text-xs">-</td>
                       </tr>
                     ))}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

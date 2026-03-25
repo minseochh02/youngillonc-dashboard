@@ -38,18 +38,23 @@ interface SalesAmountData {
   lastYear: string;
 }
 
-export default function SalesAmountTab() {
+interface SalesAmountTabProps {
+  selectedMonth?: string;
+}
+
+export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
   const [data, setData] = useState<SalesAmountData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchSalesAmountData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchSalesAmountData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=sales-amount`);
+      const url = `/api/dashboard/b2c-meetings?tab=sales-amount${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);

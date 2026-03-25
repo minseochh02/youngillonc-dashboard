@@ -49,6 +49,12 @@ interface ApiData {
   warehouses: string[];
   units: string[];
   recommendations: RecommendedItem[];
+  pagination?: {
+    totalCount: number;
+    totalPages: number;
+    page: number;
+    pageSize: number;
+  };
 }
 
 // ── Helpers ──
@@ -134,6 +140,8 @@ export default function LongTermInventoryPage() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
+  const [recommendationPage, setRecommendationPage] = useState(1);
+  const [recommendationType, setRecommendationType] = useState<'all' | 'dead' | 'slow'>('all');
 
   const categories = ["전체", "IL", "AL", "기타"];
 
@@ -164,12 +172,12 @@ export default function LongTermInventoryPage() {
 
   useEffect(() => {
     fetchData();
-  }, [selectedMonth]);
+  }, [selectedMonth, recommendationPage, recommendationType]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/long-term-inventory?month=${selectedMonth}`);
+      const response = await apiFetch(`/api/dashboard/long-term-inventory?month=${selectedMonth}&page=${recommendationPage}&pageSize=20&type=${recommendationType}`);
       const result = await response.json();
       if (result.success) {
         setData(result.data);
@@ -616,11 +624,11 @@ export default function LongTermInventoryPage() {
                 }`}
               >
                 <Calculator className="w-4 h-4" />
-                분석 추천 ({data?.recommendations?.length || 0})
+                분석 추천 ({data?.pagination?.totalCount || data?.recommendations?.length || 0})
               </button>
             </div>
 
-            {activeTab === 'managed' && (
+            {activeTab === 'managed' ? (
               <>
                 <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-700 mx-2" />
                 <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 p-1 rounded-lg">
@@ -646,6 +654,32 @@ export default function LongTermInventoryPage() {
                 >
                   <Plus className="w-3 h-3" /> 지난달 복사
                 </button>
+              </>
+            ) : (
+              <>
+                <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-700 mx-2" />
+                <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 p-1 rounded-lg">
+                  {[
+                    { id: 'all', label: '전체' },
+                    { id: 'dead', label: '데드스탁' },
+                    { id: 'slow', label: '저회전' }
+                  ].map((type) => (
+                    <button
+                      key={type.id}
+                      onClick={() => {
+                        setRecommendationType(type.id as any);
+                        setRecommendationPage(1);
+                      }}
+                      className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                        recommendationType === type.id
+                          ? "bg-white dark:bg-zinc-700 text-purple-600 dark:text-purple-400 shadow-sm"
+                          : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                      }`}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
               </>
             )}
           </div>
@@ -796,6 +830,110 @@ export default function LongTermInventoryPage() {
               </table>
             )}
           </div>
+
+          {/* Pagination for Recommended tab */}
+          {activeTab === 'recommended' && data?.pagination && data.pagination.totalPages > 1 && (
+            <div className="bg-zinc-50 dark:bg-zinc-800/50 border-t border-zinc-100 dark:border-zinc-800 px-4 py-3 flex items-center justify-between">
+              <div className="flex-1 flex justify-between sm:hidden">
+                <button
+                  onClick={() => setRecommendationPage(prev => Math.max(prev - 1, 1))}
+                  disabled={recommendationPage === 1}
+                  className="relative inline-flex items-center px-4 py-2 border border-zinc-300 dark:border-zinc-700 text-sm font-medium rounded-md text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  이전
+                </button>
+                <button
+                  onClick={() => setRecommendationPage(prev => Math.min(prev + 1, data.pagination?.totalPages || 1))}
+                  disabled={recommendationPage === data.pagination.totalPages}
+                  className="ml-3 relative inline-flex items-center px-4 py-2 border border-zinc-300 dark:border-zinc-700 text-sm font-medium rounded-md text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  다음
+                </button>
+              </div>
+              <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs text-zinc-500">
+                    전체 <span className="font-bold text-zinc-900 dark:text-zinc-100">{data.pagination.totalCount}</span>개 중{" "}
+                    <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                      {(data.pagination.page - 1) * data.pagination.pageSize + 1}
+                    </span>
+                    -
+                    <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                      {Math.min(data.pagination.page * data.pagination.pageSize, data.pagination.totalCount)}
+                    </span>
+                  </p>
+                </div>
+                <div>
+                  <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                    <button
+                      onClick={() => setRecommendationPage(1)}
+                      disabled={recommendationPage === 1}
+                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-medium text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
+                    >
+                      <span className="sr-only">First</span>
+                      {"<<"}
+                    </button>
+                    <button
+                      onClick={() => setRecommendationPage(prev => Math.max(prev - 1, 1))}
+                      disabled={recommendationPage === 1}
+                      className="relative inline-flex items-center px-2 py-2 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-medium text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Previous</span>
+                      {"<"}
+                    </button>
+                    
+                    {/* Page numbers (simplified) */}
+                    {[...Array(Math.min(5, data.pagination.totalPages))].map((_, i) => {
+                      let pageNum;
+                      const totalPages = data.pagination?.totalPages || 1;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else {
+                        if (recommendationPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (recommendationPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = recommendationPage - 2 + i;
+                        }
+                      }
+                      
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setRecommendationPage(pageNum)}
+                          className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                            recommendationPage === pageNum
+                              ? "z-10 bg-blue-50 dark:bg-blue-900/20 border-blue-500 text-blue-600 dark:text-blue-400"
+                              : "bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      onClick={() => setRecommendationPage(prev => Math.min(prev + 1, data.pagination?.totalPages || 1))}
+                      disabled={recommendationPage === data.pagination.totalPages}
+                      className="relative inline-flex items-center px-2 py-2 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-medium text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Next</span>
+                      {">"}
+                    </button>
+                    <button
+                      onClick={() => setRecommendationPage(data.pagination?.totalPages || 1)}
+                      disabled={recommendationPage === data.pagination.totalPages}
+                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-medium text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Last</span>
+                      {">>"}
+                    </button>
+                  </nav>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

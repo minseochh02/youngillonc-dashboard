@@ -42,7 +42,11 @@ interface TargetData {
 
 const STORAGE_KEY = 'product-status-targets';
 
-export default function ProductStatusTab() {
+interface ProductStatusTabProps {
+  selectedMonth?: string;
+}
+
+export default function ProductStatusTab({ selectedMonth }: ProductStatusTabProps) {
   const [data, setData] = useState<ProductStatusData | null>(null);
   const [targets, setTargets] = useState<TargetData>({});
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['auto-b2c-b2b']));
@@ -51,12 +55,13 @@ export default function ProductStatusTab() {
   useEffect(() => {
     fetchData();
     loadTargets();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch('/api/dashboard/product-status');
+      const url = `/api/dashboard/product-status${selectedMonth ? `?month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);

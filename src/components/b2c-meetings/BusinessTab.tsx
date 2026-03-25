@@ -27,18 +27,23 @@ interface BusinessData {
   lastYear: string;
 }
 
-export default function BusinessTab() {
+interface BusinessTabProps {
+  selectedMonth?: string;
+}
+
+export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
   const [data, setData] = useState<BusinessData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchBusinessData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchBusinessData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=business`);
+      const url = `/api/dashboard/b2c-meetings?tab=business${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);

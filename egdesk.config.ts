@@ -39,10 +39,10 @@ export const TABLES = {
   table3: {
     name: 'ledger',
     displayName: '계정별원장',
-    description: 'Rebuilt from 계정별원장.csv (2026-03-22)',
-    rowCount: 15842,
-    columnCount: 8,
-    columns: ['id', '일자', '적요', '계정명', '부서명', '차변금액', '대변금액', 'imported_at']
+    description: 'Rebuilt from 계정별원장-거래처코드포함2.xlsx (2026-03-24)',
+    rowCount: 6164,
+    columnCount: 12,
+    columns: ['id', '일자', '최초작성일자', '최종수정일자', '어음만기일자', '거래유형', '적요', '계정코드', '거래처코드', '차변금액', '대변금액', '잔액']
   } as TableDefinition,
   table4: {
     name: 'deposits',

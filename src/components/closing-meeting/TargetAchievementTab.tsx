@@ -25,18 +25,23 @@ interface TargetAchievementData {
   };
 }
 
-export default function TargetAchievementTab() {
+interface TargetAchievementProps {
+  selectedMonth?: string;
+}
+
+export default function TargetAchievementTab({ selectedMonth }: TargetAchievementProps) {
   const [data, setData] = useState<TargetAchievementData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/closing-meeting?tab=target-achievement`);
+      const url = `/api/dashboard/closing-meeting?tab=target-achievement${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);
@@ -48,7 +53,8 @@ export default function TargetAchievementTab() {
     }
   };
 
-  const formatNumber = (num: number) => {
+  const formatNumber = (num: number | null | undefined) => {
+    if (num === null || num === undefined) return "0";
     return num.toLocaleString();
   };
 
@@ -62,7 +68,7 @@ export default function TargetAchievementTab() {
       '사업소': branch.branch,
       '목표(L)': branch.target_weight,
       '실적(L)': branch.actual_weight,
-      '달성율(%)': branch.achievement_rate.toFixed(1),
+      '달성율(%)': (branch.achievement_rate ?? 0).toFixed(1),
       '차이(L)': branch.gap,
     }));
 
@@ -70,7 +76,7 @@ export default function TargetAchievementTab() {
       '사업소': '합계',
       '목표(L)': data.total.target_weight,
       '실적(L)': data.total.actual_weight,
-      '달성율(%)': data.total.achievement_rate.toFixed(1),
+      '달성율(%)': (data.total.achievement_rate ?? 0).toFixed(1),
       '차이(L)': data.total.gap,
     });
 
@@ -148,13 +154,13 @@ export default function TargetAchievementTab() {
             }`}>
               <div className="text-center">
                 <p className={`text-4xl font-bold ${
-                  data.total.achievement_rate >= 100
+                  (data.total.achievement_rate ?? 0) >= 100
                     ? 'text-green-600 dark:text-green-400'
-                    : data.total.achievement_rate >= 80
+                    : (data.total.achievement_rate ?? 0) >= 80
                     ? 'text-yellow-600 dark:text-yellow-400'
                     : 'text-red-600 dark:text-red-400'
                 }`}>
-                  {data.total.achievement_rate.toFixed(1)}%
+                  {(data.total.achievement_rate ?? 0).toFixed(1)}%
                 </p>
               </div>
             </div>
@@ -201,23 +207,23 @@ export default function TargetAchievementTab() {
                   </td>
                   <td className="py-3 px-4 text-right">
                     <span className={`font-bold ${
-                      branch.achievement_rate >= 100
+                      (branch.achievement_rate ?? 0) >= 100
                         ? 'text-green-600'
-                        : branch.achievement_rate >= 80
+                        : (branch.achievement_rate ?? 0) >= 80
                         ? 'text-yellow-600'
                         : 'text-red-600'
                     }`}>
-                      {branch.achievement_rate.toFixed(1)}%
+                      {(branch.achievement_rate ?? 0).toFixed(1)}%
                     </span>
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex justify-center">
-                      {branch.achievement_rate >= 100 ? (
+                      {(branch.achievement_rate ?? 0) >= 100 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-medium">
                           <TrendingUp className="w-3 h-3" />
                           목표달성
                         </span>
-                      ) : branch.achievement_rate >= 80 ? (
+                      ) : (branch.achievement_rate ?? 0) >= 80 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 text-xs font-medium">
                           근접
                         </span>
@@ -247,13 +253,13 @@ export default function TargetAchievementTab() {
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className={`font-bold ${
-                    data.total.achievement_rate >= 100
+                    (data.total.achievement_rate ?? 0) >= 100
                       ? 'text-green-600'
-                      : data.total.achievement_rate >= 80
+                      : (data.total.achievement_rate ?? 0) >= 80
                       ? 'text-yellow-600'
                       : 'text-red-600'
                   }`}>
-                    {data.total.achievement_rate.toFixed(1)}%
+                    {(data.total.achievement_rate ?? 0).toFixed(1)}%
                   </span>
                 </td>
                 <td className="py-3 px-4"></td>

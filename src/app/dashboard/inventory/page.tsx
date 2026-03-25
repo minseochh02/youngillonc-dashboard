@@ -504,7 +504,7 @@ export default function InventoryStatusPage() {
               : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
           }`}
         >
-          일일재고파악시트
+          일일재고파악
         </button>
       </div>
 

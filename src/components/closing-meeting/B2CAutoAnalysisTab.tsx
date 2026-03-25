@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown, Car, ChevronDown, ChevronRight, Pencil } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -35,6 +35,10 @@ interface B2CAutoAnalysis {
   currentYear: string;
   lastYear: string;
   branches: BranchAutoData[];
+  b2bAutoTotal: {
+    weight: number;
+    amount: number;
+  };
   total: {
     current_month_weight: number;
     current_month_amount: number;
@@ -47,7 +51,11 @@ interface B2CAutoAnalysis {
   };
 }
 
-export default function B2CAutoAnalysisTab() {
+interface B2CAutoAnalysisProps {
+  selectedMonth?: string;
+}
+
+export default function B2CAutoAnalysisTab({ selectedMonth }: B2CAutoAnalysisProps) {
   const [data, setData] = useState<B2CAutoAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedBranches, setExpandedBranches] = useState<Set<string>>(new Set());
@@ -55,15 +63,19 @@ export default function B2CAutoAnalysisTab() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/closing-meeting?tab=b2c-auto`);
+      const url = `/api/dashboard/closing-meeting?tab=b2c-auto${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        // Expand all branches by default
+        const allBranches = new Set(result.data.branches.map((b: BranchAutoData) => b.branch));
+        setExpandedBranches(allBranches);
       }
     } catch (error) {
       console.error('Failed to fetch B2C AUTO analysis:', error);
@@ -72,7 +84,8 @@ export default function B2CAutoAnalysisTab() {
     }
   };
 
-  const formatNumber = (num: number) => {
+  const formatNumber = (num: number | null | undefined) => {
+    if (num === null || num === undefined) return "0";
     return num.toLocaleString();
   };
 
@@ -114,9 +127,9 @@ export default function B2CAutoAnalysisTab() {
         '전월중량(L)': branch.last_month_weight,
         '전월대비증감(L)': branch.current_month_weight - branch.last_month_weight,
         '전년동월(L)': branch.yoy_weight,
-        '전년대비(%)': branch.yoy_growth_rate.toFixed(1),
+        '전년대비(%)': (branch.yoy_growth_rate ?? 0).toFixed(1),
         '목표(L)': branch.target_weight,
-        '달성율(%)': branch.achievement_rate.toFixed(1),
+        '달성율(%)': (branch.achievement_rate ?? 0).toFixed(1),
       });
 
       // Add team rows
@@ -128,9 +141,9 @@ export default function B2CAutoAnalysisTab() {
           '전월중량(L)': team.last_month_weight,
           '전월대비증감(L)': team.current_month_weight - team.last_month_weight,
           '전년동월(L)': team.yoy_weight,
-          '전년대비(%)': team.yoy_growth_rate.toFixed(1),
+          '전년대비(%)': (team.yoy_growth_rate ?? 0).toFixed(1),
           '목표(L)': team.target_weight,
-          '달성율(%)': team.achievement_rate.toFixed(1),
+          '달성율(%)': (team.achievement_rate ?? 0).toFixed(1),
         });
       });
     });
@@ -143,9 +156,9 @@ export default function B2CAutoAnalysisTab() {
       '전월중량(L)': data.total.last_month_weight,
       '전월대비증감(L)': data.total.current_month_weight - data.total.last_month_weight,
       '전년동월(L)': data.total.yoy_weight,
-      '전년대비(%)': data.total.yoy_growth_rate.toFixed(1),
+      '전년대비(%)': (data.total.yoy_growth_rate ?? 0).toFixed(1),
       '목표(L)': data.total.target_weight,
-      '달성율(%)': data.total.achievement_rate.toFixed(1),
+      '달성율(%)': (data.total.achievement_rate ?? 0).toFixed(1),
     });
 
     const filename = generateFilename('마감회의_B2C_AUTO분석');
@@ -176,48 +189,64 @@ export default function B2CAutoAnalysisTab() {
         <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
       </div>
 
-      {/* Overall Summary Card */}
-      <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-8">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-4">
-              <Car className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-              <div>
-                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                  B2C AUTO 전체 실적
-                </h3>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">{data.currentMonth}</p>
-              </div>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* B2C AUTO Summary Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <Car className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             </div>
-            <div className="grid grid-cols-4 gap-6">
-              <div>
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">당월</p>
-                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
-                  {formatNumber(data.total.current_month_weight)} L
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">목표</p>
-                <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mt-1">
-                  {formatNumber(data.total.target_weight)} L
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">달성율</p>
-                <p className={`text-2xl font-bold mt-1 ${
-                  data.total.achievement_rate >= 100 ? 'text-green-600' : 'text-yellow-600'
-                }`}>
-                  {data.total.achievement_rate.toFixed(1)}%
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전년대비</p>
-                <p className={`text-2xl font-bold mt-1 ${
-                  data.total.yoy_growth_rate >= 0 ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {data.total.yoy_growth_rate >= 0 ? '+' : ''}{data.total.yoy_growth_rate.toFixed(1)}%
-                </p>
-              </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                B2C AUTO 실적
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{data.currentMonth} 기준</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">당월 실적</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+                {formatNumber(data.total.current_month_weight)} L
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">목표 달성율</p>
+              <p className={`text-2xl font-bold mt-1 ${
+                (data.total.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-yellow-600'
+              }`}>
+                {(data.total.achievement_rate ?? 0).toFixed(1)}%
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* B2B AUTO Summary Card (Comparison) */}
+        <div className="bg-gradient-to-r from-zinc-50 to-slate-50 dark:from-zinc-950/20 dark:to-slate-950/20 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
+              <Car className="w-6 h-6 text-zinc-600 dark:text-zinc-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                B2B AUTO 실적 (참조)
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{data.currentMonth} 기준</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">당월 실적</p>
+              <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-300 mt-1">
+                {formatNumber(data.b2bAutoTotal.weight)} L
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">판매 금액</p>
+              <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-300 mt-1">
+                {formatNumber(data.b2bAutoTotal.amount)} 원
+              </p>
             </div>
           </div>
         </div>
@@ -252,10 +281,9 @@ export default function B2CAutoAnalysisTab() {
                   : 0;
 
                 return (
-                  <>
+                  <Fragment key={branch.branch}>
                     {/* Branch row */}
                     <tr
-                      key={branch.branch}
                       className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer"
                       onClick={() => toggleBranch(branch.branch)}
                     >
@@ -291,10 +319,10 @@ export default function B2CAutoAnalysisTab() {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <span className={`inline-flex items-center gap-1 font-medium ${
-                          branch.yoy_growth_rate >= 0 ? 'text-green-600' : 'text-red-600'
+                          (branch.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {branch.yoy_growth_rate >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                          {branch.yoy_growth_rate >= 0 ? '+' : ''}{branch.yoy_growth_rate.toFixed(1)}%
+                          {(branch.yoy_growth_rate ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {(branch.yoy_growth_rate ?? 0) >= 0 ? '+' : ''}{(branch.yoy_growth_rate ?? 0).toFixed(1)}%
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
@@ -306,13 +334,13 @@ export default function B2CAutoAnalysisTab() {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <span className={`font-bold ${
-                          branch.achievement_rate >= 100
+                          (branch.achievement_rate ?? 0) >= 100
                             ? 'text-green-600'
-                            : branch.achievement_rate >= 80
+                            : (branch.achievement_rate ?? 0) >= 80
                             ? 'text-yellow-600'
                             : 'text-red-600'
                         }`}>
-                          {branch.achievement_rate.toFixed(1)}%
+                          {(branch.achievement_rate ?? 0).toFixed(1)}%
                         </span>
                       </td>
                     </tr>
@@ -352,10 +380,10 @@ export default function B2CAutoAnalysisTab() {
                           </td>
                           <td className="py-2 px-4 text-right">
                             <span className={`inline-flex items-center gap-1 text-xs ${
-                              team.yoy_growth_rate >= 0 ? 'text-green-600' : 'text-red-600'
+                              (team.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                             }`}>
-                              {team.yoy_growth_rate >= 0 ? '↑' : '↓'}
-                              {team.yoy_growth_rate >= 0 ? '+' : ''}{team.yoy_growth_rate.toFixed(1)}%
+                              {(team.yoy_growth_rate ?? 0) >= 0 ? '↑' : '↓'}
+                              {(team.yoy_growth_rate ?? 0) >= 0 ? '+' : ''}{(team.yoy_growth_rate ?? 0).toFixed(1)}%
                             </span>
                           </td>
                           <td className="py-2 px-4 text-right" onClick={(e) => e.stopPropagation()}>
@@ -372,19 +400,19 @@ export default function B2CAutoAnalysisTab() {
                           </td>
                           <td className="py-2 px-4 text-right">
                             <span className={`text-xs font-medium ${
-                              team.achievement_rate >= 100
+                              (team.achievement_rate ?? 0) >= 100
                                 ? 'text-green-600'
-                                : team.achievement_rate >= 80
+                                : (team.achievement_rate ?? 0) >= 80
                                 ? 'text-yellow-600'
                                 : 'text-red-600'
                             }`}>
-                              {team.achievement_rate.toFixed(1)}%
+                              {(team.achievement_rate ?? 0).toFixed(1)}%
                             </span>
                           </td>
                         </tr>
                       );
                     })}
-                  </>
+                  </Fragment>
                 );
               })}
 
@@ -400,10 +428,12 @@ export default function B2CAutoAnalysisTab() {
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                    (data.total.current_month_weight - data.total.last_month_weight) >= 0 ? 'text-green-600' : 'text-red-600'
+                    (data.total.current_month_weight - (data.total.last_month_weight ?? 0)) >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}>
-                    {(data.total.current_month_weight - data.total.last_month_weight) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {((data.total.current_month_weight - data.total.last_month_weight) / data.total.last_month_weight * 100).toFixed(1)}%
+                    {(data.total.current_month_weight - (data.total.last_month_weight ?? 0)) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                    {(data.total.last_month_weight && data.total.last_month_weight !== 0) 
+                      ? (((data.total.current_month_weight - data.total.last_month_weight) / data.total.last_month_weight * 100).toFixed(1))
+                      : '0.0'}%
                   </span>
                 </td>
                 <td className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">
@@ -411,10 +441,10 @@ export default function B2CAutoAnalysisTab() {
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className={`inline-flex items-center gap-1 font-bold ${
-                    data.total.yoy_growth_rate >= 0 ? 'text-green-600' : 'text-red-600'
+                    (data.total.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}>
-                    {data.total.yoy_growth_rate >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {data.total.yoy_growth_rate >= 0 ? '+' : ''}{data.total.yoy_growth_rate.toFixed(1)}%
+                    {(data.total.yoy_growth_rate ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                    {(data.total.yoy_growth_rate ?? 0).toFixed(1)}%
                   </span>
                 </td>
                 <td className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">
@@ -428,15 +458,30 @@ export default function B2CAutoAnalysisTab() {
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className={`font-bold ${
-                    data.total.achievement_rate >= 100
+                    (data.total.achievement_rate ?? 0) >= 100
                       ? 'text-green-600'
-                      : data.total.achievement_rate >= 80
+                      : (data.total.achievement_rate ?? 0) >= 80
                       ? 'text-yellow-600'
                       : 'text-red-600'
                   }`}>
-                    {data.total.achievement_rate.toFixed(1)}%
+                    {(data.total.achievement_rate ?? 0).toFixed(1)}%
                   </span>
                 </td>
+              </tr>
+
+              {/* B2B AUTO Comparison Row (Moved below Total) */}
+              <tr className="bg-zinc-50/50 dark:bg-zinc-800/30 border-t border-zinc-200 dark:border-zinc-700 italic text-zinc-500 dark:text-zinc-400">
+                <td className="py-3 px-4 font-bold">참조 (B2B)</td>
+                <td className="py-3 px-4 font-medium text-xs">B2B AUTO 합계</td>
+                <td className="py-3 px-4 text-right font-mono text-xs">
+                  {formatNumber(data.b2bAutoTotal.weight)}
+                </td>
+                <td className="py-3 px-4 text-right font-mono text-zinc-400">-</td>
+                <td className="py-3 px-4 text-right text-zinc-400">-</td>
+                <td className="py-3 px-4 text-right font-mono text-zinc-400">-</td>
+                <td className="py-3 px-4 text-right text-zinc-400">-</td>
+                <td className="py-3 px-4 text-right font-mono text-zinc-400">-</td>
+                <td className="py-3 px-4 text-right text-zinc-400">-</td>
               </tr>
             </tbody>
           </table>

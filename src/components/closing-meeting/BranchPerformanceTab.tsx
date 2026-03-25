@@ -20,18 +20,23 @@ interface BranchPerformanceData {
   lastMonth: string;
 }
 
-export default function BranchPerformanceTab() {
+interface BranchPerformanceProps {
+  selectedMonth?: string;
+}
+
+export default function BranchPerformanceTab({ selectedMonth }: BranchPerformanceProps) {
   const [data, setData] = useState<BranchPerformanceData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/closing-meeting?tab=branch-performance`);
+      const url = `/api/dashboard/closing-meeting?tab=branch-performance${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);
@@ -43,7 +48,8 @@ export default function BranchPerformanceTab() {
     }
   };
 
-  const formatNumber = (num: number) => {
+  const formatNumber = (num: number | null | undefined) => {
+    if (num === null || num === undefined) return "0";
     return num.toLocaleString();
   };
 
@@ -67,10 +73,10 @@ export default function BranchPerformanceTab() {
         '사업소': branch.branch,
         '당월 중량(L)': branch.current_month_weight,
         '전월 중량(L)': branch.last_month_weight,
-        '중량 변화율(%)': weightChange.percent.toFixed(1),
+        '중량 변화율(%)': (weightChange.percent ?? 0).toFixed(1),
         '당월 금액(원)': branch.current_month_amount,
         '전월 금액(원)': branch.last_month_amount,
-        '금액 변화율(%)': amountChange.percent.toFixed(1),
+        '금액 변화율(%)': (amountChange.percent ?? 0).toFixed(1),
       };
     });
 
@@ -144,7 +150,7 @@ export default function BranchPerformanceTab() {
                         weightChange.isPositive ? 'text-green-600' : 'text-red-600'
                       }`}>
                         {weightChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(weightChange.percent).toFixed(1)}%
+                        {Math.abs(weightChange.percent ?? 0).toFixed(1)}%
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">
@@ -158,7 +164,7 @@ export default function BranchPerformanceTab() {
                         amountChange.isPositive ? 'text-green-600' : 'text-red-600'
                       }`}>
                         {amountChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(amountChange.percent).toFixed(1)}%
+                        {Math.abs(amountChange.percent ?? 0).toFixed(1)}%
                       </span>
                     </td>
                   </tr>

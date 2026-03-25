@@ -42,14 +42,18 @@ interface NewClientsData {
   lastYear: string;
 }
 
-export default function NewTab() {
+interface NewTabProps {
+  selectedMonth?: string;
+}
+
+export default function NewTab({ selectedMonth }: NewTabProps) {
   const [data, setData] = useState<NewClientsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedManagers, setExpandedManagers] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchNewClientsData();
-  }, []);
+  }, [selectedMonth]);
 
   const toggleManager = (managerKey: string) => {
     const newExpanded = new Set(expandedManagers);
@@ -64,7 +68,8 @@ export default function NewTab() {
   const fetchNewClientsData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=new`);
+      const url = `/api/dashboard/b2c-meetings?tab=new${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);

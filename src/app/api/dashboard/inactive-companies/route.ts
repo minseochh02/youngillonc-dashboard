@@ -83,16 +83,10 @@ export async function GET(request: NextRequest) {
             COUNT(DISTINCT s.일자) as transaction_count
           FROM clients c
           LEFT JOIN (
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM sales
-            UNION ALL
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM east_division_sales
-            UNION ALL
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM west_division_sales
-            UNION ALL
-            SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 합계 FROM south_division_sales
+            SELECT 일자, 거래처코드, 담당자코드, 합계 FROM sales
           ) s ON c.거래처코드 = s.거래처코드
             AND s.일자 <= ?
-          LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+          LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
           LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
           WHERE c.거래처코드 IS NOT NULL
             AND e.사원_담당_명 != '김도량'
@@ -136,16 +130,10 @@ export async function GET(request: NextRequest) {
             SUM(CAST(REPLACE(REPLACE(s.합계, ',', ''), '-', '') AS REAL)) as total_sales_amount
           FROM clients c
           LEFT JOIN (
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM sales
-            UNION ALL
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM east_division_sales
-            UNION ALL
-            SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM west_division_sales
-            UNION ALL
-            SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 합계 FROM south_division_sales
+            SELECT 일자, 거래처코드, 담당자코드, 합계 FROM sales
           ) s ON c.거래처코드 = s.거래처코드
             AND s.일자 <= ?
-          LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+          LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
           LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
           WHERE c.거래처코드 IS NOT NULL
             AND e.사원_담당_명 != '김도량'
@@ -181,16 +169,10 @@ export async function GET(request: NextRequest) {
           COUNT(DISTINCT s.일자) as transaction_count
         FROM clients c
         LEFT JOIN (
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM east_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계 FROM west_division_sales
-          UNION ALL
-          SELECT 일자, 거래처코드, NULL as 담당자코드, 담당자명, 합계 FROM south_division_sales
+          SELECT 일자, 거래처코드, 담당자코드, 합계 FROM sales
         ) s ON c.거래처코드 = s.거래처코드
           AND s.일자 <= ?
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE c.거래처코드 IS NOT NULL
           AND e.사원_담당_명 != '김도량'

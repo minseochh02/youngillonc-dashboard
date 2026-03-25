@@ -22,6 +22,10 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month'); // Expecting YYYY-MM
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '20');
+    const offset = (page - 1) * pageSize;
+    const stockType = searchParams.get('type') || 'all'; // all, dead, slow
     
     const savedItems = await readData();
 
@@ -81,6 +85,47 @@ export async function GET(request: Request) {
     cutoffDate.setDate(cutoffDate.getDate() - inactiveDays);
     const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
 
+    const turnoverThreshold = 0.1; // 10% in 6 months
+
+    let havingClause = "";
+    if (stockType === 'dead') {
+      havingClause = `(MAX(last_sales.일자) IS NULL OR MAX(last_sales.일자) < '${cutoffDateStr}') AND SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) > 0`;
+    } else if (stockType === 'slow') {
+      havingClause = `(MAX(last_sales.일자) >= '${cutoffDateStr}') AND (COALESCE(sales_sum.qty, 0) / SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) < ${turnoverThreshold}) AND SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) > 0`;
+    } else {
+      havingClause = `(COALESCE(sales_sum.qty, 0) / SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) < ${turnoverThreshold}) AND SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) > 0`;
+    }
+
+    const totalCountResult = await executeSQL(`
+      SELECT COUNT(*) as count FROM (
+        SELECT i.품목코드
+        FROM inventory i
+        LEFT JOIN (
+          SELECT 품목코드, MAX(일자) as 일자 FROM (
+            SELECT 품목코드, 일자 FROM sales
+            UNION ALL SELECT 품목코드, 일자 FROM east_division_sales
+            UNION ALL SELECT 품목코드, 일자 FROM west_division_sales
+            UNION ALL SELECT 품목코드, 일자 FROM south_division_sales
+          ) GROUP BY 품목코드
+        ) last_sales ON i.품목코드 = last_sales.품목코드
+        LEFT JOIN (
+          SELECT 품목코드, SUM(CAST(REPLACE(수량, ',', '') AS REAL)) as qty
+          FROM (
+            SELECT 품목코드, 수량, 일자 FROM sales
+            UNION ALL SELECT 품목코드, 수량, 일자 FROM east_division_sales
+            UNION ALL SELECT 품목코드, 수량, 일자 FROM west_division_sales
+            UNION ALL SELECT 품목코드, 수량, 일자 FROM south_division_sales
+          ) 
+          WHERE 일자 >= '${cutoffDateStr}'
+          GROUP BY 품목코드
+        ) sales_sum ON i.품목코드 = sales_sum.품목코드
+        WHERE i.imported_at = (SELECT MAX(imported_at) FROM inventory)
+        GROUP BY i.품목코드, i.품목명_규격_, i.창고명
+        HAVING ${havingClause}
+      )
+    `);
+    const totalCount = totalCountResult?.rows?.[0]?.count || 0;
+
     const recommendedItems = await executeSQL(`
       SELECT 
         i.품목코드 as itemCode,
@@ -116,9 +161,9 @@ export async function GET(request: Request) {
       ) sales_sum ON i.품목코드 = sales_sum.품목코드
       WHERE i.imported_at = (SELECT MAX(imported_at) FROM inventory)
       GROUP BY i.품목코드, i.품목명_규격_, i.창고명
-      HAVING (lastSoldDate IS NULL OR lastSoldDate < '${cutoffDateStr}') AND quantity > 0
+      HAVING ${havingClause}
       ORDER BY quantity DESC
-      LIMIT 20
+      LIMIT ${pageSize} OFFSET ${offset}
     `);
 
     return NextResponse.json({
@@ -129,6 +174,12 @@ export async function GET(request: Request) {
         warehouses: (warehouses?.rows || []).map((r: any) => r.warehouse),
         units: (units?.rows || []).map((r: any) => r.unit),
         recommendations: recommendedItems?.rows || [],
+        pagination: {
+          totalCount,
+          totalPages: Math.ceil(totalCount / pageSize),
+          page,
+          pageSize,
+        },
       },
     });
   } catch (error: any) {

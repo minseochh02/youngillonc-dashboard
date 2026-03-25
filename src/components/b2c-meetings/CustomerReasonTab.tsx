@@ -29,7 +29,11 @@ interface CustomerNotes {
   };
 }
 
-export default function CustomerReasonTab() {
+interface CustomerReasonTabProps {
+  selectedMonth?: string;
+}
+
+export default function CustomerReasonTab({ selectedMonth }: CustomerReasonTabProps) {
   const [data, setData] = useState<CustomerReasonData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,12 +50,13 @@ export default function CustomerReasonTab() {
         console.error('Failed to load notes:', e);
       }
     }
-  }, []);
+  }, [selectedMonth]);
 
   const fetchCustomerReasonData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=customer-reason`);
+      const url = `/api/dashboard/b2c-meetings?tab=customer-reason${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);

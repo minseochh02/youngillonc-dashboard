@@ -39,18 +39,23 @@ interface TeamStrategyData {
   lastYear: string;
 }
 
-export default function TeamStrategyTab() {
+interface TeamStrategyTabProps {
+  selectedMonth?: string;
+}
+
+export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps) {
   const [data, setData] = useState<TeamStrategyData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=team-strategy`);
+      const url = `/api/dashboard/b2c-meetings?tab=team-strategy${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);

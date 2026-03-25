@@ -1,16 +1,19 @@
 import { NextResponse } from 'next/server';
-import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
+import { executeSQL } from '@/egdesk-helpers';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const tab = searchParams.get('tab') || 'industry';
 
+    // 0. Base table for sales
+    const baseSalesTable = 'sales';
+
     if (tab === 'industry') {
       const currentYear = new Date().getFullYear();
       const lastYear = currentYear - 1;
 
-      // Query sales by industry (업종분류코드) across all three tables
+      // Query sales by industry (업종분류코드)
       const query = `
         SELECT
           c.업종분류코드,
@@ -19,12 +22,12 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
-        FROM ${UNIFIED_SALES_SUBQUERY} s
+        FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         WHERE s.일자 >= '${lastYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
           AND ca.업종분류코드 IS NULL
@@ -82,9 +85,9 @@ export async function GET(request: Request) {
           c.거래처명 as 판매처명,
           SUM(CASE WHEN strftime('%Y', s.일자) = '${lastYear}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_year_weight,
           SUM(CASE WHEN strftime('%Y', s.일자) = '${currentYear}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_year_weight
-        FROM ${UNIFIED_SALES_SUBQUERY} s
+        FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
@@ -144,7 +147,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
-        FROM ${UNIFIED_SALES_SUBQUERY} s
+        FROM ${baseSalesTable} s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
@@ -192,9 +195,9 @@ export async function GET(request: Request) {
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount
-        FROM ${UNIFIED_SALES_SUBQUERY} s
+        FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
@@ -249,11 +252,11 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
-        FROM ${UNIFIED_SALES_SUBQUERY} s
+        FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         WHERE s.일자 >= '${lastYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
           AND ca.업종분류코드 IS NULL
@@ -304,11 +307,11 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
-        FROM ${UNIFIED_SALES_SUBQUERY} s
+        FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         WHERE s.일자 >= '${lastYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
           AND ca.업종분류코드 IS NULL
@@ -370,8 +373,8 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity,
           COUNT(DISTINCT s.일자) as transaction_days
         FROM clients c
-        LEFT JOIN ${UNIFIED_SALES_SUBQUERY} s ON c.거래처코드 = s.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN ${baseSalesTable} s ON c.거래처코드 = s.거래처코드
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
@@ -484,9 +487,9 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
-        FROM ${UNIFIED_SALES_SUBQUERY} s
+        FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         WHERE s.일자 >= '${lastYear}-01-01'
@@ -532,12 +535,12 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
-        FROM ${UNIFIED_SALES_SUBQUERY} s
+        FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         WHERE s.일자 >= '${lastYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
           AND ca.업종분류코드 IS NULL

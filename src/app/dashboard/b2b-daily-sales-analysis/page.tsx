@@ -143,10 +143,10 @@ export default function B2BDailySalesAnalysisPage() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-            B2B사업소 일일구매 현황
+            B2B사업소 일일매출 분석
           </h2>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-            사업소별 구매현황 (사업소 → 담당자 → 구매처 → 품목)
+            사업소별 매출 분석 (사업소 → 담당자 → 구매처 → 품목)
           </p>
         </div>
 

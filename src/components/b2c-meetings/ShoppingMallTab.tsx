@@ -24,18 +24,23 @@ interface ShoppingMallData {
   lastYear: string;
 }
 
-export default function ShoppingMallTab() {
+interface ShoppingMallTabProps {
+  selectedMonth?: string;
+}
+
+export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps) {
   const [data, setData] = useState<ShoppingMallData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchShoppingMallData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchShoppingMallData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=shopping-mall`);
+      const url = `/api/dashboard/b2c-meetings?tab=shopping-mall${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);

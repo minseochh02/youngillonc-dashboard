@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
+import { executeSQL } from '@/egdesk-helpers';
 
 /**
  * API Endpoint for Product Status
@@ -7,11 +7,37 @@ import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
  */
 export async function GET(request: Request) {
   try {
-    const currentYear = new Date().getFullYear();
+    const { searchParams } = new URL(request.url);
+    const selectedMonthParam = searchParams.get('month');
+
+    // Discover the actual months available in the database
+    const dateRangeQuery = `
+      SELECT DISTINCT substr(일자, 1, 7) as month FROM (
+        SELECT 일자 FROM sales
+        UNION ALL SELECT 일자 FROM east_division_sales
+        UNION ALL SELECT 일자 FROM west_division_sales
+        UNION ALL SELECT 일자 FROM purchases
+        UNION ALL SELECT 일자 FROM east_division_purchases
+        UNION ALL SELECT 일자 FROM west_division_purchases
+      ) WHERE 일자 IS NOT NULL AND 일자 != '' AND 일자 LIKE '202%'
+      ORDER BY month ASC
+    `;
+
+    const dateRangeResult = await executeSQL(dateRangeQuery);
+    const availableMonths = dateRangeResult?.rows.map((r: any) => r.month) || [];
+
+    // Use the latest available month as the reference point if no month is selected
+    const latestMonthStr = availableMonths[availableMonths.length - 1] || new Date().toISOString().slice(0, 7);
+    const currentMonthStr = selectedMonthParam && availableMonths.includes(selectedMonthParam)
+      ? selectedMonthParam
+      : latestMonthStr;
+
+    const [latestYear] = currentMonthStr.split('-').map(Number);
+    const currentYear = latestYear;
     const lastYear = currentYear - 1;
 
-    // Unified sales subquery across all four tables
-    const combinedSales = UNIFIED_SALES_SUBQUERY;
+    // Base table for sales
+    const baseSalesTable = 'sales';
 
     // Section 1: Auto by B2C vs B2B
     const autoQuery = `
@@ -28,10 +54,10 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ) as total_weight
-      FROM ${combinedSales} s
+      FROM ${baseSalesTable} s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
       WHERE s.일자 >= '${lastYear}-01-01'
@@ -54,10 +80,10 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${combinedSales} s
+      FROM ${baseSalesTable} s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -90,10 +116,10 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${combinedSales} s
+      FROM ${baseSalesTable} s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -115,10 +141,10 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${combinedSales} s
+      FROM ${baseSalesTable} s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -141,10 +167,10 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${combinedSales} s
+      FROM ${baseSalesTable} s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -166,10 +192,10 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${combinedSales} s
+      FROM ${baseSalesTable} s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -191,10 +217,10 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${combinedSales} s
+      FROM ${baseSalesTable} s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -216,10 +242,10 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${combinedSales} s
+      FROM ${baseSalesTable} s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -291,7 +317,9 @@ export async function GET(request: Request) {
       data: {
         sections,
         currentYear,
-        lastYear
+        lastYear,
+        availableMonths,
+        currentMonth: currentMonthStr,
       }
     });
   } catch (error: any) {

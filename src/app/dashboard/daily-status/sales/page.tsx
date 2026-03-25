@@ -160,7 +160,7 @@ export default function DailySalesPage() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-            일일매출수금현황
+            사업소별 매출/수금
           </h2>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1">
             사업부별 실시간 매출 및 수금 현황을 분석합니다.

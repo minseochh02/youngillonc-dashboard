@@ -33,18 +33,23 @@ interface ManagerSalesData {
   lastYear: string;
 }
 
-export default function ManagerSalesTab() {
+interface ManagerSalesTabProps {
+  selectedMonth?: string;
+}
+
+export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps) {
   const [data, setData] = useState<ManagerSalesData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchManagerSalesData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchManagerSalesData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=manager-sales`);
+      const url = `/api/dashboard/b2c-meetings?tab=manager-sales${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       console.log('Manager sales API response:', result);
       if (result.success) {

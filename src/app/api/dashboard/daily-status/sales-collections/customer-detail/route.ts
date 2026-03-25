@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
+import { executeSQL } from '@/egdesk-helpers';
 
 /**
  * API Endpoint to fetch Customer-wise Daily Sales & Collections
@@ -33,8 +33,9 @@ export async function GET(request: Request) {
       return `${prefix}부서명 LIKE '%${division}%'`;
     };
 
-    // 0. Base subquery for sales - simplified to use only the main sales table for this API
-    const baseSalesSubquery = `(SELECT 일자, 거래처코드, 담당자코드, NULL as 담당자명, 합계, 출하창고코드 FROM sales)`;
+    // 0. Base table for sales
+    const baseSalesTable = 'sales';
+    const baseSalesSubquery = `(SELECT 일자, 거래처코드, 담당자코드, 합계, 출하창고코드 FROM ${baseSalesTable})`;
 
     const query = `
       SELECT
@@ -50,7 +51,7 @@ export async function GET(request: Request) {
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE ${getSalesBranchFilter()} AND s.일자 >= '${startDate}' AND s.일자 <= '${date}'
         UNION

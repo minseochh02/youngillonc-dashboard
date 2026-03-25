@@ -14,6 +14,12 @@ interface ReceivableData {
   client_name?: string;
   current_total_receivables: number;
   long_term_receivables: number;
+  b2b_long_term_receivables?: number;
+  b2c_long_term_receivables?: number;
+  b2b_current_total_receivables?: number;
+  b2c_current_total_receivables?: number;
+  b2b_previous_month_long_term?: number;
+  b2c_previous_month_long_term?: number;
   long_term_ratio: number;
   previous_month_long_term: number;
   month_over_month_change: number;
@@ -48,13 +54,23 @@ export default function LongTermReceivablesPage() {
   const [groupBy, setGroupBy] = useState<'branch' | 'employee' | 'client'>('branch');
   const [showFilters, setShowFilters] = useState(false);
 
+  // Tabs and monthly detail
+  const [activeTab, setActiveTab] = useState('합계');
+  const [monthlyDetailData, setMonthlyDetailData] = useState<Record<string, any[]>>({});
+  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     fetchFilterOptions();
+    fetchMonthlyDetail();
   }, []);
 
   useEffect(() => {
     fetchData();
   }, [selectedMonth, agingMonths, selectedBranches, groupBy]);
+
+  useEffect(() => {
+    fetchMonthlyDetail();
+  }, [selectedMonth]);
 
   const fetchFilterOptions = async () => {
     try {
@@ -90,16 +106,90 @@ export default function LongTermReceivablesPage() {
     }
   };
 
+  const fetchMonthlyDetail = async () => {
+    try {
+      const params = new URLSearchParams({
+        month: selectedMonth,
+      });
+
+      const response = await apiFetch(`/api/dashboard/long-term-receivables/monthly-detail?${params}`);
+      const result = await response.json();
+      if (result.success) {
+        setMonthlyDetailData(result.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch monthly detail data:', error);
+    }
+  };
+
   const hierarchicalData = useMemo(() => {
     if (groupBy === 'branch') {
-      return data.map(item => ({
-        key: item.branch_name,
-        label: item.branch_name,
-        level: 'branch' as const,
-        data: item,
-        children: [],
-        isExpanded: false,
-      }));
+      return data.map(item => {
+        const children: HierarchicalNode[] = [];
+
+        // Add B2B child if there's B2B receivables
+        if (item.b2b_long_term_receivables && item.b2b_long_term_receivables > 0) {
+          const b2bCurrentTotal = item.b2b_current_total_receivables || 0;
+          const b2bLongTerm = item.b2b_long_term_receivables || 0;
+          const b2bPrevious = item.b2b_previous_month_long_term || 0;
+          const b2bChange = b2bLongTerm - b2bPrevious;
+          const b2bChangeRate = b2bPrevious > 0 ? (b2bChange / b2bPrevious) * 100 : 0;
+          const b2bRatio = b2bCurrentTotal > 0 ? (b2bLongTerm / b2bCurrentTotal) * 100 : 0;
+
+          children.push({
+            key: `${item.branch_name}-b2b`,
+            label: 'B2B',
+            level: 'client' as const,
+            data: {
+              ...item,
+              current_total_receivables: b2bCurrentTotal,
+              long_term_receivables: b2bLongTerm,
+              previous_month_long_term: b2bPrevious,
+              month_over_month_change: b2bChange,
+              month_over_month_change_rate: b2bChangeRate,
+              long_term_ratio: b2bRatio,
+            },
+            children: [],
+            isExpanded: false,
+          });
+        }
+
+        // Add B2C child if there's B2C receivables
+        if (item.b2c_long_term_receivables && item.b2c_long_term_receivables > 0) {
+          const b2cCurrentTotal = item.b2c_current_total_receivables || 0;
+          const b2cLongTerm = item.b2c_long_term_receivables || 0;
+          const b2cPrevious = item.b2c_previous_month_long_term || 0;
+          const b2cChange = b2cLongTerm - b2cPrevious;
+          const b2cChangeRate = b2cPrevious > 0 ? (b2cChange / b2cPrevious) * 100 : 0;
+          const b2cRatio = b2cCurrentTotal > 0 ? (b2cLongTerm / b2cCurrentTotal) * 100 : 0;
+
+          children.push({
+            key: `${item.branch_name}-b2c`,
+            label: 'B2C',
+            level: 'client' as const,
+            data: {
+              ...item,
+              current_total_receivables: b2cCurrentTotal,
+              long_term_receivables: b2cLongTerm,
+              previous_month_long_term: b2cPrevious,
+              month_over_month_change: b2cChange,
+              month_over_month_change_rate: b2cChangeRate,
+              long_term_ratio: b2cRatio,
+            },
+            children: [],
+            isExpanded: false,
+          });
+        }
+
+        return {
+          key: item.branch_name,
+          label: item.branch_name,
+          level: 'branch' as const,
+          data: item,
+          children,
+          isExpanded: false,
+        };
+      });
     }
 
     // Build hierarchy for employee or client grouping
@@ -117,6 +207,8 @@ export default function LongTermReceivablesPage() {
             branch_name: branchKey,
             current_total_receivables: 0,
             long_term_receivables: 0,
+            b2b_long_term_receivables: 0,
+            b2c_long_term_receivables: 0,
             long_term_ratio: 0,
             previous_month_long_term: 0,
             month_over_month_change: 0,
@@ -144,6 +236,8 @@ export default function LongTermReceivablesPage() {
               employee_name: item.employee_name,
               current_total_receivables: 0,
               long_term_receivables: 0,
+              b2b_long_term_receivables: 0,
+              b2c_long_term_receivables: 0,
               long_term_ratio: 0,
               previous_month_long_term: 0,
               month_over_month_change: 0,
@@ -280,10 +374,17 @@ export default function LongTermReceivablesPage() {
       const momChange = node.data.month_over_month_change;
       const momChangeRate = node.data.month_over_month_change_rate;
 
+      const isB2BOrB2C = node.label === 'B2B' || node.label === 'B2C';
+      const rowBgClass = isB2BOrB2C
+        ? node.label === 'B2B'
+          ? 'bg-blue-50/30 dark:bg-blue-900/10'
+          : 'bg-green-50/30 dark:bg-green-900/10'
+        : hasChildren
+        ? 'bg-zinc-50/50 dark:bg-zinc-800/30'
+        : '';
+
       rows.push(
-        <tr key={node.key} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${
-          hasChildren ? 'bg-zinc-50/50 dark:bg-zinc-800/30' : ''
-        }`}>
+        <tr key={node.key} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${rowBgClass}`}>
           <td
             className="px-4 py-3 text-sm font-medium text-zinc-900 dark:text-zinc-100 cursor-pointer"
             style={{ paddingLeft: `${1 + indent * 1.5}rem` }}
@@ -298,8 +399,10 @@ export default function LongTermReceivablesPage() {
               {!hasChildren && <span className="w-4" />}
               {node.level === 'branch' && <Building className="w-4 h-4 text-blue-500" />}
               {node.level === 'employee' && <User className="w-4 h-4 text-green-500" />}
-              {node.level === 'client' && <DollarSign className="w-4 h-4 text-orange-500" />}
-              <span className={hasChildren ? 'font-semibold' : ''}>{node.label}</span>
+              {node.level === 'client' && !isB2BOrB2C && <DollarSign className="w-4 h-4 text-orange-500" />}
+              <span className={`${hasChildren ? 'font-semibold' : ''} ${isB2BOrB2C ? 'text-sm font-medium' : ''} ${node.label === 'B2B' ? 'text-blue-600 dark:text-blue-400' : node.label === 'B2C' ? 'text-green-600 dark:text-green-400' : ''}`}>
+                {node.label}
+              </span>
             </div>
           </td>
           <td className="px-4 py-3 text-sm text-right text-blue-600 dark:text-blue-400 font-semibold">
@@ -366,6 +469,12 @@ export default function LongTermReceivablesPage() {
       '전월 장기미수': item.previous_month_long_term,
       '전월대비 증감': item.month_over_month_change,
       '전월대비 증감률(%)': Number(item.month_over_month_change_rate.toFixed(2)),
+      'B2B 당월 총 미수금': item.b2b_current_total_receivables || 0,
+      'B2B 장기미수금': item.b2b_long_term_receivables || 0,
+      'B2B 전월 장기미수': item.b2b_previous_month_long_term || 0,
+      'B2C 당월 총 미수금': item.b2c_current_total_receivables || 0,
+      'B2C 장기미수금': item.b2c_long_term_receivables || 0,
+      'B2C 전월 장기미수': item.b2c_previous_month_long_term || 0,
     }));
 
     const filename = generateFilename('장기미수금현황');
@@ -574,8 +683,38 @@ export default function LongTermReceivablesPage() {
         </div>
       </div>
 
-      {/* Data Table */}
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
+      {/* Tabs */}
+      <div className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 rounded-t-xl overflow-x-auto">
+        <div className="flex gap-1 p-2 min-w-max">
+          <button
+            onClick={() => setActiveTab('합계')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === '합계'
+                ? 'bg-blue-500 text-white'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+            }`}
+          >
+            합계
+          </button>
+          {Object.keys(monthlyDetailData).sort().map(branch => (
+            <button
+              key={branch}
+              onClick={() => setActiveTab(branch)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === branch
+                  ? 'bg-blue-500 text-white'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+            >
+              {branch}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Data Table or Client Detail View */}
+      {activeTab === '합계' ? (
+        <div className="rounded-b-xl border border-t-0 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
           <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
             {groupBy === 'branch' && `사업소별 현황 (${hierarchicalData.length}개)`}
@@ -687,7 +826,201 @@ export default function LongTermReceivablesPage() {
             </table>
           </div>
         )}
-      </div>
+        </div>
+      ) : (
+        <div className="rounded-b-xl border border-t-0 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
+          <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800">
+            <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
+              {activeTab} - 거래처별 월별 내역 ({monthlyDetailData[activeTab]?.length || 0}개)
+            </h3>
+          </div>
+
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+              <p className="text-sm text-zinc-500">데이터를 불러오는 중...</p>
+            </div>
+          ) : !monthlyDetailData[activeTab] || monthlyDetailData[activeTab].length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-zinc-400">
+              <Building className="w-12 h-12 mb-3 opacity-50" />
+              <p>조회된 데이터가 없습니다</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {monthlyDetailData[activeTab]?.map((client: any) => {
+                const isExpanded = expandedClients.has(client.client_code);
+                const hasMonthlyData = client.monthly_breakdown && client.monthly_breakdown.length > 0;
+
+                return (
+                  <div key={client.client_code} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                    {/* Collapsed Summary Row */}
+                    <div
+                      className="px-6 py-4 cursor-pointer"
+                      onClick={() => {
+                        const newExpanded = new Set(expandedClients);
+                        if (isExpanded) {
+                          newExpanded.delete(client.client_code);
+                        } else {
+                          newExpanded.add(client.client_code);
+                        }
+                        setExpandedClients(newExpanded);
+                      }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          {hasMonthlyData && (
+                            isExpanded ?
+                              <ChevronDown className="w-5 h-5 text-zinc-400 flex-shrink-0" /> :
+                              <ChevronRight className="w-5 h-5 text-zinc-400 flex-shrink-0" />
+                          )}
+                          <div>
+                            <div className="font-semibold text-zinc-900 dark:text-zinc-100">
+                              {client.client_name}
+                            </div>
+                            <div className="text-sm text-zinc-500 dark:text-zinc-400">
+                              담당자: {client.employee_name || '미지정'}
+                              <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                                client.business_type === 'B2B'
+                                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                                  : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                              }`}>
+                                {client.business_type}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cumulative Summary */}
+                      <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                        <div>
+                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">누적 매출</div>
+                          <div className="font-semibold text-blue-600 dark:text-blue-400">
+                            ₩{client.total_sales?.toLocaleString() || '0'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">누적 수금</div>
+                          <div className="font-semibold text-green-600 dark:text-green-400">
+                            ₩{client.total_collections?.toLocaleString() || '0'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">차액</div>
+                          <div className="font-semibold">
+                            ₩{client.total_adjustments?.toLocaleString() || '0'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">잔액</div>
+                          <div className={`font-bold ${
+                            (client.balance || 0) > 0
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-zinc-600 dark:text-zinc-400'
+                          }`}>
+                            ₩{client.balance?.toLocaleString() || '0'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">미회수액</div>
+                          <div className={`font-bold ${
+                            (client.uncollected || 0) > 0
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-zinc-600 dark:text-zinc-400'
+                          }`}>
+                            ₩{client.uncollected?.toLocaleString() || '0'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Recent 3 Months Summary */}
+                      {client.recent_3_months && (
+                        <div className="mt-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
+                          <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">최근 3개월</div>
+                          <div className="grid grid-cols-3 gap-4 text-sm">
+                            <div>
+                              <span className="text-zinc-600 dark:text-zinc-400">매출:</span>
+                              <span className="ml-2 font-semibold text-blue-600 dark:text-blue-400">
+                                ₩{client.recent_3_months.sales?.toLocaleString() || '0'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-zinc-600 dark:text-zinc-400">수금:</span>
+                              <span className="ml-2 font-semibold text-green-600 dark:text-green-400">
+                                ₩{client.recent_3_months.collections?.toLocaleString() || '0'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-zinc-600 dark:text-zinc-400">잔액증가:</span>
+                              <span className={`ml-2 font-semibold ${
+                                (client.recent_3_months.balance_change || 0) > 0
+                                  ? 'text-red-600 dark:text-red-400'
+                                  : 'text-green-600 dark:text-green-400'
+                              }`}>
+                                {(client.recent_3_months.balance_change || 0) >= 0 ? '+' : ''}₩{client.recent_3_months.balance_change?.toLocaleString() || '0'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Expanded Monthly Breakdown */}
+                    {isExpanded && hasMonthlyData && (
+                      <div className="px-6 pb-4">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-zinc-100 dark:bg-zinc-800">
+                              <tr>
+                                <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300">월</th>
+                                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">매출</th>
+                                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">수금</th>
+                                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">차액</th>
+                                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">잔액</th>
+                                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">미회수액</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700">
+                              {client.monthly_breakdown.map((monthData: any, idx: number) => (
+                                <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                                  <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">{monthData.month}</td>
+                                  <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400">
+                                    ₩{monthData.sales?.toLocaleString() || '0'}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-green-600 dark:text-green-400">
+                                    ₩{monthData.collections?.toLocaleString() || '0'}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    ₩{monthData.adjustments?.toLocaleString() || '0'}
+                                  </td>
+                                  <td className={`px-3 py-2 text-right font-semibold ${
+                                    (monthData.balance || 0) > 0
+                                      ? 'text-red-600 dark:text-red-400'
+                                      : 'text-zinc-600 dark:text-zinc-400'
+                                  }`}>
+                                    ₩{monthData.balance?.toLocaleString() || '0'}
+                                  </td>
+                                  <td className={`px-3 py-2 text-right font-semibold ${
+                                    (monthData.uncollected || 0) > 0
+                                      ? 'text-red-600 dark:text-red-400'
+                                      : 'text-zinc-600 dark:text-zinc-400'
+                                  }`}>
+                                    ₩{monthData.uncollected?.toLocaleString() || '0'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

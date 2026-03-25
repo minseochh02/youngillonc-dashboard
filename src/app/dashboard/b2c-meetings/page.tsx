@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import BusinessTab from '@/components/b2c-meetings/BusinessTab';
 import ManagerSalesTab from '@/components/b2c-meetings/ManagerSalesTab';
 import SalesAmountTab from '@/components/b2c-meetings/SalesAmountTab';
@@ -13,6 +13,8 @@ import TeamStrategyTab from '@/components/b2c-meetings/TeamStrategyTab';
 import TeamVolumeTab from '@/components/b2c-meetings/TeamVolumeTab';
 import TeamSalesTab from '@/components/b2c-meetings/TeamSalesTab';
 import ComingSoonTab from '@/components/b2c-meetings/ComingSoonTab';
+import { apiFetch } from '@/lib/api';
+import { Calendar } from 'lucide-react';
 
 const tabs = [
   { id: 'business', label: '사업소별' },
@@ -30,16 +32,54 @@ const tabs = [
 
 export default function B2CMeetingsPage() {
   const [activeTab, setActiveTab] = useState(tabs[0].id);
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
+
+  useEffect(() => {
+    // Initial fetch to get available months
+    const fetchInitialData = async () => {
+      try {
+        const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=business`);
+        const result = await response.json();
+        if (result.success && result.data.availableMonths) {
+          setAvailableMonths(result.data.availableMonths);
+          // Set to latest month by default
+          setSelectedMonth(result.data.availableMonths[result.data.availableMonths.length - 1]);
+        }
+      } catch (error) {
+        console.error('Failed to fetch initial data:', error);
+      }
+    };
+    fetchInitialData();
+  }, []);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-          B2C 회의자료
-        </h2>
-        <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-          B2C 회의 관련 자료 및 데이터
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+            B2C 회의자료
+          </h2>
+          <p className="text-zinc-500 dark:text-zinc-400 mt-1">
+            B2C 회의 관련 자료 및 데이터
+          </p>
+        </div>
+
+        {/* Month Selector */}
+        <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
+          <Calendar className="w-4 h-4 text-zinc-500" />
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="bg-transparent text-sm font-medium focus:outline-none cursor-pointer pr-4"
+          >
+            {availableMonths.map((month) => (
+              <option key={month} value={month}>
+                {month.split('-')[0]}년 {month.split('-')[1]}월
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="border-b border-zinc-200 dark:border-zinc-800">
@@ -62,27 +102,27 @@ export default function B2CMeetingsPage() {
 
       <div className="min-h-[400px]">
         {activeTab === 'business' ? (
-          <BusinessTab />
+          <BusinessTab selectedMonth={selectedMonth} />
         ) : activeTab === 'manager-sales' ? (
-          <ManagerSalesTab />
+          <ManagerSalesTab selectedMonth={selectedMonth} />
         ) : activeTab === 'sales-amount' ? (
-          <SalesAmountTab />
+          <SalesAmountTab selectedMonth={selectedMonth} />
         ) : activeTab === 'sales-analysis' ? (
-          <SalesAnalysisTab />
+          <SalesAnalysisTab selectedMonth={selectedMonth} />
         ) : activeTab === 'customer-reason' ? (
-          <CustomerReasonTab />
+          <CustomerReasonTab selectedMonth={selectedMonth} />
         ) : activeTab === 'new' ? (
-          <NewTab />
+          <NewTab selectedMonth={selectedMonth} />
         ) : activeTab === 'product-status' ? (
-          <ProductStatusTab />
+          <ProductStatusTab selectedMonth={selectedMonth} />
         ) : activeTab === 'team-strategy' ? (
-          <TeamStrategyTab />
+          <TeamStrategyTab selectedMonth={selectedMonth} />
         ) : activeTab === 'team-volume' ? (
-          <TeamVolumeTab />
+          <TeamVolumeTab selectedMonth={selectedMonth} />
         ) : activeTab === 'team-sales' ? (
-          <TeamSalesTab />
+          <TeamSalesTab selectedMonth={selectedMonth} />
         ) : activeTab === 'shopping-mall' ? (
-          <ShoppingMallTab />
+          <ShoppingMallTab selectedMonth={selectedMonth} />
         ) : (
           <ComingSoonTab label={tabs.find(t => t.id === activeTab)?.label || ''} />
         )}

@@ -1,176 +1,204 @@
 import { NextResponse } from 'next/server';
-import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
+import { executeSQL } from '@/egdesk-helpers';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const tab = searchParams.get('tab') || 'monthly-summary';
+    const selectedMonthParam = searchParams.get('month');
 
-    // Base subquery to combine all four sales tables
-    const baseSalesSubquery = UNIFIED_SALES_SUBQUERY;
+    // Base subquery to combine sales tables (excluding south division)
+    // Joins with items to get 품목그룹1코드 and harmonizes '창고코드' to '출하창고코드'
+    const baseSalesSubquery = `
+      (
+        SELECT s.일자, s.거래처코드, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.출하창고코드, i.품목그룹1코드
+        FROM sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        UNION ALL
+        SELECT s.일자, s.거래처코드, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.창고코드 as 출하창고코드, i.품목그룹1코드
+        FROM east_division_sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        UNION ALL
+        SELECT s.일자, s.거래처코드, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.창고코드 as 출하창고코드, i.품목그룹1코드
+        FROM west_division_sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+      )
+    `;
+
+    // Discover the actual months available in the database
+    const dateRangeQuery = `
+      SELECT DISTINCT substr(일자, 1, 7) as month FROM (
+        SELECT 일자 FROM sales
+        UNION ALL SELECT 일자 FROM east_division_sales
+        UNION ALL SELECT 일자 FROM west_division_sales
+        UNION ALL SELECT 일자 FROM purchases
+        UNION ALL SELECT 일자 FROM east_division_purchases
+        UNION ALL SELECT 일자 FROM west_division_purchases
+      ) WHERE 일자 IS NOT NULL AND 일자 != '' AND 일자 LIKE '202%'
+      ORDER BY month ASC
+    `;
+
+    const dateRangeResult = await executeSQL(dateRangeQuery);
+    const availableMonths = dateRangeResult?.rows.map((r: any) => r.month) || [];
+
+    if (availableMonths.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: { message: 'No data available in the database' }
+      });
+    }
+
+    // Use the latest available month as the reference point if no month is selected
+    const latestMonthStr = availableMonths[availableMonths.length - 1];
+    const currentMonthStr = selectedMonthParam && availableMonths.includes(selectedMonthParam) 
+      ? selectedMonthParam 
+      : latestMonthStr;
+    
+    const [latestYear, latestMonth] = currentMonthStr.split('-').map(Number);
+    const currentYear = latestYear;
+    const lastYear = currentYear - 1;
 
     if (tab === 'monthly-summary') {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
-      const lastYear = currentYear - 1;
-
-      // Query sales by month and category for current year - combine all three sales tables
+      // Query sales by month and category
       const salesQuery = `
         SELECT
           substr(s.일자, 1, 7) as month,
           CASE
-            WHEN i.품목그룹1코드 = 'MB' THEN 'MB'
-            WHEN i.품목그룹1코드 IN ('AVI', 'MAR') THEN 'AVI + MAR'
-            WHEN i.품목그룹1코드 IN ('PVL', 'CVL') THEN 'AUTO'
-            WHEN i.품목그룹1코드 = 'IL' THEN 'IL'
+            WHEN s.품목그룹1코드 = 'MB' THEN 'MB'
+            WHEN s.품목그룹1코드 IN ('AVI', 'MAR') THEN 'AVI + MAR'
+            WHEN s.품목그룹1코드 IN ('PVL', 'CVL') THEN 'AUTO'
+            WHEN s.품목그룹1코드 = 'IL' THEN 'IL'
             ELSE 'Others'
           END as category,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE s.일자 LIKE '${currentYear}-%'
+        WHERE s.일자 IS NOT NULL
           AND e.사원_담당_명 != '김도량'
-          AND (ec.전체사업소 IS NOT NULL OR ec.전체사업소 != '')
+          AND ec.전체사업소 IS NOT NULL
         GROUP BY month, category
       `;
 
-      // Query purchases by month and category for current year
+      // Query purchases by month and category
       const purchasesQuery = `
         SELECT
           substr(p.일자, 1, 7) as month,
           CASE
-            WHEN i.품목그룹1코드 = 'MB' THEN 'MB'
-            WHEN i.품목그룹1코드 IN ('AVI', 'MAR') THEN 'AVI + MAR'
-            WHEN i.품목그룹1코드 IN ('PVL', 'CVL') THEN 'AUTO'
-            WHEN i.품목그룹1코드 = 'IL' THEN 'IL'
+            WHEN p.품목그룹1코드 = 'MB' THEN 'MB'
+            WHEN p.품목그룹1코드 IN ('AVI', 'MAR') THEN 'AVI + MAR'
+            WHEN p.품목그룹1코드 IN ('PVL', 'CVL') THEN 'AUTO'
+            WHEN p.품목그룹1코드 = 'IL' THEN 'IL'
             ELSE 'Others'
           END as category,
           SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC)) as amount
         FROM (
-          SELECT 일자, 품목코드, 중량, 합_계 FROM purchases
+          SELECT p.일자, p.품목코드, p.중량, p.합_계, i.품목그룹1코드
+          FROM purchases p
+          LEFT JOIN items i ON p.품목코드 = i.품목코드
           UNION ALL
-          SELECT 일자, 품목코드, 중량, 합_계 FROM east_division_purchases
+          SELECT 일자, 품목코드, 중량, 합_계, 품목그룹1코드 FROM east_division_purchases
           UNION ALL
-          SELECT 일자, 품목코드, 중량, 합_계 FROM west_division_purchases
-          UNION ALL
-          SELECT 일자, 품목코드, 중량, 합_계 FROM south_division_purchases
+          SELECT 일자, 품목코드, 중량, 합_계, 품목그룹1코드 FROM west_division_purchases
         ) p
-        LEFT JOIN items i ON p.품목코드 = i.품목코드
-        WHERE p.일자 LIKE '${currentYear}-%'
+        WHERE p.일자 IS NOT NULL
         GROUP BY month, category
       `;
 
-      // Query last year sales for YoY comparison - combine all three sales tables
+      // Query last year sales for YoY comparison
       const lastYearSalesQuery = `
         SELECT
           substr(s.일자, 1, 7) as month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 LIKE '${lastYear}-%'
           AND e.사원_담당_명 != '김도량'
-          AND (ec.전체사업소 IS NOT NULL OR ec.전체사업소 != '')
+          AND ec.전체사업소 IS NOT NULL
         GROUP BY month
       `;
 
-      const [salesResult, purchasesResult, lastYearSalesResult] = await Promise.all([
+      const [salesResult, purchasesResult, lastYearSalesResult, goalsResult] = await Promise.all([
         executeSQL(salesQuery),
         executeSQL(purchasesQuery),
-        executeSQL(lastYearSalesQuery)
+        executeSQL(lastYearSalesQuery),
+        executeSQL(`SELECT * FROM sales_goals WHERE year = '${currentYear}' AND goal_type = 'category'`)
       ]);
 
       const salesData = salesResult?.rows || [];
       const purchasesData = purchasesResult?.rows || [];
       const lastYearSalesData = lastYearSalesResult?.rows || [];
+      const goalsData = goalsResult?.rows || [];
 
-      // Create maps for easier lookup
+      // Create maps for lookup
       const salesMap = new Map();
       salesData.forEach((row: any) => {
         const key = `${row.month}_${row.category}`;
-        salesMap.set(key, {
-          weight: Number(row.weight) || 0,
-          amount: Number(row.amount) || 0
-        });
+        salesMap.set(key, { weight: Number(row.weight) || 0, amount: Number(row.amount) || 0 });
       });
 
       const purchasesMap = new Map();
       purchasesData.forEach((row: any) => {
         const key = `${row.month}_${row.category}`;
-        purchasesMap.set(key, {
-          weight: Number(row.weight) || 0,
-          amount: Number(row.amount) || 0
-        });
+        purchasesMap.set(key, { weight: Number(row.weight) || 0, amount: Number(row.amount) || 0 });
       });
 
       const lastYearSalesMap = new Map();
       lastYearSalesData.forEach((row: any) => {
-        // Map last year month to current year month (e.g., 2025-03 -> 2026-03)
         const monthNum = row.month.split('-')[1];
-        const currentYearMonth = `${currentYear}-${monthNum}`;
-        lastYearSalesMap.set(currentYearMonth, Number(row.weight) || 0);
+        lastYearSalesMap.set(monthNum, Number(row.weight) || 0);
       });
 
-      // Define categories
+      const goalsMap = new Map();
+      goalsData.forEach((row: any) => {
+        const key = `${row.month}_${row.target_name}`;
+        goalsMap.set(key, { weight: Number(row.target_weight) || 0, amount: Number(row.target_amount) || 0 });
+      });
+
       const categories = ['MB', 'AVI + MAR', 'AUTO', 'IL'];
-
-      // Generate monthly data for the entire year
       const monthlyData = [];
-      let ytdPurchase = 0;
-      let ytdPurchaseAmount = 0;
-      let ytdSales = 0;
-      let ytdSalesAmount = 0;
-      let ytdInventory = 0;
-      let ytdTarget = 0;
+      let ytdPurchase = 0, ytdPurchaseAmount = 0, ytdSales = 0, ytdSalesAmount = 0, ytdInventory = 0, ytdTargetWeight = 0;
 
-      for (let month = 1; month <= 12; month++) {
-        const monthStr = `${currentYear}-${String(month).padStart(2, '0')}`;
-
-        // Calculate totals and breakdown
-        let purchaseWeight = 0;
-        let purchaseAmount = 0;
-        let salesWeight = 0;
-        let salesAmount = 0;
+      for (const monthStr of availableMonths) {
+        let purchaseWeight = 0, purchaseAmount = 0, salesWeight = 0, salesAmount = 0, monthTargetWeight = 0;
+        const monthNum = monthStr.split('-')[1];
 
         const breakdown = categories.map(cat => {
           const key = `${monthStr}_${cat}`;
-          const sales = salesMap.get(key) || { weight: 0, amount: 0 };
-          const purchases = purchasesMap.get(key) || { weight: 0, amount: 0 };
+          const s = salesMap.get(key) || { weight: 0, amount: 0 };
+          const p = purchasesMap.get(key) || { weight: 0, amount: 0 };
+          
+          // Fix for goal lookup - we store goal by month '01' but monthStr is '2026-01'
+          const goalKey = `${monthNum}_${cat}`;
+          const g = goalsMap.get(goalKey) || { weight: 0, amount: 0 };
 
-          purchaseWeight += purchases.weight;
-          purchaseAmount += purchases.amount;
-          salesWeight += sales.weight;
-          salesAmount += sales.amount;
+          purchaseWeight += p.weight;
+          purchaseAmount += p.amount;
+          salesWeight += s.weight;
+          salesAmount += s.amount;
+          monthTargetWeight += g.weight;
 
           return {
             category: cat,
-            purchase_weight: Math.round(purchases.weight),
-            sales_weight: Math.round(sales.weight),
-            inventory_weight: Math.round(purchases.weight - sales.weight),
+            purchase_weight: Math.round(p.weight),
+            sales_weight: Math.round(s.weight),
+            inventory_weight: Math.round(p.weight - s.weight),
+            target_weight: Math.round(g.weight),
+            achievement_rate: g.weight > 0 ? (s.weight / g.weight) * 100 : 0
           };
         });
 
+        // If a month has absolutely no activity, skip it
+        if (purchaseWeight === 0 && salesWeight === 0 && monthTargetWeight === 0) continue;
+
+        const lastYearSales = lastYearSalesMap.get(monthNum) || 0;
+        const yoyGrowthRate = lastYearSales > 0 ? ((salesWeight - lastYearSales) / lastYearSales) * 100 : 0;
+
         const inventoryWeight = purchaseWeight - salesWeight;
-
-        // Calculate targets (hardcoded based on historical averages)
-        const baseTarget = 155000;
-        const seasonalMultiplier = 1 + (Math.sin((month - 3) / 2) * 0.15);
-        const targetWeight = Math.round(baseTarget * seasonalMultiplier);
-
-        // Year-over-year comparison
-        const lastYearSales = lastYearSalesMap.get(monthStr) || 0;
-        const yoyGrowthRate = lastYearSales > 0
-          ? ((salesWeight - lastYearSales) / lastYearSales) * 100
-          : 0;
-
-        const achievementRate = targetWeight > 0 ? (salesWeight / targetWeight) * 100 : 0;
+        const achievementRate = monthTargetWeight > 0 ? (salesWeight / monthTargetWeight) * 100 : 0;
 
         monthlyData.push({
           month: monthStr,
@@ -180,30 +208,27 @@ export async function GET(request: Request) {
           sales_amount: Math.round(salesAmount),
           inventory_weight: Math.round(inventoryWeight),
           inventory_amount: Math.round(purchaseAmount - salesAmount),
-          target_weight: targetWeight,
+          target_weight: Math.round(monthTargetWeight),
           achievement_rate: achievementRate,
           yoy_growth_rate: yoyGrowthRate,
           breakdown: breakdown,
         });
 
-        // Only add to YTD if the month has passed or is current
-        if (month <= currentMonth) {
-          ytdPurchase += purchaseWeight;
-          ytdPurchaseAmount += purchaseAmount;
-          ytdSales += salesWeight;
-          ytdSalesAmount += salesAmount;
-          ytdInventory += inventoryWeight;
-          ytdTarget += targetWeight;
-        }
+        ytdPurchase += purchaseWeight;
+        ytdPurchaseAmount += purchaseAmount;
+        ytdSales += salesWeight;
+        ytdSalesAmount += salesAmount;
+        ytdInventory += inventoryWeight;
+        ytdTargetWeight += monthTargetWeight;
       }
 
-      const currentMonthData = monthlyData[currentMonth - 1];
-      const ytdAchievementRate = ytdTarget > 0 ? (ytdSales / ytdTarget) * 100 : 0;
+      const currentMonthData = monthlyData[monthlyData.length - 1];
 
       return NextResponse.json({
         success: true,
         data: {
           currentYear: currentYear.toString(),
+          availableMonths,
           monthlyData: monthlyData,
           currentMonthData: currentMonthData,
           yearToDate: {
@@ -213,20 +238,15 @@ export async function GET(request: Request) {
             sales_amount: Math.round(ytdSalesAmount),
             inventory_weight: Math.round(ytdInventory),
             inventory_amount: Math.round(ytdPurchaseAmount - ytdSalesAmount),
-            target_weight: ytdTarget,
-            achievement_rate: ytdAchievementRate,
+            target_weight: Math.round(ytdTargetWeight),
+            achievement_rate: ytdTargetWeight > 0 ? (ytdSales / ytdTargetWeight) * 100 : 0,
           },
         },
       });
     }
 
     if (tab === 'target-achievement') {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
-      const currentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-
-      // Query actual sales for current month by branch - combine all three sales tables
+      // Query actual sales for latest available month by branch
       const actualSalesQuery = `
         SELECT
           CASE
@@ -242,8 +262,7 @@ export async function GET(request: Request) {
           END as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND e.사원_담당_명 != '김도량'
@@ -252,88 +271,50 @@ export async function GET(request: Request) {
         GROUP BY branch
       `;
 
-      const actualSalesResult = await executeSQL(actualSalesQuery);
-      const actualSalesData = actualSalesResult?.rows || [];
-
-      // Create map of actual sales
-      const actualSalesMap = new Map();
-      actualSalesData.forEach((row: any) => {
-        actualSalesMap.set(row.branch, Number(row.weight) || 0);
-      });
-
-      // Define target weights for each branch (hardcoded based on historical performance)
-      const branchTargets: Record<string, number> = {
-        '동부': 28000,
-        '서부': 24000,
-        '중부': 20000,
-        '제주': 9000,
-        '남부': 14000,
-        'MB': 32000,
-        '본부': 32000,
-      };
-
-      // Get all unique branches
-      const allBranches = new Set([
-        ...actualSalesData.map((r: any) => r.branch),
-        ...Object.keys(branchTargets)
+      const monthNum = currentMonthStr.split('-')[1];
+      const [actualSalesResult, goalsResult] = await Promise.all([
+        executeSQL(actualSalesQuery),
+        executeSQL(`SELECT * FROM sales_goals WHERE year = '${currentYear}' AND month = '${monthNum}' AND goal_type = 'category'`)
       ]);
 
-      const branchData = Array.from(allBranches).map(branch => {
-        const targetWeight = branchTargets[branch] || 15000;
-        const actualWeight = actualSalesMap.get(branch) || 0;
-        const achievementRate = targetWeight > 0 ? (actualWeight / targetWeight) * 100 : 0;
-        const gap = actualWeight - targetWeight;
+      const actualSalesData = actualSalesResult?.rows || [];
+      const goalsData = goalsResult?.rows || [];
+      const goalsMap = new Map(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
 
+      const branchData = actualSalesData.map((row: any) => {
+        const actualWeight = Number(row.weight) || 0;
+        const targetWeight = goalsMap.get(row.branch) || 0;
         return {
-          branch,
-          target_weight: targetWeight,
+          branch: row.branch,
+          target_weight: Math.round(targetWeight),
           actual_weight: Math.round(actualWeight),
-          achievement_rate: achievementRate,
-          gap: gap,
+          achievement_rate: targetWeight > 0 ? (actualWeight / targetWeight) * 100 : 0,
+          gap: Math.round(actualWeight - targetWeight),
         };
       });
 
-      // Sort by branch name for consistency
-      branchData.sort((a, b) => {
-        const order = ['동부', '서부', '중부', '제주', '남부', 'MB', '본부'];
-        const indexA = order.indexOf(a.branch);
-        const indexB = order.indexOf(b.branch);
-        if (indexA === -1 && indexB === -1) return a.branch.localeCompare(b.branch);
-        if (indexA === -1) return 1;
-        if (indexB === -1) return -1;
-        return indexA - indexB;
-      });
+      branchData.sort((a, b) => a.branch.localeCompare(b.branch));
 
-      // Calculate totals
-      const totalTarget = branchData.reduce((sum, b) => sum + b.target_weight, 0);
       const totalActual = branchData.reduce((sum, b) => sum + b.actual_weight, 0);
-      const totalAchievementRate = totalTarget > 0 ? (totalActual / totalTarget) * 100 : 0;
-      const totalGap = totalActual - totalTarget;
+      const totalTarget = branchData.reduce((sum, b) => sum + b.target_weight, 0);
 
       return NextResponse.json({
         success: true,
         data: {
           currentMonth: currentMonthStr,
+          availableMonths,
           branches: branchData,
           total: {
             target_weight: totalTarget,
             actual_weight: totalActual,
-            achievement_rate: totalAchievementRate,
-            gap: totalGap,
+            achievement_rate: totalTarget > 0 ? (totalActual / totalTarget) * 100 : 0,
+            gap: totalActual - totalTarget,
           },
         },
       });
     }
 
     if (tab === 'yoy-comparison') {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const lastYear = currentYear - 1;
-      const currentMonth = now.getMonth() + 1;
-      const currentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-      const lastYearMonthStr = `${lastYear}-${String(currentMonth).padStart(2, '0')}`;
-
-      // Query current year current month sales by branch - combine all three sales tables
       const currentYearQuery = `
         SELECT
           CASE
@@ -349,8 +330,7 @@ export async function GET(request: Request) {
           END as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND e.사원_담당_명 != '김도량'
@@ -359,7 +339,7 @@ export async function GET(request: Request) {
         GROUP BY branch
       `;
 
-      // Query last year same month sales by branch - combine all three sales tables
+      const lastYearMonthStr = `${lastYear}-${currentMonthStr.split('-')[1]}`;
       const lastYearQuery = `
         SELECT
           CASE
@@ -375,8 +355,7 @@ export async function GET(request: Request) {
           END as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${lastYearMonthStr}'
           AND e.사원_담당_명 != '김도량'
@@ -393,54 +372,30 @@ export async function GET(request: Request) {
       const currentYearData = currentYearResult?.rows || [];
       const lastYearData = lastYearResult?.rows || [];
 
-      // Create maps for easier lookup
       const currentYearMap = new Map();
-      currentYearData.forEach((row: any) => {
-        currentYearMap.set(row.branch, Number(row.weight) || 0);
-      });
+      currentYearData.forEach((row: any) => currentYearMap.set(row.branch, Number(row.weight) || 0));
 
       const lastYearMap = new Map();
-      lastYearData.forEach((row: any) => {
-        lastYearMap.set(row.branch, Number(row.weight) || 0);
-      });
+      lastYearData.forEach((row: any) => lastYearMap.set(row.branch, Number(row.weight) || 0));
 
-      // Get all unique branches from both years
-      const allBranches = new Set([
-        ...currentYearData.map((r: any) => r.branch),
-        ...lastYearData.map((r: any) => r.branch)
-      ]);
+      const allBranches = new Set([...currentYearData.map((r: any) => r.branch), ...lastYearData.map((r: any) => r.branch)]);
 
       const branchData = Array.from(allBranches).map(branch => {
-        const currentYearWeight = currentYearMap.get(branch) || 0;
-        const lastYearWeight = lastYearMap.get(branch) || 0;
-        const growthAmount = currentYearWeight - lastYearWeight;
-        const growthRate = lastYearWeight > 0 ? (growthAmount / lastYearWeight) * 100 : 0;
-
+        const currentWeight = currentYearMap.get(branch) || 0;
+        const lastWeight = lastYearMap.get(branch) || 0;
         return {
           branch,
-          current_year_weight: Math.round(currentYearWeight),
-          last_year_weight: Math.round(lastYearWeight),
-          growth_rate: growthRate,
-          growth_amount: Math.round(growthAmount),
+          current_year_weight: Math.round(currentWeight),
+          last_year_weight: Math.round(lastWeight),
+          growth_rate: lastWeight > 0 ? ((currentWeight - lastWeight) / lastWeight) * 100 : 0,
+          growth_amount: Math.round(currentWeight - lastWeight),
         };
       });
 
-      // Sort by branch name for consistency
-      branchData.sort((a, b) => {
-        const order = ['동부', '서부', '중부', '제주', '남부', 'MB', '본부'];
-        const indexA = order.indexOf(a.branch);
-        const indexB = order.indexOf(b.branch);
-        if (indexA === -1 && indexB === -1) return a.branch.localeCompare(b.branch);
-        if (indexA === -1) return 1;
-        if (indexB === -1) return -1;
-        return indexA - indexB;
-      });
+      branchData.sort((a, b) => a.branch.localeCompare(b.branch));
 
-      // Calculate totals
-      const totalCurrentYear = branchData.reduce((sum, b) => sum + b.current_year_weight, 0);
-      const totalLastYear = branchData.reduce((sum, b) => sum + b.last_year_weight, 0);
-      const totalGrowthAmount = totalCurrentYear - totalLastYear;
-      const totalGrowthRate = totalLastYear > 0 ? (totalGrowthAmount / totalLastYear) * 100 : 0;
+      const totalCurrent = branchData.reduce((sum, b) => sum + b.current_year_weight, 0);
+      const totalLast = branchData.reduce((sum, b) => sum + b.last_year_weight, 0);
 
       return NextResponse.json({
         success: true,
@@ -448,28 +403,22 @@ export async function GET(request: Request) {
           currentYear: currentYear.toString(),
           lastYear: lastYear.toString(),
           currentMonth: currentMonthStr,
+          availableMonths,
           branches: branchData,
           total: {
-            current_year_weight: totalCurrentYear,
-            last_year_weight: totalLastYear,
-            growth_rate: totalGrowthRate,
-            growth_amount: totalGrowthAmount,
+            current_year_weight: totalCurrent,
+            last_year_weight: totalLast,
+            growth_rate: totalLast > 0 ? ((totalCurrent - totalLast) / totalLast) * 100 : 0,
+            growth_amount: totalCurrent - totalLast,
           },
         },
       });
     }
 
     if (tab === 'branch-performance') {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
-      const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
-      const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+      const lastMonthIdx = availableMonths.indexOf(currentMonthStr) - 1;
+      const lastMonthStr = lastMonthIdx >= 0 ? availableMonths[lastMonthIdx] : `${currentYear}-01`;
 
-      const currentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-      const lastMonthStr = `${lastMonthYear}-${String(lastMonth).padStart(2, '0')}`;
-
-      // Query current month sales by branch - combine all three sales tables
       const currentMonthQuery = `
         SELECT
           CASE
@@ -486,8 +435,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND e.사원_담당_명 != '김도량'
@@ -496,7 +444,6 @@ export async function GET(request: Request) {
         GROUP BY branch
       `;
 
-      // Query last month sales by branch - combine all three sales tables
       const lastMonthQuery = `
         SELECT
           CASE
@@ -513,8 +460,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${lastMonthStr}'
           AND e.사원_담당_명 != '김도량'
@@ -531,33 +477,17 @@ export async function GET(request: Request) {
       const currentMonthData = currentMonthResult?.rows || [];
       const lastMonthData = lastMonthResult?.rows || [];
 
-      // Create maps for easier lookup
       const currentMonthMap = new Map();
-      currentMonthData.forEach((row: any) => {
-        currentMonthMap.set(row.branch, {
-          weight: Number(row.weight) || 0,
-          amount: Number(row.amount) || 0
-        });
-      });
+      currentMonthData.forEach((row: any) => currentMonthMap.set(row.branch, { weight: Number(row.weight) || 0, amount: Number(row.amount) || 0 }));
 
       const lastMonthMap = new Map();
-      lastMonthData.forEach((row: any) => {
-        lastMonthMap.set(row.branch, {
-          weight: Number(row.weight) || 0,
-          amount: Number(row.amount) || 0
-        });
-      });
+      lastMonthData.forEach((row: any) => lastMonthMap.set(row.branch, { weight: Number(row.weight) || 0, amount: Number(row.amount) || 0 }));
 
-      // Get all unique branches from both months
-      const allBranches = new Set([
-        ...currentMonthData.map((r: any) => r.branch),
-        ...lastMonthData.map((r: any) => r.branch)
-      ]);
+      const allBranches = new Set([...currentMonthData.map((r: any) => r.branch), ...lastMonthData.map((r: any) => r.branch)]);
 
       const branchData = Array.from(allBranches).map(branch => {
         const current = currentMonthMap.get(branch) || { weight: 0, amount: 0 };
         const last = lastMonthMap.get(branch) || { weight: 0, amount: 0 };
-
         return {
           branch,
           current_month_weight: Math.round(current.weight),
@@ -567,16 +497,7 @@ export async function GET(request: Request) {
         };
       });
 
-      // Sort by branch name for consistency
-      branchData.sort((a, b) => {
-        const order = ['동부', '서부', '중부', '제주', '남부', 'MB', '본부'];
-        const indexA = order.indexOf(a.branch);
-        const indexB = order.indexOf(b.branch);
-        if (indexA === -1 && indexB === -1) return a.branch.localeCompare(b.branch);
-        if (indexA === -1) return 1;
-        if (indexB === -1) return -1;
-        return indexA - indexB;
-      });
+      branchData.sort((a, b) => a.branch.localeCompare(b.branch));
 
       return NextResponse.json({
         success: true,
@@ -584,24 +505,18 @@ export async function GET(request: Request) {
           branches: branchData,
           currentMonth: currentMonthStr,
           lastMonth: lastMonthStr,
+          availableMonths,
         },
       });
     }
 
     if (tab === 'b2c-auto') {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const lastYear = currentYear - 1;
-      const currentMonth = now.getMonth() + 1;
-      const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
-      const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+      const yoyMonthStr = `${lastYear}-${currentMonthStr.split('-')[1]}`;
+      const lastMonthIdx = availableMonths.indexOf(currentMonthStr) - 1;
+      const lastMonthStr = lastMonthIdx >= 0 ? availableMonths[lastMonthIdx] : `${currentYear}-01`;
+      const monthNum = currentMonthStr.split('-')[1];
 
-      const currentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-      const lastMonthStr = `${lastMonthYear}-${String(lastMonth).padStart(2, '0')}`;
-      const yoyMonthStr = `${lastYear}-${String(currentMonth).padStart(2, '0')}`;
-
-      // Query for current month B2C AUTO sales by branch and team - combine all three sales tables
-      const currentMonthQuery = `
+      const b2cAutoQuery = `
         SELECT
           CASE
             WHEN ec.전체사업소 LIKE '%동부%' THEN '동부지사'
@@ -615,426 +530,285 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND ec.b2c_팀 != 'B2B'
-          AND i.품목그룹1코드 IN ('PVL', 'CVL')
+          AND s.품목그룹1코드 IN ('PVL', 'CVL')
           AND e.사원_담당_명 != '김도량'
         GROUP BY branch, team
       `;
 
-      // Query for last month - combine all three sales tables
-      const lastMonthQuery = `
+      // New query for B2B AUTO comparison
+      const b2bAutoQuery = `
         SELECT
-          CASE
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부지사'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부지사'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부지사'
-            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-            ELSE ec.전체사업소
-          END as branch,
-          ec.b2c_팀 as team,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE substr(s.일자, 1, 7) = '${lastMonthStr}'
-          AND ec.b2c_팀 != 'B2B'
-          AND i.품목그룹1코드 IN ('PVL', 'CVL')
+        WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
+          AND ec.b2c_팀 = 'B2B'
+          AND s.품목그룹1코드 IN ('PVL', 'CVL')
           AND e.사원_담당_명 != '김도량'
-        GROUP BY branch, team
       `;
 
-      // Query for YoY - combine all three sales tables
-      const yoyQuery = `
-        SELECT
-          CASE
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부지사'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부지사'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부지사'
-            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-            ELSE ec.전체사업소
-          END as branch,
-          ec.b2c_팀 as team,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
-        FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
-        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE substr(s.일자, 1, 7) = '${yoyMonthStr}'
-          AND ec.b2c_팀 != 'B2B'
-          AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
-        GROUP BY branch, team
-      `;
-
-      const [currentMonthResult, lastMonthResult, yoyResult] = await Promise.all([
-        executeSQL(currentMonthQuery),
-        executeSQL(lastMonthQuery),
-        executeSQL(yoyQuery)
+      const [b2cResult, b2bResult, goalsResult] = await Promise.all([
+        executeSQL(b2cAutoQuery),
+        executeSQL(b2bAutoQuery),
+        executeSQL(`SELECT * FROM sales_goals WHERE year = '${currentYear}' AND month = '${monthNum}' AND goal_type = 'b2c-auto'`)
       ]);
 
-      const currentMonthData = currentMonthResult?.rows || [];
-      const lastMonthData = lastMonthResult?.rows || [];
-      const yoyData = yoyResult?.rows || [];
+      const currentMonthData = b2cResult?.rows || [];
+      const b2bAutoData = b2bResult?.rows?.[0] || { weight: 0, amount: 0 };
+      const goalsData = goalsResult?.rows || [];
+      const goalsMap = new Map(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
 
-      // Create maps for easier lookup
-      const currentMonthMap = new Map();
-      currentMonthData.forEach((row: any) => {
-        const key = `${row.branch}_${row.team}`;
-        currentMonthMap.set(key, {
-          weight: Number(row.weight) || 0,
-          amount: Number(row.amount) || 0
-        });
-      });
-
-      const lastMonthMap = new Map();
-      lastMonthData.forEach((row: any) => {
-        const key = `${row.branch}_${row.team}`;
-        lastMonthMap.set(key, {
-          weight: Number(row.weight) || 0,
-          amount: Number(row.amount) || 0
-        });
-      });
-
-      const yoyMap = new Map();
-      yoyData.forEach((row: any) => {
-        const key = `${row.branch}_${row.team}`;
-        yoyMap.set(key, {
-          weight: Number(row.weight) || 0,
-          amount: Number(row.amount) || 0
-        });
-      });
-
-      // Organize data by branch and team
       const branchTeamMap = new Map();
-      [...currentMonthData, ...lastMonthData, ...yoyData].forEach((row: any) => {
-        if (!branchTeamMap.has(row.branch)) {
-          branchTeamMap.set(row.branch, new Set());
-        }
-        branchTeamMap.get(row.branch).add(row.team);
+      currentMonthData.forEach((row: any) => {
+        if (!branchTeamMap.has(row.branch)) branchTeamMap.set(row.branch, []);
+        const actualWeight = Number(row.weight) || 0;
+        const targetWeight = goalsMap.get(row.team) || 0;
+        
+        branchTeamMap.get(row.branch).push({
+          team_name: row.team,
+          current_month_weight: Math.round(actualWeight),
+          current_month_amount: Math.round(Number(row.amount) || 0),
+          target_weight: Math.round(targetWeight),
+          achievement_rate: targetWeight > 0 ? (actualWeight / targetWeight) * 100 : 0,
+        });
       });
 
-      // Define target multiplier (10% above historical average)
-      const targetMultiplier = 1.1;
-
-      // Build branch data with nested teams
       const branchData = Array.from(branchTeamMap.entries()).map(([branch, teams]) => {
-        const teamData = Array.from(teams as Set<string>).map((team: string) => {
-          const key = `${branch}_${team}`;
-          const current = currentMonthMap.get(key) || { weight: 0, amount: 0 };
-          const lastMonth = lastMonthMap.get(key) || { weight: 0, amount: 0 };
-          const yoy = yoyMap.get(key) || { weight: 0, amount: 0 };
-          const target = Math.round(current.weight * targetMultiplier);
-          const yoyGrowthRate = yoy.weight > 0 ? ((current.weight - yoy.weight) / yoy.weight) * 100 : 0;
-          const achievementRate = target > 0 ? (current.weight / target) * 100 : 0;
-
-          return {
-            team_name: team,
-            current_month_weight: Math.round(current.weight),
-            current_month_amount: Math.round(current.amount),
-            last_month_weight: Math.round(lastMonth.weight),
-            last_month_amount: Math.round(lastMonth.amount),
-            yoy_weight: Math.round(yoy.weight),
-            yoy_amount: Math.round(yoy.amount),
-            yoy_growth_rate: yoyGrowthRate,
-            target_weight: target,
-            achievement_rate: achievementRate,
-          };
-        });
-
-        // Calculate branch totals from teams
-        const branchCurrentMonth = teamData.reduce((sum, t) => sum + t.current_month_weight, 0);
-        const branchCurrentAmount = teamData.reduce((sum, t) => sum + t.current_month_amount, 0);
-        const branchLastMonth = teamData.reduce((sum, t) => sum + t.last_month_weight, 0);
-        const branchLastAmount = teamData.reduce((sum, t) => sum + t.last_month_amount, 0);
-        const branchYoy = teamData.reduce((sum, t) => sum + t.yoy_weight, 0);
-        const branchTarget = teamData.reduce((sum, t) => sum + t.target_weight, 0);
-        const branchYoyGrowthRate = branchYoy > 0 ? ((branchCurrentMonth - branchYoy) / branchYoy) * 100 : 0;
-        const branchAchievementRate = branchTarget > 0 ? (branchCurrentMonth / branchTarget) * 100 : 0;
-
+        const branchActual = teams.reduce((sum: number, t: any) => sum + t.current_month_weight, 0);
+        const branchTarget = teams.reduce((sum: number, t: any) => sum + t.target_weight, 0);
         return {
           branch,
-          current_month_weight: branchCurrentMonth,
-          current_month_amount: branchCurrentAmount,
-          last_month_weight: branchLastMonth,
-          last_month_amount: branchLastAmount,
-          yoy_weight: branchYoy,
-          yoy_growth_rate: branchYoyGrowthRate,
+          current_month_weight: branchActual,
+          current_month_amount: teams.reduce((sum: number, t: any) => sum + t.current_month_amount, 0),
           target_weight: branchTarget,
-          achievement_rate: branchAchievementRate,
-          teams: teamData,
+          achievement_rate: branchTarget > 0 ? (branchActual / branchTarget) * 100 : 0,
+          teams,
         };
       });
 
-      // Sort branches by specific order
-      branchData.sort((a, b) => {
-        const order = ['동부지사', '서부지사', '중부', '제주', '남부지사'];
-        const indexA = order.indexOf(a.branch);
-        const indexB = order.indexOf(b.branch);
-        if (indexA === -1 && indexB === -1) return a.branch.localeCompare(b.branch);
-        if (indexA === -1) return 1;
-        if (indexB === -1) return -1;
-        return indexA - indexB;
-      });
+      branchData.sort((a, b) => a.branch.localeCompare(b.branch));
 
-      // Calculate totals
-      const totalCurrentMonth = branchData.reduce((sum, b) => sum + b.current_month_weight, 0);
-      const totalCurrentAmount = branchData.reduce((sum, b) => sum + b.current_month_amount, 0);
-      const totalLastMonth = branchData.reduce((sum, b) => sum + b.last_month_weight, 0);
-      const totalLastAmount = branchData.reduce((sum, b) => sum + b.last_month_amount, 0);
-      const totalYoy = branchData.reduce((sum, b) => sum + b.yoy_weight, 0);
-      const totalYoyGrowthRate = totalYoy > 0 ? ((totalCurrentMonth - totalYoy) / totalYoy) * 100 : 0;
+      const totalActual = branchData.reduce((sum, b) => sum + b.current_month_weight, 0);
       const totalTarget = branchData.reduce((sum, b) => sum + b.target_weight, 0);
-      const totalAchievementRate = totalTarget > 0 ? (totalCurrentMonth / totalTarget) * 100 : 0;
 
       return NextResponse.json({
         success: true,
         data: {
           currentMonth: currentMonthStr,
-          lastMonth: lastMonthStr,
+          availableMonths,
           currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
           branches: branchData,
+          b2bAutoTotal: {
+            weight: Math.round(Number(b2bAutoData.weight) || 0),
+            amount: Math.round(Number(b2bAutoData.amount) || 0),
+          },
           total: {
-            current_month_weight: totalCurrentMonth,
-            current_month_amount: totalCurrentAmount,
-            last_month_weight: totalLastMonth,
-            last_month_amount: totalLastAmount,
-            yoy_weight: totalYoy,
-            yoy_growth_rate: totalYoyGrowthRate,
+            current_month_weight: totalActual,
+            current_month_amount: branchData.reduce((sum, b) => sum + b.current_month_amount, 0),
+            last_month_weight: 0,
+            last_month_amount: 0,
+            yoy_weight: 0,
+            yoy_growth_rate: 0,
             target_weight: totalTarget,
-            achievement_rate: totalAchievementRate,
+            achievement_rate: totalTarget > 0 ? (totalActual / totalTarget) * 100 : 0,
           },
         },
       });
     }
 
     if (tab === 'b2b-il') {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const lastYear = currentYear - 1;
-      const currentMonth = now.getMonth() + 1;
-      const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
-      const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
-
-      const currentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-      const lastMonthStr = `${lastMonthYear}-${String(lastMonth).padStart(2, '0')}`;
-      const yoyMonthStr = `${lastYear}-${String(currentMonth).padStart(2, '0')}`;
-
-      // Query for current month B2B IL sales by team and product - combine all three sales tables
-      const currentMonthQuery = `
+      const monthNum = currentMonthStr.split('-')[1];
+      const b2bIlMainQuery = `
         SELECT
-          ec.b2c_팀 as team,
-          i.품목명 as product,
+          CASE
+            WHEN ec.b2b사업소 = '경남사업소' THEN '창원'
+            ELSE REPLACE(REPLACE(ec.b2b사업소, '사업소', ''), '지사', '')
+          END as branch,
+          ec.b2b팀 as team,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND ec.b2c_팀 = 'B2B'
-          AND i.품목그룹1코드 = 'IL'
+          AND s.품목그룹1코드 = 'IL'
           AND e.사원_담당_명 != '김도량'
-        GROUP BY team, product
+        GROUP BY branch, team
       `;
 
-      // Query for last month - combine all three sales tables
-      const lastMonthQuery = `
+      // New query for B2C IL comparison
+      const b2cIlQuery = `
         SELECT
-          ec.b2c_팀 as team,
-          i.품목명 as product,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE substr(s.일자, 1, 7) = '${lastMonthStr}'
-          AND ec.b2c_팀 = 'B2B'
-          AND i.품목그룹1코드 = 'IL'
+        WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
+          AND ec.b2c_팀 != 'B2B'
+          AND s.품목그룹1코드 = 'IL'
           AND e.사원_담당_명 != '김도량'
-        GROUP BY team, product
       `;
 
-      // Query for YoY - combine all three sales tables
-      const yoyQuery = `
-        SELECT
-          ec.b2c_팀 as team,
-          i.품목명 as product,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
-        FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
-        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE substr(s.일자, 1, 7) = '${yoyMonthStr}'
-          AND ec.b2c_팀 = 'B2B'
-          AND i.품목그룹1코드 = 'IL'
-          AND e.사원_담당_명 != '김도량'
-        GROUP BY team, product
-      `;
-
-      const [currentMonthResult, lastMonthResult, yoyResult] = await Promise.all([
-        executeSQL(currentMonthQuery),
-        executeSQL(lastMonthQuery),
-        executeSQL(yoyQuery)
+      const [b2bResult, b2cResult, goalsResult] = await Promise.all([
+        executeSQL(b2bIlMainQuery),
+        executeSQL(b2cIlQuery),
+        executeSQL(`SELECT * FROM sales_goals WHERE year = '${currentYear}' AND month = '${monthNum}' AND goal_type = 'b2b-il'`)
       ]);
 
-      const currentMonthData = currentMonthResult?.rows || [];
-      const lastMonthData = lastMonthResult?.rows || [];
-      const yoyData = yoyResult?.rows || [];
+      const currentMonthData = b2bResult?.rows || [];
+      const b2cIlData = b2cResult?.rows?.[0] || { weight: 0, amount: 0 };
+      const goalsData = goalsResult?.rows || [];
+      const goalsMap = new Map(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
 
-      // Create maps for easier lookup
-      const currentMonthMap = new Map();
+      const branchTeamMap = new Map();
       currentMonthData.forEach((row: any) => {
-        const key = `${row.team}_${row.product}`;
-        currentMonthMap.set(key, {
-          weight: Number(row.weight) || 0,
-          amount: Number(row.amount) || 0
+        const branchName = row.branch || '기타';
+        if (!branchTeamMap.has(branchName)) branchTeamMap.set(branchName, []);
+        const actualWeight = Number(row.weight) || 0;
+        const targetWeight = goalsMap.get(row.team) || 0;
+
+        branchTeamMap.get(branchName).push({
+          team_name: row.team || '기타',
+          current_month_weight: Math.round(actualWeight),
+          current_month_amount: Math.round(Number(row.amount) || 0),
+          target_weight: Math.round(targetWeight),
+          achievement_rate: targetWeight > 0 ? (actualWeight / targetWeight) * 100 : 0,
         });
       });
 
-      const lastMonthMap = new Map();
-      lastMonthData.forEach((row: any) => {
-        const key = `${row.team}_${row.product}`;
-        lastMonthMap.set(key, {
-          weight: Number(row.weight) || 0,
-          amount: Number(row.amount) || 0
-        });
-      });
-
-      const yoyMap = new Map();
-      yoyData.forEach((row: any) => {
-        const key = `${row.team}_${row.product}`;
-        yoyMap.set(key, {
-          weight: Number(row.weight) || 0,
-          amount: Number(row.amount) || 0
-        });
-      });
-
-      // Organize data by team and product
-      const teamProductMap = new Map();
-      [...currentMonthData, ...lastMonthData, ...yoyData].forEach((row: any) => {
-        if (!teamProductMap.has(row.team)) {
-          teamProductMap.set(row.team, new Set());
-        }
-        teamProductMap.get(row.team).add(row.product);
-      });
-
-      // Define target multiplier (15% above historical average for B2B IL)
-      const targetMultiplier = 1.15;
-
-      // Build team data with nested products
-      const teamData = Array.from(teamProductMap.entries()).map(([team, products]) => {
-        const productData = Array.from(products as Set<string>).map((product: string) => {
-          const key = `${team}_${product}`;
-          const current = currentMonthMap.get(key) || { weight: 0, amount: 0 };
-          const lastMonth = lastMonthMap.get(key) || { weight: 0, amount: 0 };
-          const yoy = yoyMap.get(key) || { weight: 0, amount: 0 };
-          const target = Math.round(current.weight * targetMultiplier);
-          const yoyGrowthRate = yoy.weight > 0 ? ((current.weight - yoy.weight) / yoy.weight) * 100 : 0;
-          const achievementRate = target > 0 ? (current.weight / target) * 100 : 0;
-
-          return {
-            product_name: product,
-            current_month_weight: Math.round(current.weight),
-            current_month_amount: Math.round(current.amount),
-            last_month_weight: Math.round(lastMonth.weight),
-            last_month_amount: Math.round(lastMonth.amount),
-            yoy_weight: Math.round(yoy.weight),
-            yoy_amount: Math.round(yoy.amount),
-            yoy_growth_rate: yoyGrowthRate,
-            target_weight: target,
-            achievement_rate: achievementRate,
-          };
-        });
-
-        // Calculate team totals from products
-        const teamCurrentMonth = productData.reduce((sum, p) => sum + p.current_month_weight, 0);
-        const teamCurrentAmount = productData.reduce((sum, p) => sum + p.current_month_amount, 0);
-        const teamLastMonth = productData.reduce((sum, p) => sum + p.last_month_weight, 0);
-        const teamLastAmount = productData.reduce((sum, p) => sum + p.last_month_amount, 0);
-        const teamYoy = productData.reduce((sum, p) => sum + p.yoy_weight, 0);
-        const teamTarget = productData.reduce((sum, p) => sum + p.target_weight, 0);
-        const teamYoyGrowthRate = teamYoy > 0 ? ((teamCurrentMonth - teamYoy) / teamYoy) * 100 : 0;
-        const teamAchievementRate = teamTarget > 0 ? (teamCurrentMonth / teamTarget) * 100 : 0;
-
+      const branchData = Array.from(branchTeamMap.entries()).map(([branch, teams]) => {
+        const branchActual = teams.reduce((sum: number, t: any) => sum + t.current_month_weight, 0);
+        const branchTarget = teams.reduce((sum: number, t: any) => sum + t.target_weight, 0);
         return {
-          team_name: team,
-          current_month_weight: teamCurrentMonth,
-          current_month_amount: teamCurrentAmount,
-          last_month_weight: teamLastMonth,
-          last_month_amount: teamLastAmount,
-          yoy_weight: teamYoy,
-          yoy_growth_rate: teamYoyGrowthRate,
-          target_weight: teamTarget,
-          achievement_rate: teamAchievementRate,
-          products: productData,
+          branch,
+          current_month_weight: branchActual,
+          current_month_amount: teams.reduce((sum: number, t: any) => sum + t.current_month_amount, 0),
+          target_weight: branchTarget,
+          achievement_rate: branchTarget > 0 ? (branchActual / branchTarget) * 100 : 0,
+          teams,
         };
       });
 
-      // Calculate totals
-      const totalCurrentMonth = teamData.reduce((sum, t) => sum + t.current_month_weight, 0);
-      const totalCurrentAmount = teamData.reduce((sum, t) => sum + t.current_month_amount, 0);
-      const totalLastMonth = teamData.reduce((sum, t) => sum + t.last_month_weight, 0);
-      const totalLastAmount = teamData.reduce((sum, t) => sum + t.last_month_amount, 0);
-      const totalYoy = teamData.reduce((sum, t) => sum + t.yoy_weight, 0);
-      const totalYoyGrowthRate = totalYoy > 0 ? ((totalCurrentMonth - totalYoy) / totalYoy) * 100 : 0;
-      const totalTarget = teamData.reduce((sum, t) => sum + t.target_weight, 0);
-      const totalAchievementRate = totalTarget > 0 ? (totalCurrentMonth / totalTarget) * 100 : 0;
+      branchData.sort((a, b) => a.branch.localeCompare(b.branch));
+
+      const totalActual = branchData.reduce((sum, b) => sum + b.current_month_weight, 0);
+      const totalTarget = branchData.reduce((sum, b) => sum + b.target_weight, 0);
 
       return NextResponse.json({
         success: true,
         data: {
           currentMonth: currentMonthStr,
-          lastMonth: lastMonthStr,
+          availableMonths,
           currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
-          teams: teamData,
+          branches: branchData,
+          b2cIlTotal: {
+            weight: Math.round(Number(b2cIlData.weight) || 0),
+            amount: Math.round(Number(b2cIlData.amount) || 0),
+          },
           total: {
-            current_month_weight: totalCurrentMonth,
-            current_month_amount: totalCurrentAmount,
-            last_month_weight: totalLastMonth,
-            last_month_amount: totalLastAmount,
-            yoy_weight: totalYoy,
-            yoy_growth_rate: totalYoyGrowthRate,
+            current_month_weight: totalActual,
+            current_month_amount: branchData.reduce((sum, b) => sum + b.current_month_amount, 0),
+            last_month_weight: 0,
+            last_month_amount: 0,
+            yoy_weight: 0,
+            yoy_growth_rate: 0,
             target_weight: totalTarget,
-            achievement_rate: totalAchievementRate,
+            achievement_rate: totalTarget > 0 ? (totalActual / totalTarget) * 100 : 0,
           },
         },
       });
     }
 
-    // Default response for other tabs
-    return NextResponse.json({
-      success: true,
-      data: {
-        message: 'Tab not yet implemented',
-      },
-    });
+    if (tab === 'goal-setting') {
+      const selectedYear = searchParams.get('year') || currentYear.toString();
+      const prevYear = (Number(selectedYear) - 1).toString();
+
+      // Fetch existing goals for selected year and previous year
+      const goalsQuery = `
+        SELECT * FROM sales_goals 
+        WHERE year IN ('${selectedYear}', '${prevYear}')
+      `;
+      const goalsResult = await executeSQL(goalsQuery);
+      const goals = goalsResult?.rows || [];
+
+      // Fetch actual performance for previous year to show as reference
+      const prevYearActualQuery = `
+        SELECT 
+          substr(s.일자, 1, 7) as month,
+          CASE 
+            WHEN ec.b2c_팀 = 'B2B' AND s.품목그룹1코드 = 'IL' THEN 'b2b-il'
+            WHEN ec.b2c_팀 != 'B2B' AND s.품목그룹1코드 IN ('PVL', 'CVL') THEN 'b2c-auto'
+            WHEN s.품목그룹1코드 = 'MB' THEN 'category-MB'
+            WHEN s.품목그룹1코드 IN ('AVI', 'MAR') THEN 'category-AVI+MAR'
+            WHEN s.품목그룹1코드 IN ('PVL', 'CVL') THEN 'category-AUTO'
+            WHEN s.품목그룹1코드 = 'IL' THEN 'category-IL'
+            ELSE 'others'
+          END as goal_type_group,
+          CASE
+            WHEN ec.b2c_팀 = 'B2B' AND s.품목그룹1코드 = 'IL' THEN ec.b2b팀
+            WHEN ec.b2c_팀 != 'B2B' AND s.품목그룹1코드 IN ('PVL', 'CVL') THEN ec.b2c_팀
+            ELSE ''
+          END as target_name,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
+        FROM (${baseSalesSubquery}) s
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE s.일자 LIKE '${prevYear}-%'
+          AND e.사원_담당_명 != '김도량'
+        GROUP BY month, goal_type_group, target_name
+      `;
+      const actualResult = await executeSQL(prevYearActualQuery);
+      const prevYearActual = actualResult?.rows || [];
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          goals,
+          prevYearActual,
+          year: selectedYear,
+          prevYear
+        }
+      });
+    }
+
+    return NextResponse.json({ success: true, data: { message: 'Tab not implemented' } });
   } catch (error: any) {
     console.error('Closing Meeting API Error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to fetch closing meeting data',
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { year, month, goal_type, target_name, target_weight, target_amount } = body;
+
+    if (!year || !month || !goal_type || !target_name) {
+      return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
+    }
+
+    const upsertQuery = `
+      INSERT INTO sales_goals (year, month, goal_type, target_name, target_weight, target_amount)
+      VALUES ('${year}', '${month}', '${goal_type}', '${target_name}', ${target_weight || 0}, ${target_amount || 0})
+      ON CONFLICT(year, month, goal_type, target_name) DO UPDATE SET
+        target_weight = excluded.target_weight,
+        target_amount = excluded.target_amount
+    `;
+
+    await executeSQL(upsertQuery);
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Closing Meeting POST Error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

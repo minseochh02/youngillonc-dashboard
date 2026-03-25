@@ -19,18 +19,23 @@ interface TeamVolumeData {
   currentYear: string;
 }
 
-export default function TeamVolumeTab() {
+interface TeamVolumeTabProps {
+  selectedMonth?: string;
+}
+
+export default function TeamVolumeTab({ selectedMonth }: TeamVolumeTabProps) {
   const [data, setData] = useState<TeamVolumeData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=team-volume`);
+      const url = `/api/dashboard/b2c-meetings?tab=team-volume${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);

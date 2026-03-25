@@ -59,11 +59,6 @@ const Navigation = () => {
       icon: <ClipboardList className="w-5 h-5" />,
     },
     {
-      name: "일일매출수금현황",
-      href: "/dashboard/daily-status/sales",
-      icon: <Receipt className="w-5 h-5" />,
-    },
-    {
       name: "직원별 현황",
       href: "/dashboard/employees",
       icon: <Users className="w-5 h-5" />,
@@ -75,6 +70,11 @@ const Navigation = () => {
       name: "매출/수금",
       icon: <TrendingUp className="w-5 h-5" />,
       items: [
+        {
+          name: "사업소별 매출/수금",
+          href: "/dashboard/daily-status/sales",
+          icon: <Receipt className="w-5 h-5" />,
+        },
         {
           name: "판매현황",
           href: "/dashboard/sales-inventory",

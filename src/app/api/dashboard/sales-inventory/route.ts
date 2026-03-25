@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { executeSQL, UNIFIED_SALES_SUBQUERY } from '@/egdesk-helpers';
+import { executeSQL } from '@/egdesk-helpers';
 
 export async function GET(request: Request) {
   try {
@@ -15,10 +15,10 @@ export async function GET(request: Request) {
       ? `AND 일자 LIKE '${month}%'`
       : '';
 
-    // Unified sales subquery across all four tables
-    const combinedSales = UNIFIED_SALES_SUBQUERY;
+    // Base table for sales
+    const baseSalesTable = 'sales';
 
-    // 1. Sales by item × division across all four tables
+    // 1. Sales by item × division
     const salesByItem = await executeSQL(`
       SELECT
         s.품목코드,
@@ -40,9 +40,9 @@ export async function GET(request: Request) {
             WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
             ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
           END as division
-        FROM ${combinedSales} s
+        FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE e.사원_담당_명 != '김도량' ${monthFilter}
       ) s
@@ -111,19 +111,19 @@ export async function GET(request: Request) {
           WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
           ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
         END as division
-      FROM ${combinedSales} s
+      FROM ${baseSalesTable} s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE ec.전체사업소 IS NOT NULL
         AND e.사원_담당_명 != '김도량'
       ORDER BY 1
     `);
 
-    // 6. Available months for filter across all four tables
+    // 6. Available months for filter
     const months = await executeSQL(`
       SELECT DISTINCT SUBSTR(일자, 1, 7) as month
-      FROM ${combinedSales} s
+      FROM ${baseSalesTable} s
       WHERE 일자 IS NOT NULL
       ORDER BY month DESC
       LIMIT 24

@@ -19,18 +19,23 @@ interface TeamSalesData {
   currentYear: string;
 }
 
-export default function TeamSalesTab() {
+interface TeamSalesTabProps {
+  selectedMonth?: string;
+}
+
+export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
   const [data, setData] = useState<TeamSalesData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=team-sales`);
+      const url = `/api/dashboard/b2c-meetings?tab=team-sales${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);

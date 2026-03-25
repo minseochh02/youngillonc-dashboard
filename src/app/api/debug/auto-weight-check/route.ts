@@ -16,7 +16,7 @@ export async function GET() {
         SELECT * FROM west_division_sales
       ) s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       WHERE substr(s.일자, 1, 7) = '2026-02'
         AND i.품목그룹1코드 IN ('PVL', 'CVL')
@@ -53,7 +53,7 @@ export async function GET() {
         SELECT * FROM west_division_sales
       ) s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       WHERE substr(s.일자, 1, 7) = '2026-02'
         AND i.품목그룹1코드 IN ('PVL', 'CVL')
