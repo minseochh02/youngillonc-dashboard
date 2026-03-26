@@ -246,28 +246,32 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'target-achievement') {
+      const branchMapping = `
+        CASE
+          WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
+          WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
+          WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
+          WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
+          WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
+          WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
+          WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
+          WHEN c.거래처그룹1명 LIKE '%본부%' THEN '본부'
+          ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
+        END
+      `;
       // Query actual sales for latest available month by branch
       const actualSalesQuery = `
         SELECT
-          CASE
-            WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-            WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-            WHEN ec.전체사업소 LIKE '%본부%' THEN '본부'
-            ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
-          END as branch,
+          ${branchMapping} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND e.사원_담당_명 != '김도량'
-          AND ec.전체사업소 IS NOT NULL
-          AND ec.전체사업소 != ''
+          AND c.거래처그룹1명 IS NOT NULL
+          AND c.거래처그룹1명 != ''
         GROUP BY branch
       `;
 
@@ -315,52 +319,47 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'yoy-comparison') {
+      const branchMapping = `
+        CASE
+          WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
+          WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
+          WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
+          WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
+          WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
+          WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
+          WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
+          WHEN c.거래처그룹1명 LIKE '%본부%' THEN '본부'
+          ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
+        END
+      `;
       const currentYearQuery = `
         SELECT
-          CASE
-            WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-            WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-            WHEN ec.전체사업소 LIKE '%본부%' THEN '본부'
-            ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
-          END as branch,
+          ${branchMapping} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND e.사원_담당_명 != '김도량'
-          AND ec.전체사업소 IS NOT NULL
-          AND ec.전체사업소 != ''
+          AND c.거래처그룹1명 IS NOT NULL
+          AND c.거래처그룹1명 != ''
         GROUP BY branch
       `;
 
       const lastYearMonthStr = `${lastYear}-${currentMonthStr.split('-')[1]}`;
       const lastYearQuery = `
         SELECT
-          CASE
-            WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-            WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-            WHEN ec.전체사업소 LIKE '%본부%' THEN '본부'
-            ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
-          END as branch,
+          ${branchMapping} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${lastYearMonthStr}'
           AND e.사원_담당_명 != '김도량'
-          AND ec.전체사업소 IS NOT NULL
-          AND ec.전체사업소 != ''
+          AND c.거래처그룹1명 IS NOT NULL
+          AND c.거래처그룹1명 != ''
         GROUP BY branch
       `;
 
@@ -419,53 +418,49 @@ export async function GET(request: Request) {
       const lastMonthIdx = availableMonths.indexOf(currentMonthStr) - 1;
       const lastMonthStr = lastMonthIdx >= 0 ? availableMonths[lastMonthIdx] : `${currentYear}-01`;
 
+      const branchMapping = `
+        CASE
+          WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
+          WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
+          WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
+          WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
+          WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
+          WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
+          WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
+          WHEN c.거래처그룹1명 LIKE '%본부%' THEN '본부'
+          ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
+        END
+      `;
+
       const currentMonthQuery = `
         SELECT
-          CASE
-            WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-            WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-            WHEN ec.전체사업소 LIKE '%본부%' THEN '본부'
-            ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
-          END as branch,
+          ${branchMapping} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND e.사원_담당_명 != '김도량'
-          AND ec.전체사업소 IS NOT NULL
-          AND ec.전체사업소 != ''
+          AND c.거래처그룹1명 IS NOT NULL
+          AND c.거래처그룹1명 != ''
         GROUP BY branch
       `;
 
       const lastMonthQuery = `
         SELECT
-          CASE
-            WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-            WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-            WHEN ec.전체사업소 LIKE '%본부%' THEN '본부'
-            ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
-          END as branch,
+          ${branchMapping} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${lastMonthStr}'
           AND e.사원_담당_명 != '김도량'
-          AND ec.전체사업소 IS NOT NULL
-          AND ec.전체사업소 != ''
+          AND c.거래처그룹1명 IS NOT NULL
+          AND c.거래처그룹1명 != ''
         GROUP BY branch
       `;
 
@@ -624,16 +619,28 @@ export async function GET(request: Request) {
 
     if (tab === 'b2b-il') {
       const monthNum = currentMonthStr.split('-')[1];
+      const branchMapping = `
+        CASE
+          WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
+          WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
+          WHEN c.거래처그룹1명 LIKE '%화성%' THEN '화성'
+          WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
+          WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
+          WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
+          WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
+          WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
+          WHEN c.거래처그룹1명 LIKE '%부산%' THEN '부산'
+          ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
+        END
+      `;
       const b2bIlMainQuery = `
         SELECT
-          CASE
-            WHEN ec.b2b사업소 = '경남사업소' THEN '창원'
-            ELSE REPLACE(REPLACE(ec.b2b사업소, '사업소', ''), '지사', '')
-          END as branch,
+          ${branchMapping} as branch,
           ec.b2b팀 as team,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'

@@ -14,21 +14,30 @@ export async function GET(request: Request) {
 
     // Build branch filter
     let branchFilter = '';
+    const branchMapping = `
+      CASE
+        WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
+        WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
+        WHEN c.거래처그룹1명 LIKE '%화성%' THEN '화성'
+        WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
+        WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
+        WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
+        WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
+        WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
+        WHEN c.거래처그룹1명 LIKE '%부산%' THEN '부산'
+        ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
+      END
+    `;
+
     if (branch !== 'all') {
-      if (branch === 'MB') {
-        branchFilter = "AND (ec.b2b사업소 = 'MB' OR ec.전체사업소 = '벤츠')";
-      } else if (branch === '창원') {
-        branchFilter = "AND (ec.b2b사업소 = '창원' OR ec.전체사업소 = '경남사업소')";
-      } else {
-        branchFilter = `AND (ec.b2b사업소 LIKE '%${branch}%' OR ec.전체사업소 LIKE '%${branch}%')`;
-      }
+      branchFilter = `AND ${branchMapping} = '${branch}'`;
     }
 
     // Query purchases grouped by 사업소 → 담당자 → 구매처 → Items
     // Note: main purchases table is normalized, division tables are denormalized
     const purchaseQuery = `
       SELECT
-        COALESCE(ec.b2b사업소, ec.전체사업소, c.거래처그룹1명, '미분류') as branch,
+        ${branchMapping} as branch,
         COALESCE(e.사원_담당_명, '미지정') as person_in_charge,
         COALESCE(vendor_client.거래처명, '미지정') as vendor,
         COALESCE(i.품목명, '미지정') as item_name,
@@ -57,7 +66,7 @@ export async function GET(request: Request) {
       WHERE p.일자 = '${date}'
         ${branchFilter}
       GROUP BY
-        COALESCE(ec.b2b사업소, ec.전체사업소, c.거래처그룹1명, '미분류'),
+        branch,
         COALESCE(e.사원_담당_명, '미지정'),
         COALESCE(vendor_client.거래처명, '미지정'),
         COALESCE(i.품목명, '미지정'),

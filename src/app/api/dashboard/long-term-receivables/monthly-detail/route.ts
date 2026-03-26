@@ -11,15 +11,19 @@ export async function GET(request: NextRequest) {
 
   // Parse the selected month
   const [year, monthNum] = month.split('-').map(Number);
-  const selectedDate = new Date(year, monthNum - 1, 1);
+  
+  // To avoid timezone issues, build date strings manually
+  // Calculate 12 months ago starting from the selected month
+  let startYear = year;
+  let startMonth = monthNum - 11;
+  while (startMonth <= 0) {
+    startMonth += 12;
+    startYear -= 1;
+  }
+  const startDateStr = `${startYear}-${String(startMonth).padStart(2, '0')}-01`;
 
-  // Calculate 12 months ago
-  const startDate = new Date(selectedDate);
-  startDate.setMonth(startDate.getMonth() - 11); // 11 months back + current month = 12 months total
-
-  const startDateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-01`;
-  const endDate = new Date(year, monthNum, 0); // Last day of selected month
-  const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+  const lastDay = new Date(year, monthNum, 0).getDate();
+  const endDateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
   // Branch mapping helper for SQL
   const branchMapping = `
@@ -46,32 +50,65 @@ export async function GET(request: NextRequest) {
 
     // Get monthly breakdown for each client
     const query = `
-      SELECT
-        ${branchMapping} as branch_name,
-        c.거래처코드 as client_code,
-        c.거래처명 as client_name,
-        e.사원_담당_코드 as employee_code,
-        e.사원_담당_명 as employee_name,
-        CASE
-          WHEN ec.b2c_팀 IS NOT NULL AND ec.b2c_팀 != 'B2B' THEN 'B2C'
-          ELSE 'B2B'
-        END as business_type,
-        strftime('%Y-%m', l.일자) as month,
-        SUM(CAST(REPLACE(l.차변금액, ',', '') AS NUMERIC)) as monthly_sales,
-        SUM(CAST(REPLACE(l.대변금액, ',', '') AS NUMERIC)) as monthly_collections
-      FROM ledger l
-      JOIN clients c ON l.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
-      LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-      WHERE l.계정코드 = '1089'
-        AND l.일자 >= '${startDateStr}'
-        AND l.일자 <= '${endDateStr}'
-        ${branchFilter}
-      GROUP BY c.거래처코드, c.거래처명, e.사원_담당_코드, e.사원_담당_명, ec.b2c_팀, strftime('%Y-%m', l.일자)
-      ORDER BY branch_name, c.거래처명, month
+      SELECT 
+        all_codes.client_code,
+        COALESCE(md.branch_name, b_info.branch_name) as branch_name,
+        COALESCE(md.client_name, b_info.client_name) as client_name,
+        COALESCE(md.employee_code, b_info.manager_code) as employee_code,
+        COALESCE(md.employee_name, b_info.manager_name) as employee_name,
+        COALESCE(md.business_type, b_info.business_type) as business_type,
+        md.month,
+        COALESCE(md.monthly_sales, 0) as monthly_sales,
+        COALESCE(md.monthly_collections, 0) as monthly_collections,
+        COALESCE(b.baseline_amount, 0) as baseline_amount
+      FROM (
+        SELECT client_code FROM ar_baselines
+        UNION
+        SELECT 거래처코드 FROM ledger WHERE 계정코드 = '1089' AND 일자 >= '${startDateStr}' AND 일자 <= '${endDateStr}'
+      ) all_codes
+      LEFT JOIN (
+        SELECT
+          c.거래처코드 as client_code,
+          c.거래처명 as client_name,
+          ${branchMapping} as branch_name,
+          e.사원_담당_코드 as employee_code,
+          e.사원_담당_명 as employee_name,
+          CASE WHEN ec.b2c_팀 IS NOT NULL AND ec.b2c_팀 != 'B2B' THEN 'B2C' ELSE 'B2B' END as business_type,
+          strftime('%Y-%m', l.일자) as month,
+          SUM(CAST(REPLACE(l.차변금액, ',', '') AS NUMERIC)) as monthly_sales,
+          SUM(CAST(REPLACE(l.대변금액, ',', '') AS NUMERIC)) as monthly_collections
+        FROM ledger l
+        JOIN clients c ON l.거래처코드 = c.거래처코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE l.계정코드 = '1089'
+          AND l.일자 >= '${startDateStr}'
+          AND l.일자 <= '${endDateStr}'
+          ${branchFilter}
+        GROUP BY c.거래처코드, strftime('%Y-%m', l.일자)
+      ) md ON all_codes.client_code = md.client_code
+      LEFT JOIN (
+        SELECT client_code, ar_total as baseline_amount
+        FROM ar_baselines
+      ) b ON all_codes.client_code = b.client_code
+      LEFT JOIN (
+        SELECT 
+          c.거래처코드 as client_code,
+          c.거래처명 as client_name,
+          ${branchMapping} as branch_name,
+          e.사원_담당_코드 as manager_code,
+          e.사원_담당_명 as manager_name,
+          CASE WHEN ec.b2c_팀 IS NOT NULL AND ec.b2c_팀 != 'B2B' THEN 'B2C' ELSE 'B2B' END as business_type
+        FROM clients c
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+      ) b_info ON all_codes.client_code = b_info.client_code
+      WHERE 1=1
+      ${branchFilter ? `AND COALESCE(md.branch_name, b_info.branch_name) IN (${selectedBranches.map(b => `'${b}'`).join(',')})` : ''}
+      ORDER BY branch_name, client_name, month
     `;
 
-    console.log('Executing monthly detail query:', query);
+    console.log('Executing monthly detail query with baselines:', query);
 
     const result = await executeSQL(query);
     const rows = result?.rows || [];
@@ -94,6 +131,7 @@ export async function GET(request: NextRequest) {
           employee_code: row.employee_code,
           employee_name: row.employee_name,
           business_type: row.business_type,
+          baseline_amount: Number(row.baseline_amount) || 0,
           total_sales: 0,
           total_collections: 0,
           total_adjustments: 0,
@@ -107,27 +145,35 @@ export async function GET(request: NextRequest) {
       // Add monthly data
       const monthlySales = Number(row.monthly_sales) || 0;
       const monthlyCollections = Number(row.monthly_collections) || 0;
-      const monthlyAdjustments = 0; // User input, set to 0 for now
+      const monthlyAdjustments = 0; // Placeholder
 
       clientEntry.total_sales += monthlySales;
       clientEntry.total_collections += monthlyCollections;
       clientEntry.total_adjustments += monthlyAdjustments;
+
+      // Calculate running balance for this month
+      // Start with baseline if it's the first month in our window (or the month after baseline date)
+      let prevBalance = clientEntry.monthly_breakdown.length > 0 
+        ? clientEntry.monthly_breakdown[clientEntry.monthly_breakdown.length - 1].balance 
+        : clientEntry.baseline_amount;
+
+      const currentBalance = prevBalance + monthlySales - monthlyCollections - monthlyAdjustments;
 
       clientEntry.monthly_breakdown.push({
         month: row.month,
         sales: monthlySales,
         collections: monthlyCollections,
         adjustments: monthlyAdjustments,
-        balance: monthlySales - monthlyCollections - monthlyAdjustments,
-        uncollected: monthlySales - monthlyCollections - monthlyAdjustments,
+        balance: currentBalance,
+        uncollected: Math.max(0, Math.min(monthlySales, currentBalance)),
       });
     });
 
-    // Calculate balances and uncollected for each client
+    // Final client balance calculation
     Object.keys(dataByBranch).forEach(branch => {
       dataByBranch[branch].forEach((client: any) => {
-        client.balance = client.total_sales - client.total_collections - client.total_adjustments;
-        client.uncollected = client.balance; // Same for now
+        client.balance = client.baseline_amount + client.total_sales - client.total_collections - client.total_adjustments;
+        client.uncollected = client.balance;
       });
     });
 

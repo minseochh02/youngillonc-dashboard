@@ -480,7 +480,7 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
       <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
         <p className="font-semibold mb-1">필터 조건:</p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>제품: PVL, CVL (품목그룹1코드)</li>
+          <li>제품: (품목그룹1코드)</li>
           <li>팀별: employee_category.b2c_팀 기준</li>
           <li>기간: {lastYear}년 vs {currentYear}년</li>
         </ul>

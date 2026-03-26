@@ -18,6 +18,21 @@ export async function GET(request: Request) {
     // Base table for sales
     const baseSalesTable = 'sales';
 
+    const branchMapping = `
+      CASE
+        WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
+        WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
+        WHEN c.거래처그룹1명 LIKE '%화성%' THEN '화성'
+        WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
+        WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
+        WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
+        WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
+        WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
+        WHEN c.거래처그룹1명 LIKE '%부산%' THEN '부산'
+        ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
+      END
+    `;
+
     // 1. Sales by item × division
     const salesByItem = await executeSQL(`
       SELECT
@@ -28,18 +43,7 @@ export async function GET(request: Request) {
         SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC)) as sold_amount
       FROM (
         SELECT s.*,
-          CASE
-            WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-            WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-            WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
-            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-            WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
-            ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
-          END as division
+          ${branchMapping} as division
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -99,23 +103,12 @@ export async function GET(request: Request) {
 
     const divisions = await executeSQL(`
       SELECT DISTINCT
-        CASE
-          WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-          WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-          WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
-          WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-          WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-          WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-          WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-          WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-          WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
-          ELSE REPLACE(REPLACE(ec.전체사업소, '사업소', ''), '지사', '')
-        END as division
+        ${branchMapping} as division
       FROM ${baseSalesTable} s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-      WHERE ec.전체사업소 IS NOT NULL
+      WHERE c.거래처그룹1명 IS NOT NULL
         AND e.사원_담당_명 != '김도량'
       ORDER BY 1
     `);

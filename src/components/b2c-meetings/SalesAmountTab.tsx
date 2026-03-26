@@ -71,8 +71,7 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
   };
 
   const formatAmount = (num: number) => {
-    // Convert to millions (백만원)
-    return (num / 1000000).toFixed(1);
+    return num.toLocaleString();
   };
 
   const calculateChange = (current: number, previous: number) => {
@@ -144,7 +143,7 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
 
     // Add B2C vs B2B comparison
     exportData.push({
-      '구분': 'B2C vs B2B 매출 비교 (단위: 백만원)',
+      '구분': 'B2C vs B2B 매출 비교',
     });
 
     const b2cCurrent = getComparisonData('B2C', currentYear);
@@ -153,8 +152,8 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
 
     exportData.push({
       '구분': 'B2C (AUTO 채널)',
-      [`${currentYear}년 매출액(백만원)`]: formatAmount(b2cCurrent.total_amount),
-      [`${lastYear}년 매출액(백만원)`]: formatAmount(b2cLast.total_amount),
+      [`${currentYear}년 매출액(원)`]: formatAmount(b2cCurrent.total_amount),
+      [`${lastYear}년 매출액(원)`]: formatAmount(b2cLast.total_amount),
       '변화율(%)': b2cChange.percent.toFixed(1),
       [`${currentYear}년 중량(L)`]: b2cCurrent.total_weight,
       [`${lastYear}년 중량(L)`]: b2cLast.total_weight,
@@ -166,8 +165,8 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
 
     exportData.push({
       '구분': 'B2B (비AUTO)',
-      [`${currentYear}년 매출액(백만원)`]: formatAmount(b2bCurrent.total_amount),
-      [`${lastYear}년 매출액(백만원)`]: formatAmount(b2bLast.total_amount),
+      [`${currentYear}년 매출액(원)`]: formatAmount(b2bCurrent.total_amount),
+      [`${lastYear}년 매출액(원)`]: formatAmount(b2bLast.total_amount),
       '변화율(%)': b2bChange.percent.toFixed(1),
       [`${currentYear}년 중량(L)`]: b2bCurrent.total_weight,
       [`${lastYear}년 중량(L)`]: b2bLast.total_weight,
@@ -177,7 +176,7 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
 
     // Add B2C team breakdown
     exportData.push({
-      '팀': 'B2C 팀별 매출액 (단위: 백만원)',
+      '팀': 'B2C 팀별 매출액',
     });
 
     teams.forEach((team) => {
@@ -187,8 +186,8 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
 
       exportData.push({
         '팀': team,
-        [`${currentYear}년 매출액(백만원)`]: formatAmount(currentData.total_amount),
-        [`${lastYear}년 매출액(백만원)`]: formatAmount(lastData.total_amount),
+        [`${currentYear}년 매출액(원)`]: formatAmount(currentData.total_amount),
+        [`${lastYear}년 매출액(원)`]: formatAmount(lastData.total_amount),
         '변화율(%)': amountChange.percent.toFixed(1),
         [`${currentYear}년 중량(L)`]: currentData.total_weight,
         [`${lastYear}년 중량(L)`]: lastData.total_weight,
@@ -199,7 +198,7 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
 
     // Add header
     exportData.push({
-      '채널': 'AUTO 채널별 매출액 (단위: 백만원)',
+      '채널': 'AUTO 채널별 매출액',
     });
 
     // Add channel rows
@@ -210,8 +209,8 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
 
       exportData.push({
         '채널': channel,
-        [`${currentYear}년 매출액(백만원)`]: formatAmount(currentData.total_amount),
-        [`${lastYear}년 매출액(백만원)`]: formatAmount(lastData.total_amount),
+        [`${currentYear}년 매출액(원)`]: formatAmount(currentData.total_amount),
+        [`${lastYear}년 매출액(원)`]: formatAmount(lastData.total_amount),
         '변화율(%)': amountChange.percent.toFixed(1),
         [`${currentYear}년 중량(L)`]: currentData.total_weight,
         [`${lastYear}년 중량(L)`]: lastData.total_weight,
@@ -226,8 +225,8 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
     exportData.push({});
     exportData.push({
       '채널': '전체 합계',
-      [`${currentYear}년 매출액(백만원)`]: formatAmount(totalCurrent.total_amount),
-      [`${lastYear}년 매출액(백만원)`]: formatAmount(totalLast.total_amount),
+      [`${currentYear}년 매출액(원)`]: formatAmount(totalCurrent.total_amount),
+      [`${lastYear}년 매출액(원)`]: formatAmount(totalLast.total_amount),
       '변화율(%)': totalChange.percent.toFixed(1),
       [`${currentYear}년 중량(L)`]: totalCurrent.total_weight,
       [`${lastYear}년 중량(L)`]: totalLast.total_weight,
@@ -248,7 +247,6 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
           <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">B2C vs B2B 매출 비교</h4>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">단위: 백만원</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -341,7 +339,6 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
           <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">B2C 팀별 매출액</h4>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">단위: 백만원</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -401,7 +398,6 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
           <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">AUTO 채널별 매출액</h4>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">단위: 백만원</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -496,7 +492,7 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
       <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
         <p className="font-semibold mb-1">필터 조건:</p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>제품: PVL, CVL (품목그룹1코드)</li>
+          <li>제품: (품목그룹1코드)</li>
           <li>거래처: AUTO 채널 (company_type_auto 테이블의 모든 업종분류코드)</li>
           <li>B2C 팀: employee_category.b2c_팀 != 'B2B' (김도량 제외)</li>
           <li>채널 구분:
@@ -504,7 +500,7 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
               <li>Mobil 1 CCO: 28110</li>
               <li>Mobil Brand Shop: 28120</li>
               <li>IWS: 28230-28330</li>
-              <li>Fleet: 28600-28710</li>
+              <li>Fleet: 28600, 28610, 28710</li>
               <li>Reseller: 28500-28510</li>
             </ul>
           </li>

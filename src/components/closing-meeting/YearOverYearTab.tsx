@@ -27,18 +27,23 @@ interface YearOverYearData {
   };
 }
 
-export default function YearOverYearTab() {
+interface YearOverYearProps {
+  selectedMonth?: string;
+}
+
+export default function YearOverYearTab({ selectedMonth }: YearOverYearProps) {
   const [data, setData] = useState<YearOverYearData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/closing-meeting?tab=yoy-comparison`);
+      const url = `/api/dashboard/closing-meeting?tab=yoy-comparison${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
         setData(result.data);
@@ -50,7 +55,8 @@ export default function YearOverYearTab() {
     }
   };
 
-  const formatNumber = (num: number) => {
+  const formatNumber = (num: number | null | undefined) => {
+    if (num === null || num === undefined) return "0";
     return num.toLocaleString();
   };
 
@@ -65,7 +71,7 @@ export default function YearOverYearTab() {
       [`${data.currentYear}년(L)`]: branch.current_year_weight,
       [`${data.lastYear}년(L)`]: branch.last_year_weight,
       '증감량(L)': branch.growth_amount,
-      '증감률(%)': branch.growth_rate.toFixed(1),
+      '증감률(%)': (branch.growth_rate ?? 0).toFixed(1),
     }));
 
     exportData.push({
@@ -73,7 +79,7 @@ export default function YearOverYearTab() {
       [`${data.currentYear}년(L)`]: data.total.current_year_weight,
       [`${data.lastYear}년(L)`]: data.total.last_year_weight,
       '증감량(L)': data.total.growth_amount,
-      '증감률(%)': data.total.growth_rate.toFixed(1),
+      '증감률(%)': (data.total.growth_rate ?? 0).toFixed(1),
     });
 
     const filename = generateFilename('마감회의_전년대비');
@@ -153,11 +159,11 @@ export default function YearOverYearTab() {
                   <TrendingDown className="w-8 h-8 text-red-600 dark:text-red-400" />
                 )}
                 <p className={`text-3xl font-bold ${
-                  data.total.growth_rate >= 0
+                  (data.total.growth_rate ?? 0) >= 0
                     ? 'text-green-600 dark:text-green-400'
                     : 'text-red-600 dark:text-red-400'
                 }`}>
-                  {data.total.growth_rate >= 0 ? '+' : ''}{data.total.growth_rate.toFixed(1)}%
+                  {(data.total.growth_rate ?? 0) >= 0 ? '+' : ''}{(data.total.growth_rate ?? 0).toFixed(1)}%
                 </p>
               </div>
             </div>
@@ -204,25 +210,25 @@ export default function YearOverYearTab() {
                   </td>
                   <td className="py-3 px-4 text-right">
                     <span className={`inline-flex items-center gap-1 font-bold ${
-                      branch.growth_rate >= 0 ? 'text-green-600' : 'text-red-600'
+                      (branch.growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                     }`}>
-                      {branch.growth_rate >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      {branch.growth_rate >= 0 ? '+' : ''}{branch.growth_rate.toFixed(1)}%
+                      {(branch.growth_rate ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                      {(branch.growth_rate ?? 0) >= 0 ? '+' : ''}{(branch.growth_rate ?? 0).toFixed(1)}%
                     </span>
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex justify-center">
-                      {branch.growth_rate >= 10 ? (
+                      {(branch.growth_rate ?? 0) >= 10 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-medium">
                           <TrendingUp className="w-3 h-3" />
                           큰 증가
                         </span>
-                      ) : branch.growth_rate >= 0 ? (
+                      ) : (branch.growth_rate ?? 0) >= 0 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium">
                           <TrendingUp className="w-3 h-3" />
                           증가
                         </span>
-                      ) : branch.growth_rate >= -10 ? (
+                      ) : (branch.growth_rate ?? 0) >= -10 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 text-xs font-medium">
                           <TrendingDown className="w-3 h-3" />
                           감소
@@ -253,10 +259,10 @@ export default function YearOverYearTab() {
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className={`inline-flex items-center gap-1 font-bold ${
-                    data.total.growth_rate >= 0 ? 'text-green-600' : 'text-red-600'
+                    (data.total.growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}>
-                    {data.total.growth_rate >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {data.total.growth_rate >= 0 ? '+' : ''}{data.total.growth_rate.toFixed(1)}%
+                    {(data.total.growth_rate ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                    {(data.total.growth_rate ?? 0) >= 0 ? '+' : ''}{(data.total.growth_rate ?? 0).toFixed(1)}%
                   </span>
                 </td>
                 <td className="py-3 px-4"></td>

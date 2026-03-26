@@ -117,8 +117,8 @@ export default function CustomerReasonTab({ selectedMonth }: CustomerReasonTabPr
     );
   });
 
-  // Sort by change (largest decrease first, then largest increase)
-  const sortedData = [...filteredData].sort((a, b) => a.change_weight - b.change_weight);
+  // Sort by absolute change magnitude (largest impact first)
+  const sortedData = [...filteredData].sort((a, b) => Math.abs(b.change_weight) - Math.abs(a.change_weight));
 
   const handleExcelDownload = () => {
     if (!data) {
@@ -294,7 +294,7 @@ export default function CustomerReasonTab({ selectedMonth }: CustomerReasonTabPr
       <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
         <p className="font-semibold mb-1">필터 조건:</p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>제품: PVL, CVL (품목그룹1코드)</li>
+          <li>제품: (품목그룹1코드)</li>
           <li>거래처: AUTO 채널 (company_type_auto)</li>
           <li>중량 단위: 리터(L)</li>
           <li>기간: {lastYear}년 vs {currentYear}년</li>

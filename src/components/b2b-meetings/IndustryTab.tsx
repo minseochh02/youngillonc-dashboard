@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { Calendar, Loader2, Building, DollarSign, TrendingUp, Users, Package } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -9,7 +9,8 @@ import { exportToExcel } from '@/lib/excel-export';
 interface IndustryData {
   모빌분류: string;
   산업분류: string;
-  업종분류코드: string;
+  영일분류: string;
+  team_name: string;
   client_count: number;
   transaction_count: number;
   total_quantity: number;
@@ -61,7 +62,8 @@ export default function IndustryTab() {
     const exportData = data.map(item => ({
       '모빌분류': item.모빌분류 || '-',
       '산업분류': item.산업분류 || '-',
-      '업종분류코드': item.업종분류코드 || '-',
+      '영일분류': item.영일분류 || '-',
+      '팀': item.team_name || '-',
       '거래처 수': item.client_count,
       '거래 건수': item.transaction_count,
       '총 수량': item.total_quantity,
@@ -73,6 +75,89 @@ export default function IndustryTab() {
     const filename = `B2B_산업별_${startDate}_${endDate}.xlsx`;
     exportToExcel(exportData, filename);
   };
+
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const toggleRow = (id: string) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id);
+    } else {
+      newExpanded.add(id);
+    }
+    setExpandedRows(newExpanded);
+  };
+
+  const groupedData = data.reduce((acc, row) => {
+    const key = `${row.모빌분류}-${row.산업분류}-${row.영일분류}`;
+    if (!acc[key]) {
+      acc[key] = {
+        모빌분류: row.모빌분류,
+        산업분류: row.산업분류,
+        영일분류: row.영일분류,
+        teams: [],
+        totals: {
+          clients: 0,
+          transactions: 0,
+          quantity: 0,
+          weight: 0,
+          supplyAmount: 0,
+          totalAmount: 0,
+        }
+      };
+    }
+    acc[key].teams.push(row);
+    acc[key].totals.clients += Number(row.client_count) || 0;
+    acc[key].totals.transactions += Number(row.transaction_count) || 0;
+    acc[key].totals.quantity += Number(row.total_quantity) || 0;
+    acc[key].totals.weight += Number(row.total_weight) || 0;
+    acc[key].totals.supplyAmount += Number(row.total_supply_amount) || 0;
+    acc[key].totals.totalAmount += Number(row.total_amount) || 0;
+    return acc;
+  }, {} as Record<string, {
+    모빌분류: string;
+    산업분류: string;
+    영일분류: string;
+    teams: IndustryData[];
+    totals: any;
+  }>);
+
+  const sortedGroupedKeys = Object.keys(groupedData).sort((a, b) => 
+    groupedData[b].totals.totalAmount - groupedData[a].totals.totalAmount
+  );
+
+  // Group composite keys by 모빌분류
+  const mobilGroupedData = Object.keys(groupedData).reduce((acc, key) => {
+    const mobil = groupedData[key].모빌분류 || '미분류';
+    if (!acc[mobil]) {
+      acc[mobil] = [];
+    }
+    acc[mobil].push(key);
+    return acc;
+  }, {} as Record<string, string[]>);
+
+  // Calculate Mobil Category totals for sorting and header
+  const getMobilCategoryTotals = (mobil: string) => {
+    return (mobilGroupedData[mobil] || []).reduce((acc, key) => {
+      const g = groupedData[key];
+      return {
+        clients: acc.clients + g.totals.clients,
+        transactions: acc.transactions + g.totals.transactions,
+        quantity: acc.quantity + g.totals.quantity,
+        weight: acc.weight + g.totals.weight,
+        supplyAmount: acc.supplyAmount + g.totals.supplyAmount,
+        totalAmount: acc.totalAmount + g.totals.totalAmount,
+      };
+    }, { clients: 0, transactions: 0, quantity: 0, weight: 0, supplyAmount: 0, totalAmount: 0 });
+  };
+
+  // Sort Mobil Categories by total amount
+  const sortedMobilGroups = Object.keys(mobilGroupedData).sort((a, b) => 
+    getMobilCategoryTotals(b).totalAmount - getMobilCategoryTotals(a).totalAmount
+  );
+
+  const formatCurrency = (num: number) => `₩${Math.round(num).toLocaleString()}`;
+  const formatNumber = (num: number) => Math.round(num).toLocaleString();
 
   const totals = data.reduce((acc, row) => ({
     clients: acc.clients + (Number(row.client_count) || 0),
@@ -122,7 +207,7 @@ export default function IndustryTab() {
             <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">산업 분류 수</p>
           </div>
           <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
-            {data.length}
+            {Object.keys(groupedData).length}
           </p>
         </div>
 
@@ -181,7 +266,7 @@ export default function IndustryTab() {
                     산업분류
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
-                    업종분류코드
+                    영일분류
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
                     거래처 수
@@ -201,34 +286,103 @@ export default function IndustryTab() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {data.map((row, index) => (
-                  <tr key={index} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                    <td className="px-4 py-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                      {row.모빌분류 || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-zinc-700 dark:text-zinc-300">
-                      {row.산업분류 || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-zinc-700 dark:text-zinc-300">
-                      {row.업종분류코드 || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right font-medium text-zinc-900 dark:text-zinc-100">
-                      {Number(row.client_count).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300">
-                      {Number(row.transaction_count).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right font-semibold text-orange-600 dark:text-orange-400">
-                      {Number(row.total_weight).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300">
-                      ₩{Number(row.total_supply_amount).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right font-bold text-purple-600 dark:text-purple-400">
-                      ₩{Number(row.total_amount).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
+                {sortedMobilGroups.map((mobil) => {
+                  const mobilTotals = getMobilCategoryTotals(mobil);
+                  const keysInGroup = mobilGroupedData[mobil].sort((a, b) => 
+                    groupedData[b].totals.totalAmount - groupedData[a].totals.totalAmount
+                  );
+
+                  return (
+                    <Fragment key={mobil}>
+                      {/* Mobil Category Header */}
+                      <tr className="bg-zinc-100/60 dark:bg-zinc-800/80 font-bold border-y border-zinc-200 dark:border-zinc-700">
+                        <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-blue-700 dark:text-blue-400">
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                            {mobil}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-xs text-zinc-900 dark:text-zinc-100 font-mono">
+                          {formatNumber(mobilTotals.clients)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-xs text-zinc-900 dark:text-zinc-100 font-mono">
+                          {formatNumber(mobilTotals.transactions)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-xs text-orange-600 dark:text-orange-400 font-mono">
+                          {formatNumber(mobilTotals.weight)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-xs text-zinc-900 dark:text-zinc-100 font-mono font-medium">
+                          {formatCurrency(mobilTotals.supplyAmount)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-xs text-purple-700 dark:text-purple-300 font-bold font-mono">
+                          {formatCurrency(mobilTotals.totalAmount)}
+                        </td>
+                      </tr>
+
+                      {/* Detail Rows within this Mobil Category */}
+                      {keysInGroup.map((key) => {
+                        const group = groupedData[key];
+                        const isExpanded = expandedRows.has(key);
+                        
+                        return (
+                          <Fragment key={key}>
+                            <tr 
+                              className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer border-b border-zinc-100 dark:border-zinc-800/50"
+                              onClick={() => toggleRow(key)}
+                            >
+                              <td className="px-4 py-2.5 text-[11px] text-zinc-400 dark:text-zinc-500 font-medium italic pl-8">
+                                └ 상세
+                              </td>
+                              <td className="px-4 py-2.5 text-sm text-zinc-700 dark:text-zinc-300">
+                                {group.산업분류 || '-'}
+                              </td>
+                              <td className="px-4 py-2.5 text-sm text-zinc-700 dark:text-zinc-300">
+                                {group.영일분류 || '-'}
+                              </td>
+                              <td className="px-4 py-2.5 text-sm text-right font-medium text-zinc-800 dark:text-zinc-200 font-mono">
+                                {formatNumber(group.totals.clients)}
+                              </td>
+                              <td className="px-4 py-2.5 text-sm text-right text-zinc-600 dark:text-zinc-400 font-mono">
+                                {formatNumber(group.totals.transactions)}
+                              </td>
+                              <td className="px-4 py-2.5 text-sm text-right font-semibold text-orange-500/80 dark:text-orange-400/80 font-mono">
+                                {formatNumber(group.totals.weight)}
+                              </td>
+                              <td className="px-4 py-2.5 text-sm text-right text-zinc-600 dark:text-zinc-400 font-mono">
+                                {formatCurrency(group.totals.supplyAmount)}
+                              </td>
+                              <td className="px-4 py-2.5 text-sm text-right font-bold text-purple-600/80 dark:text-purple-400/80 font-mono">
+                                {formatCurrency(group.totals.totalAmount)}
+                              </td>
+                            </tr>
+                            {isExpanded && group.teams.map((team, idx) => (
+                              <tr key={`${key}-team-${idx}`} className="bg-zinc-50/30 dark:bg-zinc-900/40">
+                                <td colSpan={3} className="px-4 py-1.5 pl-14 text-xs text-zinc-500 dark:text-zinc-400 font-medium italic">
+                                  └ {team.team_name}
+                                </td>
+                                <td className="px-4 py-1.5 text-xs text-right text-zinc-500 font-mono">
+                                  {Number(team.client_count).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-1.5 text-xs text-right text-zinc-500 font-mono">
+                                  {Number(team.transaction_count).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-1.5 text-xs text-right text-orange-400/70 font-mono">
+                                  {Number(team.total_weight).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-1.5 text-xs text-right text-zinc-500 font-mono">
+                                  ₩{Number(team.total_supply_amount).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-1.5 text-xs text-right text-purple-400/70 font-medium font-mono">
+                                  ₩{Number(team.total_amount).toLocaleString()}
+                                </td>
+                              </tr>
+                            ))}
+                          </Fragment>
+                        );
+                      })}
+                    </Fragment>
+                  );
+                })}
                 {/* Totals Row */}
                 <tr className="bg-zinc-100 dark:bg-zinc-800 font-bold">
                   <td colSpan={3} className="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">

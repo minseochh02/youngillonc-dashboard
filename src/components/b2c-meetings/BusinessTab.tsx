@@ -218,7 +218,7 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
           <div className="flex items-center gap-2 mb-4">
             <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-              {currentYear}년 (PVL + CVL, AUTO)
+              {currentYear}년 (AUTO)
             </h3>
           </div>
           <div className="space-y-3">
@@ -363,7 +363,7 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
       <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
         <p className="font-semibold mb-1">필터 조건:</p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>제품: PVL, CVL (품목그룹1코드)</li>
+          <li>제품: (품목그룹1코드)</li>
           <li>거래처: AUTO 업종분류기준 코드</li>
           <li>기간: {lastYear}년 vs {currentYear}년</li>
         </ul>

@@ -15,7 +15,7 @@ const tabs = [
   { id: 'industry', label: '산업별' },
   { id: 'team', label: '팀별' },
   { id: 'product-group', label: '제품군' },
-  { id: 'client', label: '거래처별' },
+  { id: 'client', label: '품목별' },
   { id: 'fps', label: 'FPS' },
   { id: 'region', label: '지역' },
   { id: 'new-client', label: '신규거래처' },

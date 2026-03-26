@@ -30,21 +30,25 @@ export async function GET(request: NextRequest) {
     const cutoffDateStr = cutoffDate.toISOString().slice(0, 10);
     const selectedMonthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0).toISOString().slice(0, 10);
 
+    const branchMapping = `
+      CASE
+        WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
+        WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
+        WHEN c.거래처그룹1명 LIKE '%화성%' THEN '화성'
+        WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
+        WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
+        WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
+        WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
+        WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
+        WHEN c.거래처그룹1명 LIKE '%부산%' THEN '부산'
+        ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
+      END
+    `;
+
     let branchFilter = '';
     if (selectedBranches.length > 0) {
       const branchPlaceholders = selectedBranches.map(() => '?').join(',');
-      branchFilter = `AND CASE
-        WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-        WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-        WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
-        WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-        WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-        WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-        WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-        WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-        WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
-        ELSE ec.전체사업소
-      END IN (${branchPlaceholders})`;
+      branchFilter = `AND ${branchMapping} IN (${branchPlaceholders})`;
     }
 
     let query = '';
@@ -66,18 +70,7 @@ export async function GET(request: NextRequest) {
             c.거래처명,
             e.사원_담당_명 as employee_name,
             e.사원_담당_코드 as employee_code,
-            CASE
-              WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-              WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-              WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
-              WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-              WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-              WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-              WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-              WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-              WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
-              ELSE ec.전체사업소
-            END as branch_name,
+            ${branchMapping} as branch_name,
             MAX(s.일자) as last_transaction_date,
             SUM(CAST(REPLACE(REPLACE(s.합계, ',', ''), '-', '') AS REAL)) as total_sales_amount,
             COUNT(DISTINCT s.일자) as transaction_count
@@ -91,7 +84,7 @@ export async function GET(request: NextRequest) {
           WHERE c.거래처코드 IS NOT NULL
             AND e.사원_담당_명 != '김도량'
             ${branchFilter}
-          GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드, ec.전체사업소
+          GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드
           HAVING last_transaction_date IS NULL OR last_transaction_date < ?
         ) AS last_transactions
         WHERE branch_name IS NOT NULL
@@ -114,18 +107,7 @@ export async function GET(request: NextRequest) {
             c.거래처명,
             e.사원_담당_명 as employee_name,
             e.사원_담당_코드 as employee_code,
-            CASE
-              WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-              WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-              WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
-              WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-              WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-              WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-              WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-              WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-              WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
-              ELSE ec.전체사업소
-            END as branch_name,
+            ${branchMapping} as branch_name,
             MAX(s.일자) as last_transaction_date,
             SUM(CAST(REPLACE(REPLACE(s.합계, ',', ''), '-', '') AS REAL)) as total_sales_amount
           FROM clients c
@@ -138,7 +120,7 @@ export async function GET(request: NextRequest) {
           WHERE c.거래처코드 IS NOT NULL
             AND e.사원_담당_명 != '김도량'
             ${branchFilter}
-          GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드, ec.전체사업소
+          GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드
           HAVING last_transaction_date IS NULL OR last_transaction_date < ?
         ) AS last_transactions
         WHERE branch_name IS NOT NULL AND employee_name IS NOT NULL
@@ -151,18 +133,7 @@ export async function GET(request: NextRequest) {
           c.거래처명 as client_name,
           e.사원_담당_명 as employee_name,
           e.사원_담당_코드 as employee_code,
-          CASE
-            WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-            WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-            WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
-            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-            WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
-            ELSE ec.전체사업소
-          END as branch_name,
+          ${branchMapping} as branch_name,
           MAX(s.일자) as last_transaction_date,
           CAST(JULIANDAY(?) - JULIANDAY(MAX(s.일자)) AS INTEGER) as days_inactive,
           SUM(CAST(REPLACE(REPLACE(s.합계, ',', ''), '-', '') AS REAL)) as last_period_sales,
@@ -177,7 +148,7 @@ export async function GET(request: NextRequest) {
         WHERE c.거래처코드 IS NOT NULL
           AND e.사원_담당_명 != '김도량'
           ${branchFilter}
-        GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드, ec.전체사업소
+        GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드
         HAVING last_transaction_date IS NULL OR last_transaction_date < ?
         ORDER BY days_inactive DESC`;
       params = [selectedMonthEnd, selectedMonthEnd, ...selectedBranches, cutoffDateStr];

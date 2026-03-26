@@ -5,6 +5,7 @@ import { Calendar, Building, DollarSign, TrendingUp, TrendingDown, Loader2, Aler
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
+import DataLogicInfo from '@/components/DataLogicInfo';
 
 interface ReceivableData {
   branch_name: string;
@@ -532,6 +533,20 @@ export default function LongTermReceivablesPage() {
         </div>
       </div>
 
+      <DataLogicInfo 
+        title="장기미수금"
+        description="채권 잔액 분석표(Excel)의 기초 잔액과 시스템 내의 실시간 전표 데이터를 결합하여 산출합니다."
+        steps={[
+          "기초 잔액 반영: 2026년 2월 1일 기준 채권잔액분석표(EBZ007R.xlsx)의 이월 금액을 시작점으로 설정합니다.",
+          "매출 및 수금 합산: 2월 1일 이후 발생한 매출(차변)과 수금(대변) 전표를 실시간으로 반영합니다.",
+          "FIFO(선입선출) 로직: 발생한 수금액은 가장 오래된 기초 잔액부터 우선적으로 차감하여 변제 처리합니다.",
+          "잔액(Balance) 계산: '기초 잔액 + 기간 내 매출 총액 - 기간 내 수금 총액'으로 최종 미수금을 산출합니다.",
+          "미회수액 계산: 해당 월의 매출액 중 잔액으로 남아있는 금액을 산출합니다. (로직: Min(당월 매출, 현재 잔액))",
+          "장기미수 분류: 설정된 기준(3개월/5개월)에 따라 변제되지 않은 과거 매출분을 적색으로 표시합니다."
+        ]}
+        footnote="※ 본 화면의 '잔액'은 해당 월 말일 시점의 총 채권을 의미하며, '미회수액'은 당월 매출분 중 미결제액을 의미합니다."
+      />
+
       {/* Filters */}
       {showFilters && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -850,6 +865,7 @@ export default function LongTermReceivablesPage() {
               {monthlyDetailData[activeTab]?.map((client: any) => {
                 const isExpanded = expandedClients.has(client.client_code);
                 const hasMonthlyData = client.monthly_breakdown && client.monthly_breakdown.length > 0;
+                const currentMonthData = client.monthly_breakdown.find((m: any) => m.month === selectedMonth);
 
                 return (
                   <div key={client.client_code} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
@@ -891,44 +907,44 @@ export default function LongTermReceivablesPage() {
                         </div>
                       </div>
 
-                      {/* Cumulative Summary */}
+                      {/* Monthly Summary */}
                       <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                         <div>
-                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">누적 매출</div>
+                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">매출</div>
                           <div className="font-semibold text-blue-600 dark:text-blue-400">
-                            ₩{client.total_sales?.toLocaleString() || '0'}
+                            ₩{currentMonthData?.sales?.toLocaleString() || '0'}
                           </div>
                         </div>
                         <div>
-                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">누적 수금</div>
+                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">수금</div>
                           <div className="font-semibold text-green-600 dark:text-green-400">
-                            ₩{client.total_collections?.toLocaleString() || '0'}
+                            ₩{currentMonthData?.collections?.toLocaleString() || '0'}
                           </div>
                         </div>
                         <div>
-                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">차액</div>
+                          <div className="text-zinc-500 dark:text-zinc-400 text-xs">기타할인등차액</div>
                           <div className="font-semibold">
-                            ₩{client.total_adjustments?.toLocaleString() || '0'}
+                            ₩{currentMonthData?.adjustments?.toLocaleString() || '0'}
                           </div>
                         </div>
                         <div>
                           <div className="text-zinc-500 dark:text-zinc-400 text-xs">잔액</div>
                           <div className={`font-bold ${
-                            (client.balance || 0) > 0
+                            (currentMonthData?.balance || 0) > 0
                               ? 'text-red-600 dark:text-red-400'
                               : 'text-zinc-600 dark:text-zinc-400'
                           }`}>
-                            ₩{client.balance?.toLocaleString() || '0'}
+                            ₩{currentMonthData?.balance?.toLocaleString() || '0'}
                           </div>
                         </div>
                         <div>
                           <div className="text-zinc-500 dark:text-zinc-400 text-xs">미회수액</div>
                           <div className={`font-bold ${
-                            (client.uncollected || 0) > 0
+                            (currentMonthData?.uncollected || 0) > 0
                               ? 'text-red-600 dark:text-red-400'
                               : 'text-zinc-600 dark:text-zinc-400'
                           }`}>
-                            ₩{client.uncollected?.toLocaleString() || '0'}
+                            ₩{currentMonthData?.uncollected?.toLocaleString() || '0'}
                           </div>
                         </div>
                       </div>
@@ -975,7 +991,7 @@ export default function LongTermReceivablesPage() {
                                 <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300">월</th>
                                 <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">매출</th>
                                 <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">수금</th>
-                                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">차액</th>
+                                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">기타할인등차액</th>
                                 <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">잔액</th>
                                 <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">미회수액</th>
                               </tr>

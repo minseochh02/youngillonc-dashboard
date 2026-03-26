@@ -184,7 +184,7 @@ export default function TeamVolumeTab({ selectedMonth }: TeamVolumeTabProps) {
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
           <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-            {currentYear}년 팀별 담당자별 물량 (PVL/CVL)
+            {currentYear}년 팀별 담당자별 물량 (AUTO)
           </h4>
         </div>
         <div className="overflow-x-auto">
@@ -287,7 +287,7 @@ export default function TeamVolumeTab({ selectedMonth }: TeamVolumeTabProps) {
       <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
         <p className="font-semibold mb-1">필터 조건:</p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>제품: PVL, CVL (품목그룹1코드)</li>
+          <li>제품: (품목그룹1코드)</li>
           <li>팀별: employee_category.b2c_팀 기준</li>
           <li>기간: {currentYear}년 (월별)</li>
           <li>단위: L (용량)</li>

@@ -21,6 +21,7 @@ interface EmployeeDataRow {
   team: string;
   channel: string; // 'Fleet' or 'LCC'
   year: string;
+  year_month: string;
   total_weight: number;
   total_amount: number;
   total_quantity: number;
@@ -31,6 +32,7 @@ interface ManagerSalesData {
   employeeData: EmployeeDataRow[];
   currentYear: string;
   lastYear: string;
+  currentMonth: string;
 }
 
 interface ManagerSalesTabProps {
@@ -96,15 +98,35 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
     return (
       <div className="text-center text-zinc-500 dark:text-zinc-400 p-8">
         <p>담당자 매출 데이터가 없습니다</p>
-        <p className="text-sm mt-2">필터 조건을 확인하세요: B2C 팀, PVL/CVL 제품, AUTO 채널 고객</p>
+        <p className="text-sm mt-2">필터 조건을 확인하세요: B2C 팀, AUTO 채널 고객</p>
       </div>
     );
   }
 
-  const { currentYear, lastYear, summaryData, employeeData } = data;
+  const { currentYear, lastYear, summaryData, employeeData, currentMonth } = data;
+  const targetMonth = selectedMonth || currentMonth;
+  const lastYearMonth = targetMonth.replace(currentYear, lastYear);
 
   // Aggregate summary by category and year
   const summaryByCategory = (category: string, year: string) => {
+    // Filter summary by specific month if targetMonth is available
+    const monthToFilter = year === currentYear ? targetMonth : lastYearMonth;
+    
+    // In current API, employeeData definitely has year_month and channel. 
+    // Let's use employeeData for accurate filtering.
+    const filteredEmployeeData = employeeData.filter(row => 
+      row.channel === category && row.year_month === monthToFilter
+    );
+
+    if (filteredEmployeeData.length > 0) {
+      return filteredEmployeeData.reduce((acc, row) => ({
+        total_weight: acc.total_weight + row.total_weight,
+        total_amount: acc.total_amount + row.total_amount,
+        total_quantity: acc.total_quantity + row.total_quantity,
+      }), { total_weight: 0, total_amount: 0, total_quantity: 0 });
+    }
+
+    // Fallback to summaryData if year_month filtering not possible there
     const categoryData = summaryData.find(row => row.category === category && row.year === year);
     return categoryData || { total_weight: 0, total_amount: 0, total_quantity: 0 };
   };
@@ -124,10 +146,12 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
 
   const employeeChannelMap: Record<string, EmployeeChannelData> = {};
 
-  console.log('Processing employee data, count:', employeeData.length);
-  console.log('Sample employee data:', employeeData.slice(0, 3));
+  console.log('Target Month:', targetMonth, 'Last Year Month:', lastYearMonth);
 
   employeeData.forEach((row) => {
+    // ONLY include data for the selected month or its last year counterpart
+    if (row.year_month !== targetMonth && row.year_month !== lastYearMonth) return;
+
     const key = row.employee_name;
     if (!employeeChannelMap[key]) {
       employeeChannelMap[key] = {
@@ -144,15 +168,15 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
     }
 
     if (row.channel === 'Fleet') {
-      if (row.year === currentYear) {
+      if (row.year_month === targetMonth) {
         employeeChannelMap[key].fleet_current += row.total_weight;
-      } else if (row.year === lastYear) {
+      } else if (row.year_month === lastYearMonth) {
         employeeChannelMap[key].fleet_last += row.total_weight;
       }
     } else if (row.channel === 'LCC') {
-      if (row.year === currentYear) {
+      if (row.year_month === targetMonth) {
         employeeChannelMap[key].lcc_current += row.total_weight;
-      } else if (row.year === lastYear) {
+      } else if (row.year_month === lastYearMonth) {
         employeeChannelMap[key].lcc_last += row.total_weight;
       }
     }
@@ -424,8 +448,8 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
       <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
         <p className="font-semibold mb-1">필터 조건:</p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>제품: PVL, CVL (품목그룹1코드)</li>
-          <li>거래처 채널: Fleet (업종분류코드 28600-28710), LCC (기타 AUTO 채널)</li>
+          <li>제품: (품목그룹1코드)</li>
+          <li>거래처 채널: Fleet (업종분류코드 28600, 28610, 28710), LCC (기타 AUTO 채널)</li>
           <li>직원: B2C 팀 (김도량 제외)</li>
           <li>기간: {lastYear}년 vs {currentYear}년</li>
         </ul>
