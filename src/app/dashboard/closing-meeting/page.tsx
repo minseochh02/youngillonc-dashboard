@@ -210,7 +210,7 @@ export default function ClosingMeetingPage() {
             마감회의 자료
           </h2>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-            월간 마감회의 관련 자료 및 실적 데이터 (구매 - 판매 = 재고)
+            월간 마감회의 관련 자료 및 실적 데이터
           </p>
         </div>
 

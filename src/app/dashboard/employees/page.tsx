@@ -116,9 +116,24 @@ export default function EmployeesPage() {
   // Calendar state
   const [currentMonth, setCurrentMonth] = useState(new Date()); 
   
+  const getTodayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const getFirstDayOfMonthStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  };
+
+  const getLastDayOfMonthStr = () => {
+    const d = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   // Filters for tracker
-  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(getFirstDayOfMonthStr());
+  const [endDate, setEndDate] = useState(getLastDayOfMonthStr());
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'missed' | 'future'>('all');
 
   // Source messages modal
@@ -251,7 +266,7 @@ export default function EmployeesPage() {
   });
 
   return (
-    <div className="fixed inset-0 left-64 flex bg-gray-50 overflow-hidden">
+    <div className="flex bg-gray-50 overflow-hidden min-h-[calc(100vh-4rem)]">
       <style>{`
         .no-scrollbar::-webkit-scrollbar {
           display: none;
@@ -519,10 +534,14 @@ export default function EmployeesPage() {
                               </span>
                               <div className="space-y-2">
                                 {dayActivities.map((act, idx) => {
-                                  const typeConfig = {
+                                  const typeConfig: Record<string, { bg: string, border: string, text: string, icon: string }> = {
                                     completed_task: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-900', icon: '✓' },
+                                    work_completed: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-900', icon: '✓' },
+                                    sales_activity: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-900', icon: '✓' },
                                     planned_task: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-900', icon: '📅' },
+                                    planning: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-900', icon: '📅' },
                                     issue: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-900', icon: '⚠️' },
+                                    issue_reported: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-900', icon: '⚠️' },
                                     meeting: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-900', icon: '👥' },
                                     other: { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-900', icon: '📝' }
                                   };

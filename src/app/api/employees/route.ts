@@ -32,10 +32,12 @@ export async function GET(request: NextRequest) {
   const employeeFilter = searchParams.get('employee');
   const customerFilter = searchParams.get('customer');
   const now = new Date();
-  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-  const today = now.toISOString().split('T')[0];
+  const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const lastDayOfMonthStr = `${lastDayOfMonth.getFullYear()}-${String(lastDayOfMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayOfMonth.getDate()).padStart(2, '0')}`;
+
   const startDate = searchParams.get('startDate') || firstDayOfMonth;
-  const endDate = searchParams.get('endDate') || today;
+  const endDate = searchParams.get('endDate') || lastDayOfMonthStr;
 
   try {
     // Get all planned tasks (activity_type = 'planned_task')
@@ -52,7 +54,7 @@ export async function GET(request: NextRequest) {
         eal.confidence_score
       FROM employee_activity_log eal
       JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
-      WHERE eal.activity_type = 'planned_task'
+      WHERE (eal.activity_type = 'planned_task' OR eal.activity_type = 'planning')
         AND eal.confidence_score >= 0.7
         AND eal.activity_date >= '${startDate}'
         AND eal.activity_date <= '${endDate}'
@@ -85,7 +87,7 @@ export async function GET(request: NextRequest) {
         eal.confidence_score
       FROM employee_activity_log eal
       JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
-      WHERE eal.activity_type = 'completed_task'
+      WHERE (eal.activity_type = 'completed_task' OR eal.activity_type = 'work_completed' OR eal.activity_type = 'sales_activity')
         AND eal.confidence_score >= 0.7
         AND eal.activity_date >= '${startDate}'
         AND eal.activity_date <= '${endDate}'
@@ -97,7 +99,9 @@ export async function GET(request: NextRequest) {
 
     // Match planned tasks with actual activities
     const matches: FollowUpMatch[] = plannedTasks.map(planned => {
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      // Use local date for comparison to avoid UTC off-by-one
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
       // Check if it's a future task
       if (planned.next_action_date > today) {

@@ -317,7 +317,7 @@ export default function B2BDailySalesAnalysisPage() {
             B2B사업소 일일매출 분석
           </h2>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-            사업소별 매출 분석 (사업소 → 담당자 → 구매처 → 품목)
+            사업소별 매출 분석 
           </p>
         </div>
 

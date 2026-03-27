@@ -5,10 +5,12 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const employeeName = searchParams.get('employee');
   const now = new Date();
-  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-  const today = now.toISOString().split('T')[0];
+  const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const lastDayOfMonthStr = `${lastDayOfMonth.getFullYear()}-${String(lastDayOfMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayOfMonth.getDate()).padStart(2, '0')}`;
+
   const startDate = searchParams.get('startDate') || firstDayOfMonth;
-  const endDate = searchParams.get('endDate') || today;
+  const endDate = searchParams.get('endDate') || lastDayOfMonthStr;
 
   if (!employeeName) {
     return NextResponse.json({ 
@@ -47,12 +49,13 @@ export async function GET(request: NextRequest) {
     // Process rows to parse JSON safely in JS
     const activities = rows.map((row: any) => {
       let products = [];
-      try {
-        if (row.products_mentioned && row.products_mentioned !== '[]') {
+      if (row.products_mentioned && row.products_mentioned !== '[]') {
+        try {
           products = JSON.parse(row.products_mentioned);
+        } catch (e) {
+          // If not JSON, it might be a comma-separated string
+          products = row.products_mentioned.split(',').map((p: string) => p.trim()).filter(Boolean);
         }
-      } catch (e) {
-        // Skip invalid JSON
       }
       return {
         id: row.id,
