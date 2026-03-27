@@ -135,17 +135,6 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
 
   return (
     <div className="space-y-6">
-      {/* Header with Download Button */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h4 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">쇼핑몰 매출 현황</h4>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-            업종분류코드 28800 (인터넷/웹샵) - 동부/서부/중부
-          </p>
-        </div>
-        <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
-      </div>
-
       {/* Sales Data Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">

@@ -11,15 +11,15 @@ export async function GET(request: Request) {
     // Joins with items to get 품목그룹1코드 and harmonizes '창고코드' to '출하창고코드'
     const baseSalesSubquery = `
       (
-        SELECT s.일자, s.거래처코드, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.출하창고코드, i.품목그룹1코드
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.출하창고코드, i.품목그룹1코드
         FROM sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         UNION ALL
-        SELECT s.일자, s.거래처코드, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.창고코드 as 출하창고코드, i.품목그룹1코드
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.창고코드 as 출하창고코드, i.품목그룹1코드
         FROM east_division_sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         UNION ALL
-        SELECT s.일자, s.거래처코드, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.창고코드 as 출하창고코드, i.품목그룹1코드
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.창고코드 as 출하창고코드, i.품목그룹1코드
         FROM west_division_sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
       )
@@ -283,7 +283,7 @@ export async function GET(request: Request) {
 
       const actualSalesData = actualSalesResult?.rows || [];
       const goalsData = goalsResult?.rows || [];
-      const goalsMap = new Map(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
+      const goalsMap = new Map<string, number>(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
 
       const branchData = actualSalesData.map((row: any) => {
         const actualWeight = Number(row.weight) || 0;
@@ -297,10 +297,10 @@ export async function GET(request: Request) {
         };
       });
 
-      branchData.sort((a, b) => a.branch.localeCompare(b.branch));
+      branchData.sort((a: any, b: any) => (a.branch as string).localeCompare(b.branch as string));
 
-      const totalActual = branchData.reduce((sum, b) => sum + b.actual_weight, 0);
-      const totalTarget = branchData.reduce((sum, b) => sum + b.target_weight, 0);
+      const totalActual = branchData.reduce((sum: number, b: any) => sum + (b.actual_weight as number), 0);
+      const totalTarget = branchData.reduce((sum: number, b: any) => sum + (b.target_weight as number), 0);
 
       return NextResponse.json({
         success: true,
@@ -435,6 +435,11 @@ export async function GET(request: Request) {
       const currentMonthQuery = `
         SELECT
           ${branchMapping} as branch,
+          CASE 
+            WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, 'B2B')
+            ELSE COALESCE(ec.b2c_팀, '기타')
+          END as team,
+          e.사원_담당_명 as employee,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
@@ -445,12 +450,17 @@ export async function GET(request: Request) {
           AND e.사원_담당_명 != '김도량'
           AND c.거래처그룹1명 IS NOT NULL
           AND c.거래처그룹1명 != ''
-        GROUP BY branch
+        GROUP BY branch, team, employee
       `;
 
       const lastMonthQuery = `
         SELECT
           ${branchMapping} as branch,
+          CASE 
+            WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, 'B2B')
+            ELSE COALESCE(ec.b2c_팀, '기타')
+          END as team,
+          e.사원_담당_명 as employee,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
         FROM (${baseSalesSubquery}) s
@@ -461,7 +471,7 @@ export async function GET(request: Request) {
           AND e.사원_담당_명 != '김도량'
           AND c.거래처그룹1명 IS NOT NULL
           AND c.거래처그룹1명 != ''
-        GROUP BY branch
+        GROUP BY branch, team, employee
       `;
 
       const [currentMonthResult, lastMonthResult] = await Promise.all([
@@ -472,23 +482,71 @@ export async function GET(request: Request) {
       const currentMonthData = currentMonthResult?.rows || [];
       const lastMonthData = lastMonthResult?.rows || [];
 
-      const currentMonthMap = new Map();
-      currentMonthData.forEach((row: any) => currentMonthMap.set(row.branch, { weight: Number(row.weight) || 0, amount: Number(row.amount) || 0 }));
+      // Create a nested map structure: branch -> team -> employee -> { current, last }
+      const nestedDataMap = new Map();
 
-      const lastMonthMap = new Map();
-      lastMonthData.forEach((row: any) => lastMonthMap.set(row.branch, { weight: Number(row.weight) || 0, amount: Number(row.amount) || 0 }));
+      const getOrInit = (map: Map<any, any>, key: any, defaultValue: any) => {
+        if (!map.has(key)) map.set(key, defaultValue);
+        return map.get(key);
+      };
 
-      const allBranches = new Set([...currentMonthData.map((r: any) => r.branch), ...lastMonthData.map((r: any) => r.branch)]);
+      currentMonthData.forEach((row: any) => {
+        const branchMap = getOrInit(nestedDataMap, row.branch, new Map());
+        const teamMap = getOrInit(branchMap, row.team, new Map());
+        const empData = getOrInit(teamMap, row.employee, { current_weight: 0, current_amount: 0, last_weight: 0, last_amount: 0 });
+        empData.current_weight = Number(row.weight) || 0;
+        empData.current_amount = Number(row.amount) || 0;
+      });
 
-      const branchData = Array.from(allBranches).map(branch => {
-        const current = currentMonthMap.get(branch) || { weight: 0, amount: 0 };
-        const last = lastMonthMap.get(branch) || { weight: 0, amount: 0 };
+      lastMonthData.forEach((row: any) => {
+        const branchMap = getOrInit(nestedDataMap, row.branch, new Map());
+        const teamMap = getOrInit(branchMap, row.team, new Map());
+        const empData = getOrInit(teamMap, row.employee, { current_weight: 0, current_amount: 0, last_weight: 0, last_amount: 0 });
+        empData.last_weight = Number(row.weight) || 0;
+        empData.last_amount = Number(row.amount) || 0;
+      });
+
+      const branchData = Array.from(nestedDataMap.entries()).map(([branch, teamsMap]: [string, Map<string, Map<string, any>>]) => {
+        const teams = (Array.from(teamsMap.entries()) as [string, Map<string, any>][]).map(([team, empsMap]) => {
+          const employees = (Array.from(empsMap.entries()) as [string, any][]).map(([employee, data]) => ({
+            employee,
+            current_month_weight: Math.round(data.current_weight),
+            current_month_amount: Math.round(data.current_amount),
+            last_month_weight: Math.round(data.last_weight),
+            last_month_amount: Math.round(data.last_amount),
+          }));
+
+          employees.sort((a, b) => b.current_month_weight - a.current_month_weight);
+
+          const teamWeight = employees.reduce((sum, e) => sum + e.current_month_weight, 0);
+          const teamAmount = employees.reduce((sum, e) => sum + e.current_month_amount, 0);
+          const teamLastWeight = employees.reduce((sum, e) => sum + e.last_month_weight, 0);
+          const teamLastAmount = employees.reduce((sum, e) => sum + e.last_month_amount, 0);
+
+          return {
+            team_name: team,
+            current_month_weight: teamWeight,
+            current_month_amount: teamAmount,
+            last_month_weight: teamLastWeight,
+            last_month_amount: teamLastAmount,
+            employees
+          };
+        });
+
+        teams.sort((a: any, b: any) => b.current_month_weight - a.current_month_weight);
+
+        const branchWeight = teams.reduce((sum: number, t: any) => sum + t.current_month_weight, 0);
+        const branchAmount = teams.reduce((sum: number, t: any) => sum + t.current_month_amount, 0);
+        const branchLastWeight = teams.reduce((sum: number, t: any) => sum + t.last_month_weight, 0);
+        const branchLastAmount = teams.reduce((sum: number, t: any) => sum + t.last_month_amount, 0);
+
         return {
           branch,
-          current_month_weight: Math.round(current.weight),
-          current_month_amount: Math.round(current.amount),
-          last_month_weight: Math.round(last.weight),
-          last_month_amount: Math.round(last.amount),
+          current_month_weight: branchWeight,
+          current_month_amount: branchAmount,
+          last_month_weight: branchLastWeight,
+          last_month_amount: branchLastAmount,
+          teams
         };
       });
 
@@ -557,21 +615,24 @@ export async function GET(request: Request) {
       const currentMonthData = b2cResult?.rows || [];
       const b2bAutoData = b2bResult?.rows?.[0] || { weight: 0, amount: 0 };
       const goalsData = goalsResult?.rows || [];
-      const goalsMap = new Map(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
+      const goalsMap = new Map<string, number>(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
 
-      const branchTeamMap = new Map();
+      const branchTeamMap = new Map<string, any[]>();
       currentMonthData.forEach((row: any) => {
         if (!branchTeamMap.has(row.branch)) branchTeamMap.set(row.branch, []);
         const actualWeight = Number(row.weight) || 0;
         const targetWeight = goalsMap.get(row.team) || 0;
         
-        branchTeamMap.get(row.branch).push({
-          team_name: row.team,
-          current_month_weight: Math.round(actualWeight),
-          current_month_amount: Math.round(Number(row.amount) || 0),
-          target_weight: Math.round(targetWeight),
-          achievement_rate: targetWeight > 0 ? (actualWeight / targetWeight) * 100 : 0,
-        });
+        const teams = branchTeamMap.get(row.branch);
+        if (teams) {
+          teams.push({
+            team_name: row.team,
+            current_month_weight: Math.round(actualWeight),
+            current_month_amount: Math.round(Number(row.amount) || 0),
+            target_weight: Math.round(targetWeight),
+            achievement_rate: targetWeight > 0 ? (actualWeight / targetWeight) * 100 : 0,
+          });
+        }
       });
 
       const branchData = Array.from(branchTeamMap.entries()).map(([branch, teams]) => {
@@ -673,22 +734,25 @@ export async function GET(request: Request) {
       const currentMonthData = b2bResult?.rows || [];
       const b2cIlData = b2cResult?.rows?.[0] || { weight: 0, amount: 0 };
       const goalsData = goalsResult?.rows || [];
-      const goalsMap = new Map(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
+      const goalsMap = new Map<string, number>(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
 
-      const branchTeamMap = new Map();
+      const branchTeamMap = new Map<string, any[]>();
       currentMonthData.forEach((row: any) => {
         const branchName = row.branch || '기타';
         if (!branchTeamMap.has(branchName)) branchTeamMap.set(branchName, []);
         const actualWeight = Number(row.weight) || 0;
         const targetWeight = goalsMap.get(row.team) || 0;
 
-        branchTeamMap.get(branchName).push({
-          team_name: row.team || '기타',
-          current_month_weight: Math.round(actualWeight),
-          current_month_amount: Math.round(Number(row.amount) || 0),
-          target_weight: Math.round(targetWeight),
-          achievement_rate: targetWeight > 0 ? (actualWeight / targetWeight) * 100 : 0,
-        });
+        const teams = branchTeamMap.get(branchName);
+        if (teams) {
+          teams.push({
+            team_name: row.team || '기타',
+            current_month_weight: Math.round(actualWeight),
+            current_month_amount: Math.round(Number(row.amount) || 0),
+            target_weight: Math.round(targetWeight),
+            achievement_rate: targetWeight > 0 ? (actualWeight / targetWeight) * 100 : 0,
+          });
+        }
       });
 
       const branchData = Array.from(branchTeamMap.entries()).map(([branch, teams]) => {

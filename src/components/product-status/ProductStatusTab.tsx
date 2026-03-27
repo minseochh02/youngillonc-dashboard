@@ -122,6 +122,15 @@ export default function ProductStatusTab({ selectedMonth }: ProductStatusTabProp
     });
   };
 
+  const expandAll = () => {
+    if (!data) return;
+    setExpandedSections(new Set(data.sections.map(s => s.id)));
+  };
+
+  const collapseAll = () => {
+    setExpandedSections(new Set());
+  };
+
   const formatNumber = (num: number) => {
     return Math.round(num).toLocaleString();
   };
@@ -193,7 +202,7 @@ export default function ProductStatusTab({ selectedMonth }: ProductStatusTabProp
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-end">
         <div>
           <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
             제품별 현황
@@ -202,7 +211,23 @@ export default function ProductStatusTab({ selectedMonth }: ProductStatusTabProp
             {data.currentYear}년 분기별 제품 실적 ({data.lastYear}년 대비)
           </p>
         </div>
-        <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
+        <div className="flex items-center gap-3">
+          <div className="flex gap-2">
+            <button
+              onClick={expandAll}
+              className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+            >
+              모두 펼치기
+            </button>
+            <button
+              onClick={collapseAll}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              모두 접기
+            </button>
+          </div>
+          <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
+        </div>
       </div>
 
       {/* Instructions */}

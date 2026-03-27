@@ -204,6 +204,39 @@ export default function B2BDailySalesAnalysisPage() {
     setExpandedProfitBranches(newExpanded);
   };
 
+  const expandAllHierarchy = () => {
+    const branches = new Set(Object.keys(groupedData));
+    const persons = new Set<string>();
+    const vendors = new Set<string>();
+
+    Object.entries(groupedData).forEach(([b, pData]) => {
+      Object.entries(pData).forEach(([p, vData]) => {
+        persons.add(`${b}-${p}`);
+        Object.keys(vData).forEach(v => {
+          vendors.add(`${b}-${p}-${v}`);
+        });
+      });
+    });
+
+    setExpandedBranches(branches);
+    setExpandedPersons(persons);
+    setExpandedVendors(vendors);
+  };
+
+  const collapseAllHierarchy = () => {
+    setExpandedBranches(new Set());
+    setExpandedPersons(new Set());
+    setExpandedVendors(new Set());
+  };
+
+  const expandAllProfit = () => {
+    setExpandedProfitBranches(new Set(Object.keys(groupedProfitData)));
+  };
+
+  const collapseAllProfit = () => {
+    setExpandedProfitBranches(new Set());
+  };
+
   const handleExcelDownload = () => {
     if (activeView === 'hierarchy') {
       if (data.length === 0) {
@@ -408,12 +441,26 @@ export default function B2BDailySalesAnalysisPage() {
 
       {/* Data Table */}
       <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
           <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
             {activeView === 'hierarchy' 
               ? `구매 현황 (${data.length.toLocaleString()}개 항목)`
               : `이익 분석 (sales_profit table - ${profitData.length.toLocaleString()}개 항목)`}
           </h3>
+          <div className="flex gap-2">
+            <button
+              onClick={activeView === 'hierarchy' ? expandAllHierarchy : expandAllProfit}
+              className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+            >
+              모두 펼치기
+            </button>
+            <button
+              onClick={activeView === 'hierarchy' ? collapseAllHierarchy : collapseAllProfit}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              모두 접기
+            </button>
+          </div>
         </div>
 
         {isLoading || isLoadingProfit ? (

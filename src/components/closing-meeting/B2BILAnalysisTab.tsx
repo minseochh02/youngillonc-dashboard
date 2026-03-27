@@ -99,6 +99,15 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
     setExpandedBranches(newExpanded);
   };
 
+  const expandAll = () => {
+    const allBranches = new Set(data?.branches.map((b: BranchILData) => b.branch));
+    setExpandedBranches(allBranches);
+  };
+
+  const collapseAll = () => {
+    setExpandedBranches(new Set());
+  };
+
   const handleTargetChange = (key: string, value: string) => {
     const numValue = parseFloat(value.replace(/,/g, '')) || 0;
     const newEditingTargets = new Map(editingTargets);
@@ -184,11 +193,6 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
 
   return (
     <div className="space-y-6">
-      {/* Header with Download Button */}
-      <div className="flex justify-end">
-        <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
-      </div>
-
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* B2B IL Summary Card */}
@@ -252,8 +256,22 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
 
       {/* Branch Analysis Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
           <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">사업소별 B2B IL 분석</h4>
+          <div className="flex gap-2">
+            <button
+              onClick={expandAll}
+              className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+            >
+              모두 펼치기
+            </button>
+            <button
+              onClick={collapseAll}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              모두 접기
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

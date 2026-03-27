@@ -98,6 +98,14 @@ export default function IndustryTab() {
     setExpandedRows(newExpanded);
   };
 
+  const expandAll = () => {
+    setExpandedRows(new Set(Object.keys(groupedData)));
+  };
+
+  const collapseAll = () => {
+    setExpandedRows(new Set());
+  };
+
   const groupedData = data.reduce((acc, row) => {
     const key = `${row.모빌분류}-${row.산업분류}-${row.영일분류}`;
     if (!acc[key]) {
@@ -188,7 +196,7 @@ export default function IndustryTab() {
   return (
     <div className="space-y-6">
       {/* Controls */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2">
           <Calendar className="w-4 h-4 text-zinc-400" />
           <input
@@ -206,7 +214,20 @@ export default function IndustryTab() {
           />
         </div>
 
-        <ExcelDownloadButton onClick={handleExcelDownload} disabled={data.length === 0 || isLoading} />
+        <div className="flex gap-2">
+          <button
+            onClick={expandAll}
+            className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+          >
+            모두 펼치기
+          </button>
+          <button
+            onClick={collapseAll}
+            className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+          >
+            모두 접기
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}

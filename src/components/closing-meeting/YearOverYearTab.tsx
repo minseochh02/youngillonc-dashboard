@@ -105,11 +105,6 @@ export default function YearOverYearTab({ selectedMonth }: YearOverYearProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header with Download Button */}
-      <div className="flex justify-end">
-        <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
-      </div>
-
       {/* Overall YoY Comparison Card */}
       <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/20 dark:to-purple-950/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-8">
         <div className="flex items-center justify-between">

@@ -173,17 +173,6 @@ export default function ProductGroupTab() {
 
   return (
     <div className="space-y-6">
-      {/* Header with Download Button */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h4 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">제품군별 매출 현황</h4>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-            Standard / Premium / Flagship / Alliance
-          </p>
-        </div>
-        <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
-      </div>
-
       {/* Product Group Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {productGroups.map(productGroup => {

@@ -103,11 +103,6 @@ export default function TargetAchievementTab({ selectedMonth }: TargetAchievemen
 
   return (
     <div className="space-y-6">
-      {/* Header with Download Button */}
-      <div className="flex justify-end">
-        <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
-      </div>
-
       {/* Overall Achievement Card */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-8">
         <div className="flex items-center justify-between">

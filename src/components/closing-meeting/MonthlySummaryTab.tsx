@@ -88,6 +88,15 @@ export default function MonthlySummaryTab({ selectedMonth }: MonthlySummaryProps
     setExpandedMonths(newExpanded);
   };
 
+  const expandAll = () => {
+    const allMonths = new Set(data?.monthlyData.map(m => m.month));
+    setExpandedMonths(allMonths);
+  };
+
+  const collapseAll = () => {
+    setExpandedMonths(new Set());
+  };
+
   const handleExcelDownload = () => {
     if (!data) {
       alert('다운로드할 데이터가 없습니다.');
@@ -161,11 +170,6 @@ export default function MonthlySummaryTab({ selectedMonth }: MonthlySummaryProps
 
   return (
     <div className="space-y-6">
-      {/* Header with Download Button */}
-      <div className="flex justify-end">
-        <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
-      </div>
-
       {/* Current Month Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Purchase */}
@@ -299,8 +303,22 @@ export default function MonthlySummaryTab({ selectedMonth }: MonthlySummaryProps
 
       {/* Monthly Table with Breakdown */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
           <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">월별 실적 ({data.currentYear}년)</h4>
+          <div className="flex gap-2">
+            <button
+              onClick={expandAll}
+              className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+            >
+              모두 펼치기
+            </button>
+            <button
+              onClick={collapseAll}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              모두 접기
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

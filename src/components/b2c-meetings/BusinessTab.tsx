@@ -206,11 +206,6 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header with Download Button */}
-      <div className="flex justify-end">
-        <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
-      </div>
-
       {/* Year Comparison Summary */}
       <div className="grid grid-cols-2 gap-4">
         {/* Current Year */}

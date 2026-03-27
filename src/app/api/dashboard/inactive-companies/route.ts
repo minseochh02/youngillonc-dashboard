@@ -76,13 +76,12 @@ export async function GET(request: NextRequest) {
             COUNT(DISTINCT s.일자) as transaction_count
           FROM clients c
           LEFT JOIN (
-            SELECT 일자, 거래처코드, 담당자코드, 합계 FROM sales
+            SELECT 일자, 거래처코드, 합계 FROM sales
           ) s ON c.거래처코드 = s.거래처코드
             AND s.일자 <= ?
-          LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
-          LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+          LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
           WHERE c.거래처코드 IS NOT NULL
-            AND e.사원_담당_명 != '김도량'
+            AND (e.사원_담당_명 IS NULL OR e.사원_담당_명 != '김도량')
             ${branchFilter}
           GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드
           HAVING last_transaction_date IS NULL OR last_transaction_date < ?
@@ -90,7 +89,7 @@ export async function GET(request: NextRequest) {
         WHERE branch_name IS NOT NULL
         GROUP BY branch_name
         ORDER BY inactive_count DESC`;
-      params = [selectedMonthEnd, ...selectedBranches, cutoffDateStr, selectedMonthEnd, selectedMonthEnd];
+      params = [selectedMonthEnd, selectedMonthEnd, ...selectedBranches, selectedMonthEnd, cutoffDateStr];
     } else if (groupBy === 'employee') {
       query = `SELECT
           branch_name,
@@ -112,21 +111,20 @@ export async function GET(request: NextRequest) {
             SUM(CAST(REPLACE(REPLACE(s.합계, ',', ''), '-', '') AS REAL)) as total_sales_amount
           FROM clients c
           LEFT JOIN (
-            SELECT 일자, 거래처코드, 담당자코드, 합계 FROM sales
+            SELECT 일자, 거래처코드, 합계 FROM sales
           ) s ON c.거래처코드 = s.거래처코드
             AND s.일자 <= ?
-          LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
-          LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+          LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
           WHERE c.거래처코드 IS NOT NULL
-            AND e.사원_담당_명 != '김도량'
+            AND (e.사원_담당_명 IS NULL OR e.사원_담당_명 != '김도량')
             ${branchFilter}
           GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드
           HAVING last_transaction_date IS NULL OR last_transaction_date < ?
         ) AS last_transactions
-        WHERE branch_name IS NOT NULL AND employee_name IS NOT NULL
+        WHERE branch_name IS NOT NULL AND (employee_name IS NOT NULL OR employee_code IS NOT NULL)
         GROUP BY branch_name, employee_code, employee_name
         ORDER BY branch_name, inactive_count DESC`;
-      params = [selectedMonthEnd, ...selectedBranches, cutoffDateStr, selectedMonthEnd, selectedMonthEnd];
+      params = [selectedMonthEnd, selectedMonthEnd, ...selectedBranches, selectedMonthEnd, cutoffDateStr];
     } else if (groupBy === 'client') {
       query = `SELECT
           c.거래처코드 as client_code,
@@ -140,18 +138,17 @@ export async function GET(request: NextRequest) {
           COUNT(DISTINCT s.일자) as transaction_count
         FROM clients c
         LEFT JOIN (
-          SELECT 일자, 거래처코드, 담당자코드, 합계 FROM sales
+          SELECT 일자, 거래처코드, 합계 FROM sales
         ) s ON c.거래처코드 = s.거래처코드
           AND s.일자 <= ?
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
-        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE c.거래처코드 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          AND (e.사원_담당_명 IS NULL OR e.사원_담당_명 != '김도량')
           ${branchFilter}
         GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드
         HAVING last_transaction_date IS NULL OR last_transaction_date < ?
         ORDER BY days_inactive DESC`;
-      params = [selectedMonthEnd, selectedMonthEnd, ...selectedBranches, cutoffDateStr];
+      params = [selectedMonthEnd, ...selectedBranches, selectedMonthEnd, cutoffDateStr];
     }
 
     const finalQuery = interpolateQuery(query, params).trim();

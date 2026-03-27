@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Calendar, Building, DollarSign, TrendingUp, TrendingDown, Loader2, AlertCircle, ChevronRight, ChevronDown, Filter, User } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
-import { exportToExcel, generateFilename } from '@/lib/excel-export';
+import { exportToExcel, generateFilename, type IslandTable, type IslandSheetData } from '@/lib/excel-export';
 import DataLogicInfo from '@/components/DataLogicInfo';
 
 interface ReceivableData {
@@ -59,6 +59,7 @@ export default function LongTermReceivablesPage() {
   const [activeTab, setActiveTab] = useState('합계');
   const [monthlyDetailData, setMonthlyDetailData] = useState<Record<string, any[]>>({});
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     fetchFilterOptions();
@@ -454,42 +455,75 @@ export default function LongTermReceivablesPage() {
     return rows;
   };
 
-  const handleExcelDownload = () => {
+  const handleExcelDownload = async () => {
     if (data.length === 0) {
       alert('다운로드할 데이터가 없습니다.');
       return;
     }
 
-    const exportData = data.map(item => ({
-      '사업소': item.branch_name,
-      '담당자': item.employee_name || '',
-      '거래처': item.client_name || '',
-      '당월 총 미수금': item.current_total_receivables,
-      [`${agingMonths}개월 이상 장기미수금`]: item.long_term_receivables,
-      '장기미수금 비율(%)': Number(item.long_term_ratio.toFixed(2)),
-      '전월 장기미수': item.previous_month_long_term,
-      '전월대비 증감': item.month_over_month_change,
-      '전월대비 증감률(%)': Number(item.month_over_month_change_rate.toFixed(2)),
-      'B2B 당월 총 미수금': item.b2b_current_total_receivables || 0,
-      'B2B 장기미수금': item.b2b_long_term_receivables || 0,
-      'B2B 전월 장기미수': item.b2b_previous_month_long_term || 0,
-      'B2C 당월 총 미수금': item.b2c_current_total_receivables || 0,
-      'B2C 장기미수금': item.b2c_long_term_receivables || 0,
-      'B2C 전월 장기미수': item.b2c_previous_month_long_term || 0,
-    }));
+    setIsExporting(true);
+    try {
+      const sheets: IslandSheetData[] = [];
 
-    const filename = generateFilename('장기미수금현황');
-    
-    // Use island format for reference date support
-    const { exportIslandTables } = require('@/lib/excel-export');
-    const headers = Object.keys(exportData[0]);
-    const rows = exportData.map(row => headers.map(h => (row as any)[h]));
-    
-    exportIslandTables(
-      [{ title: '장기미수금 현황', headers, data: rows }],
-      filename,
-      selectedMonth
-    );
+      // 1. "합계" Sheet: Overall summary by branch
+      const summaryIslands: IslandTable[] = [];
+      const branchSummaryData = data.filter(d => !d.employee_name && !d.client_name);
+      
+      summaryIslands.push({
+        title: `장기미수금 현황 총괄 (${selectedMonth})`,
+        headers: ['사업소', '당월 총 미수금', `${agingMonths}개월 이상 장기미수금`, '장기미수비율(%)', '전월 장기미수', '전월대비 증감', '증감률(%)'],
+        data: [
+          ...branchSummaryData.map(item => [
+            item.branch_name,
+            item.current_total_receivables,
+            item.long_term_receivables,
+            Number(item.long_term_ratio.toFixed(2)),
+            item.previous_month_long_term,
+            item.month_over_month_change,
+            Number(item.month_over_month_change_rate.toFixed(2))
+          ]),
+          ['전체합계', totals.currentTotal, totals.longTerm, Number(totalLongTermRatio.toFixed(2)), totals.previousMonth, totalMoMChange, Number(totalMoMChangeRate.toFixed(2))]
+        ]
+      });
+
+      sheets.push({ name: '전체합계', islands: summaryIslands, referenceDate: selectedMonth });
+
+      // 2. Individual Branch Sheets: Client details
+      const branches = Object.keys(monthlyDetailData).sort();
+      for (const branch of branches) {
+        const branchClients = monthlyDetailData[branch];
+        if (!branchClients || branchClients.length === 0) continue;
+
+        const branchIslands: IslandTable[] = [];
+        branchIslands.push({
+          title: `${branch} 거래처별 미수금 내역`,
+          headers: ['거래처명', '담당자', '구분', '당월매출', '당월수금', '기타차액', '현재잔액', '미회수액'],
+          data: branchClients.map(client => {
+            const m = client.monthly_breakdown?.find((mb: any) => mb.month === selectedMonth) || {};
+            return [
+              client.client_name,
+              client.employee_name || '미지정',
+              client.business_type,
+              m.sales || 0,
+              m.collections || 0,
+              m.adjustments || 0,
+              m.balance || 0,
+              m.uncollected || 0
+            ];
+          })
+        });
+
+        sheets.push({ name: branch, islands: branchIslands, referenceDate: selectedMonth });
+      }
+
+      const { exportMultiSheetIslandTables } = await import('@/lib/excel-export');
+      exportMultiSheetIslandTables(sheets, generateFilename('장기미수금_통합보고서'));
+    } catch (error) {
+      console.error('Long-term receivables export error:', error);
+      alert('엑셀 다운로드 중 오류가 발생했습니다.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const totals = hierarchicalData.reduce((acc, node) => ({
@@ -508,6 +542,16 @@ export default function LongTermReceivablesPage() {
     );
   };
 
+  const expandAllClients = () => {
+    if (!monthlyDetailData[activeTab]) return;
+    const allClientCodes = new Set(monthlyDetailData[activeTab].map((c: any) => c.client_code));
+    setExpandedClients(allClientCodes);
+  };
+
+  const collapseAllClients = () => {
+    setExpandedClients(new Set());
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -522,6 +566,7 @@ export default function LongTermReceivablesPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {isExporting && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
           <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2">
             <Calendar className="w-4 h-4 text-zinc-400" />
             <label className="text-sm font-medium text-zinc-600 dark:text-zinc-300">조회 월:</label>
@@ -539,7 +584,7 @@ export default function LongTermReceivablesPage() {
             <Filter className="w-4 h-4" />
             {showFilters ? '필터 숨기기' : '필터 보기'}
           </button>
-          <ExcelDownloadButton onClick={handleExcelDownload} disabled={data.length === 0 || isLoading} />
+          <ExcelDownloadButton onClick={handleExcelDownload} disabled={data.length === 0 || isLoading || isExporting} />
         </div>
       </div>
 
@@ -854,11 +899,25 @@ export default function LongTermReceivablesPage() {
         </div>
       ) : (
         <div className="rounded-b-xl border border-t-0 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-          <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800">
-            <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
-              {activeTab} - 거래처별 월별 내역 ({monthlyDetailData[activeTab]?.length || 0}개)
-            </h3>
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
+            {activeTab} - 거래처별 월별 내역 ({monthlyDetailData[activeTab]?.length || 0}개)
+          </h3>
+          <div className="flex gap-2">
+            <button
+              onClick={expandAllClients}
+              className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+            >
+              모두 펼치기
+            </button>
+            <button
+              onClick={collapseAllClients}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              모두 접기
+            </button>
           </div>
+        </div>
 
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3">

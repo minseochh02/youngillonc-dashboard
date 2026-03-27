@@ -61,6 +61,15 @@ export default function NewClientTab() {
     setExpandedManagers(newExpanded);
   };
 
+  const expandAll = () => {
+    const allKeys = new Set(managers.map(m => `${m}-${currentYear}`));
+    setExpandedManagers(allKeys);
+  };
+
+  const collapseAll = () => {
+    setExpandedManagers(new Set());
+  };
+
   const fetchNewClientsData = async () => {
     setIsLoading(true);
     try {
@@ -172,11 +181,6 @@ export default function NewClientTab() {
 
   return (
     <div className="space-y-6">
-      {/* Header with Download Button */}
-      <div className="flex justify-end">
-        <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
-      </div>
-
       {/* Year Summary */}
       <div className="grid grid-cols-2 gap-4">
         {[currentYear, lastYear].map((year) => {
@@ -268,11 +272,27 @@ export default function NewClientTab() {
 
       {/* New Clients by Manager */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 신규 거래처 상세 (담당자별)</h4>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            담당자를 클릭하여 상세 거래처 목록 확인
-          </p>
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 신규 거래처 상세 (담당자별)</h4>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              담당자를 클릭하여 상세 거래처 목록 확인
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={expandAll}
+              className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+            >
+              모두 펼치기
+            </button>
+            <button
+              onClick={collapseAll}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              모두 접기
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

@@ -34,6 +34,7 @@ export async function GET(request: Request) {
 
     // Query explanation:
     // 1. Join sales and clients to get branch information for the selected date.
+    //    Unions sales data from main, east, and west division tables for complete B2B coverage.
     // 2. Join with the latest cost data from sales_profit table on 품목코드.
     //    Using a subquery instead of WITH/CTE to satisfy the "Only SELECT queries allowed" restriction.
     // 3. Aggregate by branch and item to calculate total sales, costs, and profits.
@@ -59,9 +60,17 @@ export async function GET(request: Request) {
           THEN SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC) - (CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC) * CAST(REPLACE(COALESCE(CAST(sp.원가단가 AS VARCHAR), '0'), ',', '') AS NUMERIC))) / SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC))
           ELSE 0 
         END as 이익율
-      FROM sales s
+      FROM (
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계 FROM sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계 FROM east_division_sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계 FROM west_division_sales
+      ) s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN items i ON s.품목코드 = i.품목코드
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       LEFT JOIN (
         SELECT 품목코드, 품목명, 원가단가, 판매단가, 이익율
         FROM (
@@ -72,6 +81,8 @@ export async function GET(request: Request) {
         WHERE rn = 1
       ) sp ON s.품목코드 = sp.품목코드
       WHERE s.일자 = '${date}'
+        AND ec.b2c_팀 = 'B2B'
+        AND COALESCE(e.사원_담당_명, '') != '김도량'
       GROUP BY branch, s.품목코드
       ORDER BY branch, 판매금액 DESC
     `;

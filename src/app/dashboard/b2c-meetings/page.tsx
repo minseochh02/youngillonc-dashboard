@@ -79,13 +79,19 @@ export default function B2CMeetingsPage() {
       ];
 
       // Fetch all data
-      const results = await Promise.all(
-        exportTabs.map(async (tab) => {
+      const results = await Promise.all([
+        ...exportTabs.map(async (tab) => {
           const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=${tab.id}&month=${selectedMonth}`);
           const result = await response.json();
           return { id: tab.id, name: tab.name, data: result.success ? result.data : null };
-        })
-      );
+        }),
+        // Explicitly fetch product-status from its dedicated API
+        (async () => {
+          const response = await apiFetch(`/api/dashboard/product-status?month=${selectedMonth}`);
+          const result = await response.json();
+          return { id: 'product-status', name: '제품별현황', data: result.success ? result.data : null };
+        })()
+      ]);
 
       for (const res of results) {
         if (!res.data) continue;
@@ -93,197 +99,220 @@ export default function B2CMeetingsPage() {
         const islands: IslandTable[] = [];
         
         if (res.id === 'business') {
-          const { businessData, totalsByYear, currentYear, lastYear } = res.data;
-          islands.push({
-            title: `${currentYear}년 vs ${lastYear}년 사업소별 중량 비교`,
-            headers: ['사업소', `${currentYear}년 중량(L)`, `${lastYear}년 중량(L)`, '변화율(%)'],
-            data: businessData.filter((r: any) => r.year === currentYear).map((r: any) => {
-              const lastYearMatch = businessData.find((lr: any) => lr.year === lastYear && lr.branch === r.branch && lr.business_type === r.business_type);
-              const current = Number(r.total_weight || 0);
-              const last = Number(lastYearMatch?.total_weight || 0);
-              const change = last === 0 ? 0 : ((current - last) / last) * 100;
-              return [r.branch, current, last, change.toFixed(1)];
-            })
-          });
+          const { businessData, currentYear, lastYear } = res.data;
+          if (businessData) {
+            islands.push({
+              title: `${currentYear}년 vs ${lastYear}년 사업소별 중량 비교`,
+              headers: ['사업소', `${currentYear}년 중량(L)`, `${lastYear}년 중량(L)`, '변화율(%)'],
+              data: businessData.filter((r: any) => r.year === String(currentYear)).map((r: any) => {
+                const lastYearMatch = businessData.find((lr: any) => lr.year === String(lastYear) && lr.branch === r.branch && lr.business_type === r.business_type);
+                const current = Number(r.total_weight || 0);
+                const last = Number(lastYearMatch?.total_weight || 0);
+                const change = last === 0 ? 0 : ((current - last) / last) * 100;
+                return [r.branch, current, last, change.toFixed(1)];
+              })
+            });
+          }
         } else if (res.id === 'manager-sales') {
           const { summaryData, employeeData } = res.data;
-          islands.push({
-            title: '채널별 요약',
-            headers: ['구분', '카테고리', '연도', '중량(L)', '금액', '수량'],
-            data: summaryData.map((r: any) => [r.business_type, r.category, r.year, r.total_weight, r.total_amount, r.total_quantity])
-          });
-          islands.push({
-            title: '담당자별 상세',
-            headers: ['팀', '사업소', '담당자', '연도', '채널', '중량(L)', '금액'],
-            data: employeeData.slice(0, 100).map((r: any) => [r.team, r.branch, r.employee_name, r.year, r.channel, r.total_weight, r.total_amount])
-          });
+          if (summaryData) {
+            islands.push({
+              title: '채널별 요약',
+              headers: ['구분', '카테고리', '연도', '중량(L)', '금액', '수량'],
+              data: summaryData.map((r: any) => [r.business_type, r.category, r.year, r.total_weight, r.total_amount, r.total_quantity])
+            });
+          }
+          if (employeeData) {
+            islands.push({
+              title: '담당자별 상세',
+              headers: ['팀', '사업소', '담당자', '연도', '채널', '중량(L)', '금액'],
+              data: employeeData.slice(0, 500).map((r: any) => [r.team, r.branch, r.employee_name, r.year, r.channel, r.total_weight, r.total_amount])
+            });
+          }
         } else if (res.id === 'sales-amount') {
-          const { channelData, comparisonData, teamData } = res.data;
-          islands.push({
-            title: '채널별 매출',
-            headers: ['채널', '연도', '중량(L)', '금액'],
-            data: channelData.map((r: any) => [r.channel, r.year, r.total_weight, r.total_amount])
-          });
-          islands.push({
-            title: 'B2C vs B2B 비교',
-            headers: ['구분', '연도', '중량(L)', '금액'],
-            data: comparisonData.map((r: any) => [r.business_type, r.year, r.total_weight, r.total_amount])
-          });
+          const { channelData, comparisonData } = res.data;
+          if (channelData) {
+            islands.push({
+              title: '채널별 매출',
+              headers: ['채널', '연도', '중량(L)', '금액'],
+              data: channelData.map((r: any) => [r.channel, r.year, r.total_weight, r.total_amount])
+            });
+          }
+          if (comparisonData) {
+            islands.push({
+              title: 'B2C vs B2B 비교',
+              headers: ['구분', '연도', '중량(L)', '금액'],
+              data: comparisonData.map((r: any) => [r.business_type, r.year, r.total_weight, r.total_amount])
+            });
+          }
         } else if (res.id === 'sales-analysis') {
           const { currentYear, lastYear, channelData } = res.data;
-          const allChannels = Array.from(new Set(channelData.map((row: any) => row.channel))).sort();
-          
-          const getChannelData = (channel: string, productGroup: string, year: string) => {
-            const found = channelData.find((row: any) => row.channel === channel && row.product_group === productGroup && row.year === year);
-            return found || { total_weight: 0, total_amount: 0, total_quantity: 0 };
-          };
+          if (channelData) {
+            const allChannels = Array.from(new Set(channelData.map((row: any) => row.channel))).sort();
+            
+            const getChannelData = (channel: string, productGroup: string, year: string) => {
+              const found = channelData.find((row: any) => row.channel === channel && row.product_group === productGroup && row.year === String(year));
+              return found || { total_weight: 0, total_amount: 0, total_quantity: 0 };
+            };
 
-          const getChannelTotal = (channel: string, year: string) => {
-            return channelData
-              .filter((row: any) => row.channel === channel && row.year === year)
-              .reduce((acc: any, row: any) => ({
-                total_weight: acc.total_weight + row.total_weight,
-                total_amount: acc.total_amount + row.total_amount,
-              }), { total_weight: 0, total_amount: 0 });
-          };
+            const getChannelTotal = (channel: string, year: string) => {
+              return channelData
+                .filter((row: any) => row.channel === channel && row.year === String(year))
+                .reduce((acc: any, row: any) => ({
+                  total_weight: acc.total_weight + (Number(row.total_weight) || 0),
+                  total_amount: acc.total_amount + (Number(row.total_amount) || 0),
+                }), { total_weight: 0, total_amount: 0 });
+            };
 
-          islands.push({
-            title: 'AUTO 채널별 매출액 (거래처그룹2)',
-            headers: ['채널', `PVL 중량(${currentYear})`, `CVL 중량(${currentYear})`, `합계 중량(${currentYear})`, `PVL 매출(${currentYear})`, `CVL 매출(${currentYear})`, `합계 매출(${currentYear})`, '변화율(%)'],
-            data: allChannels.map((channel: any) => {
-              const pvlCurrent = getChannelData(channel, 'PVL', currentYear);
-              const cvlCurrent = getChannelData(channel, 'CVL', currentYear);
-              const totalCurrent = getChannelTotal(channel, currentYear);
-              const totalLast = getChannelTotal(channel, lastYear);
-              const change = totalLast.total_amount === 0 ? 0 : ((totalCurrent.total_amount - totalLast.total_amount) / totalLast.total_amount) * 100;
-              return [channel, pvlCurrent.total_weight, cvlCurrent.total_weight, totalCurrent.total_weight, pvlCurrent.total_amount, cvlCurrent.total_amount, totalCurrent.total_amount, change.toFixed(1)];
-            })
-          });
+            islands.push({
+              title: 'AUTO 채널별 매출액 (거래처그룹2)',
+              headers: ['채널', `PVL 중량(${currentYear})`, `CVL 중량(${currentYear})`, `합계 중량(${currentYear})`, `PVL 매출(${currentYear})`, `CVL 매출(${currentYear})`, `합계 매출(${currentYear})`, '변화율(%)'],
+              data: allChannels.map((channel: any) => {
+                const pvlCurrent = getChannelData(channel, 'PVL', currentYear);
+                const cvlCurrent = getChannelData(channel, 'CVL', currentYear);
+                const totalCurrent = getChannelTotal(channel, currentYear);
+                const totalLast = getChannelTotal(channel, lastYear);
+                const change = totalLast.total_amount === 0 ? 0 : ((totalCurrent.total_amount - totalLast.total_amount) / totalLast.total_amount) * 100;
+                return [channel, pvlCurrent.total_weight, cvlCurrent.total_weight, totalCurrent.total_weight, pvlCurrent.total_amount, cvlCurrent.total_amount, totalCurrent.total_amount, change.toFixed(1)];
+              })
+            });
+          }
         } else if (res.id === 'customer-reason') {
           const { currentYear, lastYear, customerData } = res.data;
-          const sortedData = [...customerData].sort((a, b) => Math.abs(b.change_weight) - Math.abs(a.change_weight));
-          
-          islands.push({
-            title: '거래처별 판매 현황 및 원인분석',
-            headers: ['거래처그룹2', '담당자명', '거래처코드', '판매처명', `${lastYear}년(L)`, `${currentYear}년(L)`, '증감(L)', '증감율(%)'],
-            data: sortedData.map((row: any) => [
-              row.거래처그룹2 || '',
-              row.담당자명 || '',
-              row.거래처코드,
-              row.판매처명,
-              Math.round(row.last_year_weight),
-              Math.round(row.current_year_weight),
-              Math.round(row.change_weight),
-              row.last_year_weight > 0 ? (((row.current_year_weight - row.last_year_weight) / row.last_year_weight) * 100).toFixed(1) : 'N/A'
-            ])
-          });
-        } else if (res.id === 'new') {
-          const { managerSummary } = res.data;
-          islands.push({
-            title: '신규 거래처 담당자별 요약',
-            headers: ['담당자', '팀', '사업소', '연도', '거래처수', '중량(L)', '금액'],
-            data: managerSummary.map((r: any) => [r.담당자명, r.team, r.branch, r.year, r.client_count, r.total_weight, r.total_amount])
-          });
-        } else if (res.id === 'product-status') {
-          const { sections, currentYear, lastYear } = res.data;
-          sections.forEach((section: any) => {
-            if (!section.data || section.data.length === 0) return;
+          if (customerData) {
+            const sortedData = [...customerData].sort((a, b) => Math.abs(b.change_weight || 0) - Math.abs(a.change_weight || 0));
+            
             islands.push({
-              title: section.title,
-              headers: ['카테고리', 'Q1(현재)', 'Q1(전년)', 'Q2(현재)', 'Q2(전년)', 'Q3(현재)', 'Q3(전년)', 'Q4(현재)', 'Q4(전년)'],
-              data: section.data.map((row: any) => [
-                row.category,
-                ...row.quarters.flatMap((q: any) => [Math.round(q.actual), Math.round(q.previousYear)])
+              title: '거래처별 판매 현황 및 원인분석',
+              headers: ['거래처그룹2', '담당자명', '거래처코드', '판매처명', `${lastYear}년(L)`, `${currentYear}년(L)`, '증감(L)', '증감율(%)'],
+              data: sortedData.slice(0, 1000).map((row: any) => [
+                row.거래처그룹2 || '',
+                row.담당자명 || '',
+                row.거래처코드,
+                row.판매처명,
+                Math.round(row.last_year_weight || 0),
+                Math.round(row.current_year_weight || 0),
+                Math.round(row.change_weight || 0),
+                row.last_year_weight > 0 ? (((row.current_year_weight - row.last_year_weight) / row.last_year_weight) * 100).toFixed(1) : 'N/A'
               ])
             });
-          });
+          }
+        } else if (res.id === 'new') {
+          const { managerSummary } = res.data;
+          if (managerSummary) {
+            islands.push({
+              title: '신규 거래처 담당자별 요약',
+              headers: ['담당자', '팀', '사업소', '연도', '거래처수', '중량(L)', '금액'],
+              data: managerSummary.map((r: any) => [r.담당자명, r.team, r.branch, r.year, r.client_count, r.total_weight, r.total_amount])
+            });
+          }
+        } else if (res.id === 'product-status') {
+          const { sections, currentYear, lastYear } = res.data;
+          if (sections) {
+            sections.forEach((section: any) => {
+              if (!section.data || section.data.length === 0) return;
+              islands.push({
+                title: section.title,
+                headers: ['카테고리', 'Q1(현재)', 'Q1(전년)', 'Q2(현재)', 'Q2(전년)', 'Q3(현재)', 'Q3(전년)', 'Q4(현재)', 'Q4(전년)'],
+                data: section.data.map((row: any) => [
+                  row.category,
+                  ...row.quarters.flatMap((q: any) => [Math.round(q.actual || 0), Math.round(q.previousYear || 0)])
+                ])
+              });
+            });
+          }
         } else if (res.id === 'team-strategy') {
           const { currentYear, lastYear, teamData, nambujisaData, strategicDealers } = res.data;
           
-          // 1. Team Aggregation
-          const teams = Array.from(new Set(teamData.map((row: any) => row.team))).sort();
-          const teamAgg = (team: string, year: string, group: string) => 
-            teamData.filter((r: any) => r.team === team && r.year === year && r.product_group === group)
-                   .reduce((sum: number, r: any) => sum + r.total_weight, 0);
+          if (teamData) {
+            const teamsList = Array.from(new Set(teamData.map((row: any) => row.team))).sort();
+            const teamAgg = (team: string, year: string, group: string) => 
+              teamData.filter((r: any) => r.team === team && String(r.year) === String(year) && r.product_group === group)
+                     .reduce((sum: number, r: any) => sum + (Number(r.total_weight) || 0), 0);
 
-          islands.push({
-            title: 'PVL/CVL 팀별 분석',
-            headers: ['팀명', `${currentYear} PV`, `${currentYear} CV`, `${lastYear} PV`, `${lastYear} CV`],
-            data: teams.map((team: any) => [
-              team,
-              teamAgg(team, currentYear, 'PVL'),
-              teamAgg(team, currentYear, 'CVL'),
-              teamAgg(team, lastYear, 'PVL'),
-              teamAgg(team, lastYear, 'CVL')
-            ])
-          });
+            islands.push({
+              title: 'PVL/CVL 팀별 분석',
+              headers: ['팀명', `${currentYear} PV`, `${currentYear} CV`, `${lastYear} PV`, `${lastYear} CV`],
+              data: teamsList.map((team: any) => [
+                team,
+                teamAgg(team, currentYear, 'PVL'),
+                teamAgg(team, currentYear, 'CVL'),
+                teamAgg(team, lastYear, 'PVL'),
+                teamAgg(team, lastYear, 'CVL')
+              ])
+            });
+          }
 
-          // 2. Nambujisa
-          const nambu = (type: string, year: string) => nambujisaData.find((r: any) => r.type === type && r.year === year)?.total_weight || 0;
-          islands.push({
-            title: '남부지사 매입/매출',
-            headers: ['구분', currentYear, lastYear],
-            data: [
-              ['매입', nambu('purchase', currentYear), nambu('purchase', lastYear)],
-              ['매출', nambu('sales', currentYear), nambu('sales', lastYear)]
-            ]
-          });
+          if (nambujisaData) {
+            const nambu = (type: string, year: string) => nambujisaData.find((r: any) => r.type === type && String(r.year) === String(year))?.total_weight || 0;
+            islands.push({
+              title: '남부지사 매입/매출',
+              headers: ['구분', currentYear, lastYear],
+              data: [
+                ['매입', nambu('purchase', currentYear), nambu('purchase', lastYear)],
+                ['매출', nambu('sales', currentYear), nambu('sales', lastYear)]
+              ]
+            });
+          }
 
-          // 3. Strategic Dealers
-          const dealersMap = new Map();
-          strategicDealers.forEach((row: any) => {
-            if (!dealersMap.has(row.dealer_name)) dealersMap.set(row.dealer_name, { current: 0, last: 0 });
-            const d = dealersMap.get(row.dealer_name);
-            if (row.year === currentYear) d.current += row.total_weight;
-            else if (row.year === lastYear) d.last += row.total_weight;
-          });
+          if (strategicDealers) {
+            const dealersMap = new Map();
+            strategicDealers.forEach((row: any) => {
+              if (!dealersMap.has(row.dealer_name)) dealersMap.set(row.dealer_name, { current: 0, last: 0 });
+              const d = dealersMap.get(row.dealer_name);
+              if (String(row.year) === String(currentYear)) d.current += (Number(row.total_weight) || 0);
+              else if (String(row.year) === String(lastYear)) d.last += (Number(row.total_weight) || 0);
+            });
 
-          islands.push({
-            title: '전략딜러 현황',
-            headers: ['판매처명', `${currentYear} 용량(L)`, `${lastYear} 용량(L)`, '변화율(%)'],
-            data: Array.from(dealersMap.entries()).map(([name, val]: [any, any]) => {
-              const change = val.last === 0 ? 0 : ((val.current - val.last) / val.last) * 100;
-              return [name, val.current, val.last, change.toFixed(1)];
-            })
-          });
+            islands.push({
+              title: '전략딜러 현황',
+              headers: ['판매처명', `${currentYear} 용량(L)`, `${lastYear} 용량(L)`, '변화율(%)'],
+              data: Array.from(dealersMap.entries()).map(([name, val]: [any, any]) => {
+                const change = val.last === 0 ? 0 : ((val.current - val.last) / val.last) * 100;
+                return [name, val.current, val.last, change.toFixed(1)];
+              })
+            });
+          }
         } else if (res.id === 'team-volume' || res.id === 'team-sales') {
-          const { currentYear, volumeData, salesData } = res.data;
+          const { volumeData, salesData, currentYear } = res.data;
           const rows = volumeData || salesData;
-          if (!rows) continue;
+          if (rows) {
+            const teamMap = new Map();
+            const monthsSet = new Set();
+            rows.forEach((r: any) => {
+              const key = `${r.team}|${r.employee_name}|${r.product_group}`;
+              if (!teamMap.has(key)) teamMap.set(key, {});
+              teamMap.get(key)[r.year_month] = (Number(r.total_weight) || Number(r.total_amount) || 0);
+              monthsSet.add(r.year_month);
+            });
 
-          const teamMap = new Map();
-          const monthsSet = new Set();
-          rows.forEach((r: any) => {
-            const key = `${r.team}|${r.employee_name}|${r.product_group}`;
-            if (!teamMap.has(key)) teamMap.set(key, {});
-            teamMap.get(key)[r.year_month] = r.total_weight || r.total_amount;
-            monthsSet.add(r.year_month);
-          });
+            const sortedMonths = Array.from(monthsSet).sort() as string[];
+            const monthHeaders = sortedMonths.map(m => `${parseInt(m.split('-')[1])}월`);
 
-          const sortedMonths = Array.from(monthsSet).sort() as string[];
-          const monthHeaders = sortedMonths.map(m => `${parseInt(m.split('-')[1])}월`);
-
-          islands.push({
-            title: res.id === 'team-volume' ? `${currentYear}년 팀별 담당자별 물량` : `${currentYear}년 팀별 담당자별 매출액`,
-            headers: ['팀명', '담당자명', '그룹', ...monthHeaders, '합계'],
-            data: Array.from(teamMap.entries()).map(([key, months]: [any, any]) => {
-              const [team, emp, group] = key.split('|');
-              const values = sortedMonths.map(m => months[m] || 0);
-              const total = values.reduce((a, b) => a + b, 0);
-              return [team, emp, group, ...values, total];
-            })
-          });
+            islands.push({
+              title: res.id === 'team-volume' ? `${currentYear}년 팀별 담당자별 물량` : `${currentYear}년 팀별 담당자별 매출액`,
+              headers: ['팀명', '담당자명', '그룹', ...monthHeaders, '합계'],
+              data: Array.from(teamMap.entries()).map(([key, monthVals]: [any, any]) => {
+                const [team, emp, group] = key.split('|');
+                const values = sortedMonths.map(m => monthVals[m] || 0);
+                const total = values.reduce((a, b) => a + b, 0);
+                return [team, emp, group, ...values, total];
+              })
+            });
+          }
         } else if (res.id === 'shopping-mall') {
           const { salesData, regions, currentYear, lastYear } = res.data;
-          islands.push({
-            title: '쇼핑몰 매출 현황 (업종 28800)',
-            headers: ['지역', `거래건수(${currentYear})`, `거래건수(${lastYear})`, `중량(${currentYear})`, `중량(${lastYear})`, `합계(${currentYear})`, `합계(${lastYear})`],
-            data: regions.map((reg: any) => {
-              const curr = salesData.find((r: any) => r.region === reg && r.year === currentYear) || {};
-              const prev = salesData.find((r: any) => r.region === reg && r.year === lastYear) || {};
-              return [reg, curr.transaction_count || 0, prev.transaction_count || 0, curr.total_weight || 0, prev.total_weight || 0, curr.total_amount || 0, prev.total_amount || 0];
-            })
-          });
+          if (regions && salesData) {
+            islands.push({
+              title: '쇼핑몰 매출 현황 (업종 28800)',
+              headers: ['지역', `거래건수(${currentYear})`, `거래건수(${lastYear})`, `중량(${currentYear})`, `중량(${lastYear})`, `합계(${currentYear})`, `합계(${lastYear})`],
+              data: regions.map((reg: any) => {
+                const curr = salesData.find((r: any) => r.region === reg && String(r.year) === String(currentYear)) || {};
+                const prev = salesData.find((r: any) => r.region === reg && String(r.year) === String(lastYear)) || {};
+                return [reg, curr.transaction_count || 0, prev.transaction_count || 0, curr.total_weight || 0, prev.total_weight || 0, curr.total_amount || 0, prev.total_amount || 0];
+              })
+            });
+          }
         }
 
         if (islands.length > 0) {
