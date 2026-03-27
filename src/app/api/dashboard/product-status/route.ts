@@ -40,6 +40,12 @@ export async function GET(request: Request) {
     const baseSalesTable = 'sales';
 
     // Section 1: Auto by B2C vs B2B
+    const salesUnion = `
+      SELECT * FROM sales
+      UNION ALL SELECT * FROM east_division_sales
+      UNION ALL SELECT * FROM west_division_sales
+    `;
+
     const autoQuery = `
       SELECT
         CASE
@@ -54,7 +60,7 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ) as total_weight
-      FROM ${baseSalesTable} s
+      FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -80,7 +86,7 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${baseSalesTable} s
+      FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -116,7 +122,7 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${baseSalesTable} s
+      FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -141,7 +147,7 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${baseSalesTable} s
+      FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -167,7 +173,7 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${baseSalesTable} s
+      FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -192,7 +198,7 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${baseSalesTable} s
+      FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -217,7 +223,7 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${baseSalesTable} s
+      FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -242,12 +248,12 @@ export async function GET(request: Request) {
           ELSE 'Q4'
         END as quarter,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
-      FROM ${baseSalesTable} s
+      FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-      WHERE s.일자 >= '${lastYear}-01-01'
+      WHERE s.il자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
         AND i.품목그룹1코드 = 'CVL'
         AND i.품목명 LIKE '%LEGEND%'

@@ -73,7 +73,17 @@ export default function IndustryTab() {
     }));
 
     const filename = `B2B_산업별_${startDate}_${endDate}.xlsx`;
-    exportToExcel(exportData, filename);
+    
+    // Use island format for reference date support
+    const { exportIslandTables } = require('@/lib/excel-export');
+    const headers = Object.keys(exportData[0]);
+    const rows = exportData.map(row => headers.map(h => (row as any)[h]));
+    
+    exportIslandTables(
+      [{ title: 'B2B 산업별 판매 현황', headers, data: rows }],
+      filename,
+      `${startDate} ~ ${endDate}`
+    );
   };
 
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());

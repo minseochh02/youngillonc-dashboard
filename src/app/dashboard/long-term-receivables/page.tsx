@@ -479,7 +479,17 @@ export default function LongTermReceivablesPage() {
     }));
 
     const filename = generateFilename('장기미수금현황');
-    exportToExcel(exportData, filename);
+    
+    // Use island format for reference date support
+    const { exportIslandTables } = require('@/lib/excel-export');
+    const headers = Object.keys(exportData[0]);
+    const rows = exportData.map(row => headers.map(h => (row as any)[h]));
+    
+    exportIslandTables(
+      [{ title: '장기미수금 현황', headers, data: rows }],
+      filename,
+      selectedMonth
+    );
   };
 
   const totals = hierarchicalData.reduce((acc, node) => ({

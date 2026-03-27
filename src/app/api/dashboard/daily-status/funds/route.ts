@@ -146,7 +146,7 @@ function filterBy계정코드(rows: LedgerRow[], filter: string | string[]): Led
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const date = searchParams.get('date') || '2026-02-04';
+    const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const ledgerDate = toLedgerDate(date);
     const ledgerPrevDate = toLedgerDate(prevDate(date));
 

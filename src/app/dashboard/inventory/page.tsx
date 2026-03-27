@@ -367,105 +367,96 @@ export default function InventoryStatusPage() {
     );
   };
 
-  const handleItemsExcelDownload = () => {
-    if (filtered.length === 0) {
-      alert('다운로드할 데이터가 없습니다.');
-      return;
-    }
+  const handleExcelDownload = async () => {
+    setIsLoadingItems(true);
+    setIsLoadingDaily(true);
+    try {
+      // Fetch both data sets
+      const [itemsRes, dailyRes] = await Promise.all([
+        apiFetch(`/api/dashboard/inventory`).then(r => r.json()),
+        apiFetch(`/api/dashboard/daily-status/inventory-sheet?date=${date}`).then(r => r.json())
+      ]);
 
-    const exportData = filtered.map(item => {
-      const row: Record<string, any> = {
-        '품목코드': item.code,
-        '품목명': item.name,
-        '총재고': item.totalStock,
-        '미판매 잔량': item.totalPendingSalesQty,
-        '미구매 잔량': item.totalPendingPurchasesQty,
-      };
+      const sheets: IslandSheetData[] = [];
 
-      warehouseList.forEach(warehouse => {
-        row[`${warehouse} 재고`] = item.stockByWarehouse[warehouse] || 0;
-      });
+      // Sheet 1: 품목별 재고
+      if (itemsRes.success) {
+        const invByItem = itemsRes.data.inventoryByItem || [];
+        const pSales = itemsRes.data.pendingSales || [];
+        const pPurchases = itemsRes.data.pendingPurchases || [];
+        const whList = itemsRes.data.warehouses || [];
 
-      if (item.pendingSales.length > 0) {
-        row['미판매 내역'] = item.pendingSales
-          .map(ps => `${ps.customer}(${ps.remaining_qty}, 납기:${ps.due_date})`)
-          .join('; ');
-      }
-
-      if (item.pendingPurchases.length > 0) {
-        row['미구매 내역'] = item.pendingPurchases
-          .map(pp => `${pp.supplier}(${pp.remaining_qty}, 납기:${pp.due_date})`)
-          .join('; ');
-      }
-
-      return row;
-    });
-
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const filename = `inventory-${dateStr}.xlsx`;
-
-    exportToExcel(exportData, filename);
-  };
-
-  const handleDailyExcelDownload = () => {
-    if (!dailyData || branchesToShow.length === 0) {
-      alert('다운로드할 데이터가 없습니다. 부서를 선택해주세요.');
-      return;
-    }
-
-    const exportData: any[] = [];
-
-    METRICS.forEach(metric => {
-      CATEGORIES.forEach(cat => {
-        const row: Record<string, any> = {
-          '분류': metric.label,
-          '산업군': cat.label,
-          '티어': cat.subLabel,
-        };
-
-        branchesToShow.forEach(branch => {
-          let qty = 0;
-          let weight = 0;
-
-          if (branch === "합계") {
-            Object.values(dailyData.stats).forEach(bStats => {
-              const catStats = bStats[cat.id];
-              if (catStats) {
-                if (metric.id === 'inventoryDM') {
-                  qty += (catStats.inventory || 0) / 200;
-                } else {
-                  qty += (catStats as any)?.[metric.id] || 0;
-                  weight += (catStats as any)?.[`${metric.id}_weight`] || 0;
-                }
-              }
-            });
-          } else {
-            const stats = dailyData.stats[branch]?.[cat.id];
-            if (stats) {
-              if (metric.id === 'inventoryDM') {
-                qty = (stats.inventory || 0) / 200;
-              } else {
-                qty = (stats as any)?.[metric.id] || 0;
-                weight = (stats as any)?.[`${metric.id}_weight`] || 0;
-              }
-            }
-          }
-
-          if (metric.id === 'inventoryDM') {
-            row[`${branch}`] = qty;
-          } else {
-            row[`${branch} (Qty)`] = qty;
-            row[`${branch} (Liters)`] = weight;
-          }
+        // Logic to build mergedItems (simplified for export)
+        const map = new Map<string, any>();
+        invByItem.forEach((r: any) => {
+          if (!map.has(r.품목코드)) map.set(r.품목코드, { code: r.품목코드, name: r.item_name, stock: {}, total: 0 });
+          const item = map.get(r.품목코드);
+          item.stock[r.warehouse] = (item.stock[r.warehouse] || 0) + Number(r.stock_qty);
+          item.total += Number(r.stock_qty);
         });
 
-        exportData.push(row);
-      });
-    });
+        const headers = ['품목코드', '품목명', '총재고', ...whList.map(w => `${w} 재고`)];
+        const data = Array.from(map.values()).map(item => [
+          item.code, 
+          item.name, 
+          item.total, 
+          ...whList.map(w => item.stock[w] || 0)
+        ]);
 
-    const filename = `daily-inventory-sheet-${date}.xlsx`;
-    exportToExcel(exportData, filename);
+        sheets.push({
+          name: '품목별 재고',
+          referenceDate: date,
+          islands: [{ title: '실시간 품목별 재고 현황', headers, data }]
+        });
+      }
+
+      // Sheet 2: 일일재고파악
+      if (dailyRes.success) {
+        const dData = dailyRes.data;
+        const bToShow = ["합계", ...dData.branches];
+        const islands: IslandTable[] = [];
+
+        METRICS.forEach(metric => {
+          const headers = ['산업군', '티어', ...bToShow.flatMap(b => metric.id === 'inventoryDM' ? [b] : [`${b}(Qty)`, `${b}(L)`])];
+          const data = CATEGORIES.map(cat => {
+            const row = [cat.label, cat.subLabel];
+            bToShow.forEach(branch => {
+              let q = 0, w = 0;
+              if (branch === "합계") {
+                Object.values(dData.stats).forEach((bs: any) => {
+                  const cs = bs[cat.id];
+                  if (cs) {
+                    if (metric.id === 'inventoryDM') q += (cs.inventory || 0) / 200;
+                    else { q += cs[metric.id] || 0; w += cs[`${metric.id}_weight`] || 0; }
+                  }
+                });
+              } else {
+                const bs = dData.stats[branch]?.[cat.id];
+                if (bs) {
+                  if (metric.id === 'inventoryDM') q = (bs.inventory || 0) / 200;
+                  else { q = bs[metric.id] || 0; w = bs[`${metric.id}_weight`] || 0; }
+                }
+              }
+              if (metric.id === 'inventoryDM') row.push(q);
+              else row.push(q, w);
+            });
+            return row;
+          });
+          islands.push({ title: metric.label, headers, data });
+        });
+
+        sheets.push({ name: '일일재고파악', islands, referenceDate: date });
+      }
+
+      const { exportMultiSheetIslandTables } = await import('@/lib/excel-export');
+      exportMultiSheetIslandTables(sheets, `inventory-full-${date}.xlsx`);
+    } catch (error) {
+      console.error("Full Inventory Export Error:", error);
+      alert("엑셀 다운로드 중 오류가 발생했습니다.");
+    } finally {
+      setIsLoadingItems(false);
+      setIsLoadingDaily(false);
+    }
   };
 
   return (
@@ -547,11 +538,11 @@ export default function InventoryStatusPage() {
             <div className="ml-auto" />
 
             <ExcelDownloadButton
-              onClick={handleItemsExcelDownload}
-              disabled={filtered.length === 0}
+              onClick={handleExcelDownload}
+              disabled={filtered.length === 0 || isLoadingItems || isLoadingDaily}
             />
 
-            {isLoadingItems && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
+            {(isLoadingItems || isLoadingDaily) && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
           </div>
 
           {/* Main Table */}
@@ -645,8 +636,8 @@ export default function InventoryStatusPage() {
             </div>
 
             <ExcelDownloadButton
-              onClick={handleDailyExcelDownload}
-              disabled={!dailyData || branchesToShow.length === 0}
+              onClick={handleExcelDownload}
+              disabled={!dailyData || isLoadingDaily || isLoadingItems}
             />
 
             <button

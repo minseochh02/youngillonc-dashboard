@@ -179,7 +179,7 @@ export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
     exportData.push(totalsRow);
 
     const filename = generateFilename('팀매출액');
-    exportToExcel(exportData, filename);
+    exportToExcel(exportData, filename, { referenceDate: selectedMonth });
   };
 
   return (

@@ -8,6 +8,16 @@ export interface ExcelExportOptions {
   includeHeaders?: boolean;
   columnWidths?: number[];
   formatters?: Record<string, (value: any) => any>;
+  referenceDate?: string;
+}
+
+/**
+ * Data for a single sheet in a multi-sheet island table export
+ */
+export interface IslandSheetData {
+  name: string;
+  islands: IslandTable[];
+  referenceDate?: string;
 }
 
 /**
@@ -95,7 +105,8 @@ export function exportToExcel(
     sheetName = 'Sheet1',
     includeHeaders = true,
     columnWidths,
-    formatters = {}
+    formatters = {},
+    referenceDate
   } = options;
 
   if (!data || data.length === 0) {
@@ -130,16 +141,22 @@ export function exportToExcel(
   );
 
   // Add headers if needed
-  const worksheetData = includeHeaders ? [headers, ...rows] : rows;
+  let worksheetData = includeHeaders ? [headers, ...rows] : rows;
+
+  // Prepend reference date if provided
+  if (referenceDate) {
+    worksheetData = [[`기준일: ${referenceDate}`], [], ...worksheetData];
+  }
 
   // Create worksheet
   const ws = XLSX.utils.aoa_to_sheet(worksheetData);
 
   // Apply formatting to data cells
   if (includeHeaders) {
+    const dataRowOffset = (referenceDate ? 2 : 0) + 1;
     rows.forEach((row, rowIndex) => {
       row.forEach((cell, colIndex) => {
-        const cellAddress = XLSX.utils.encode_cell({ r: rowIndex + 1, c: colIndex });
+        const cellAddress = XLSX.utils.encode_cell({ r: rowIndex + dataRowOffset, c: colIndex });
         applyCellFormat(ws, cellAddress, columnTypes[colIndex]);
       });
     });
@@ -169,19 +186,105 @@ export function exportToExcel(
 }
 
 /**
- * Export multiple tables as "island tables" in a single sheet
- * Used for daily-status page
+ * Export multiple sheets into a single Excel workbook
  */
-export function exportIslandTables(
-  islands: IslandTable[],
+export function exportMultiSheetExcel(
+  sheets: SheetData[],
   filename: string
 ): void {
-  if (!islands || islands.length === 0) {
+  if (!sheets || sheets.length === 0) {
     alert('다운로드할 데이터가 없습니다.');
     return;
   }
 
+  const wb = XLSX.utils.book_new();
+
+  sheets.forEach(sheet => {
+    const { name, data, options = {} } = sheet;
+    const {
+      includeHeaders = true,
+      columnWidths,
+      formatters = {}
+    } = options;
+
+    if (!data || data.length === 0) return;
+
+    // Extract headers from first row keys
+    const headers = Object.keys(data[0]);
+
+    // Detect column types from headers
+    const columnTypes = headers.map(header => detectColumnType(header));
+
+    // Convert data to 2D array
+    const rows = data.map(row =>
+      headers.map((header, index) => {
+        let value = row[header];
+
+        // Apply custom formatter if provided
+        if (formatters[header]) {
+          value = formatters[header](value);
+        }
+
+        // Format based on column type
+        const type = columnTypes[index];
+        if (type === 'number' || type === 'currency') {
+          return formatNumberCell(value);
+        }
+
+        return value ?? '';
+      })
+    );
+
+    // Add headers if needed
+    const worksheetData = includeHeaders ? [headers, ...rows] : rows;
+
+    // Create worksheet
+    const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+
+    // Apply formatting to data cells
+    if (includeHeaders) {
+      rows.forEach((row, rowIndex) => {
+        row.forEach((cell, colIndex) => {
+          const cellAddress = XLSX.utils.encode_cell({ r: rowIndex + 1, c: colIndex });
+          applyCellFormat(ws, cellAddress, columnTypes[colIndex]);
+        });
+      });
+    }
+
+    // Set column widths
+    if (columnWidths) {
+      setColumnWidths(ws, columnWidths);
+    } else {
+      // Auto-calculate column widths based on content
+      const maxWidths = headers.map((header, colIndex) => {
+        const headerLength = header.length;
+        const maxDataLength = Math.max(
+          ...rows.map(row => String(row[colIndex] ?? '').length)
+        );
+        return Math.max(headerLength, maxDataLength, 10);
+      });
+      setColumnWidths(ws, maxWidths);
+    }
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, name.substring(0, 31)); // Sheet name max 31 chars
+  });
+
+  // Generate Excel file and trigger download
+  XLSX.writeFile(wb, filename);
+}
+
+/**
+ * Helper to build a worksheet from island tables
+ */
+function buildWorksheetFromIslands(islands: IslandTable[], referenceDate?: string): XLSX.WorkSheet {
   const worksheetData: any[][] = [];
+
+  // Add reference date if provided
+  if (referenceDate) {
+    worksheetData.push([`기준일: ${referenceDate}`]);
+    worksheetData.push([]); // Blank row
+  }
 
   islands.forEach((island, islandIndex) => {
     // Add section title
@@ -208,19 +311,6 @@ export function exportIslandTables(
       worksheetData.push(formattedRow);
     });
 
-    // Add total row if specified
-    if (island.includeTotal && island.data.length > 0) {
-      const totalRow = island.data[island.data.length - 1];
-      const formattedTotal = totalRow.map((cell, colIndex) => {
-        const type = columnTypes[colIndex];
-        if (type === 'number' || type === 'currency') {
-          return formatNumberCell(cell);
-        }
-        return cell ?? '';
-      });
-      // Total row is already in data, no need to add again
-    }
-
     // Add blank rows between islands (except after last island)
     if (islandIndex < islands.length - 1) {
       worksheetData.push([]);
@@ -233,6 +323,11 @@ export function exportIslandTables(
 
   // Apply formatting to all cells
   let currentRow = 0;
+
+  if (referenceDate) {
+    currentRow += 2; // account for reference date and blank row
+  }
+
   islands.forEach((island) => {
     // Skip title row and blank row
     if (island.title) {
@@ -273,10 +368,51 @@ export function exportIslandTables(
   });
 
   setColumnWidths(ws, maxWidths);
+  return ws;
+}
+
+/**
+ * Export multiple sheets, where each sheet can contain multiple "island tables"
+ */
+export function exportMultiSheetIslandTables(
+  sheets: IslandSheetData[],
+  filename: string
+): void {
+  if (!sheets || sheets.length === 0) {
+    alert('다운로드할 데이터가 없습니다.');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  sheets.forEach(sheet => {
+    if (!sheet.islands || sheet.islands.length === 0) return;
+    const ws = buildWorksheetFromIslands(sheet.islands, sheet.referenceDate);
+    XLSX.utils.book_append_sheet(wb, ws, sheet.name.substring(0, 31));
+  });
+
+  // Generate Excel file and trigger download
+  XLSX.writeFile(wb, filename);
+}
+
+/**
+ * Export multiple tables as "island tables" in a single sheet
+ */
+export function exportIslandTables(
+  islands: IslandTable[],
+  filename: string,
+  referenceDate?: string
+): void {
+  if (!islands || islands.length === 0) {
+    alert('다운로드할 데이터가 없습니다.');
+    return;
+  }
+
+  const ws = buildWorksheetFromIslands(islands, referenceDate);
 
   // Create workbook and add worksheet
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '일일현황');
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
 
   // Generate Excel file and trigger download
   XLSX.writeFile(wb, filename);

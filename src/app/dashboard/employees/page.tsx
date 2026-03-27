@@ -114,11 +114,11 @@ export default function EmployeesPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   
   // Calendar state
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 2, 1)); // Default to March 2026
+  const [currentMonth, setCurrentMonth] = useState(new Date()); 
   
   // Filters for tracker
-  const [startDate, setStartDate] = useState('2024-02-01');
-  const [endDate, setEndDate] = useState('2026-12-31');
+  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'missed' | 'future'>('all');
 
   // Source messages modal
@@ -206,8 +206,8 @@ export default function EmployeesPage() {
       // 3. Load full activities for the calendar
       const calParams = new URLSearchParams({ 
         employee: name,
-        startDate: '2024-01-01',
-        endDate: '2026-12-31'
+        startDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0], // Start of current year
+        endDate: new Date().toISOString().split('T')[0] // Today
       });
       const calRes = await apiFetch(`/api/employees/activities?${calParams}`);
       const calDataJson = await calRes.json();

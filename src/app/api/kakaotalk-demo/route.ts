@@ -3,7 +3,7 @@ import { executeSQL } from '../../../../egdesk-helpers';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const date = searchParams.get('date') || '2024-03-11';
+  const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
 
   try {
     // Load raw messages

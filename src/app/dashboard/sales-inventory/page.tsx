@@ -3,11 +3,11 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Package, ShoppingCart, Truck, Loader2, Search,
-  AlertTriangle, CheckCircle2, Clock, Filter,
+  AlertTriangle, CheckCircle2, Clock, Filter, Calendar
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
-import { exportToExcel } from "@/lib/excel-export";
+import { exportToExcel, exportIslandTables } from "@/lib/excel-export";
 
 // ── Types ──
 
@@ -162,19 +162,19 @@ export default function SalesInventoryPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedDivision, setSelectedDivision] = useState("all");
-  const [selectedMonth, setSelectedMonth] = useState("");
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [showOnlyWithPending, setShowOnlyWithPending] = useState(false);
 
   useEffect(() => {
     fetchData();
-  }, [selectedDivision, selectedMonth]);
+  }, [selectedDivision, selectedDate]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
       if (selectedDivision !== "all") params.set("division", selectedDivision);
-      if (selectedMonth) params.set("month", selectedMonth);
+      if (selectedDate) params.set("month", selectedDate);
       const response = await apiFetch(`/api/dashboard/sales-inventory?${params}`);
       const result = await response.json();
       if (result.success) {
@@ -333,10 +333,18 @@ export default function SalesInventoryPage() {
       return row;
     });
 
-    const monthPart = selectedMonth ? `-${selectedMonth}` : '';
+    const monthPart = selectedDate ? `-${selectedDate}` : '';
     const filename = `sales-inventory${monthPart}.xlsx`;
 
-    exportToExcel(exportData, filename);
+    // Use island format for reference date support
+    const headers = Object.keys(exportData[0] || {});
+    const rows = exportData.map(row => headers.map(h => row[h]));
+    
+    exportIslandTables(
+      [{ title: '판매현황 및 재고 매칭', headers, data: rows }],
+      filename,
+      selectedDate
+    );
   };
 
   return (
@@ -376,7 +384,17 @@ export default function SalesInventoryPage() {
           />
         </div>
 
-        <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+        {/* Date Picker */}
+        <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2 shadow-sm">
+          <Calendar className="w-4 h-4 text-zinc-400" />
+          <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300 mr-2">조회일</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="text-sm bg-transparent border-none focus:ring-0 text-zinc-900 dark:text-zinc-100 outline-none cursor-pointer"
+          />
+        </div>
 
         {/* Division */}
         <div className="flex items-center gap-1.5">
@@ -392,18 +410,6 @@ export default function SalesInventoryPage() {
             ))}
           </select>
         </div>
-
-        {/* Month */}
-        <select
-          value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
-          className="text-xs bg-transparent border border-zinc-200 dark:border-zinc-700 rounded px-2 py-1 outline-none text-zinc-700 dark:text-zinc-300 cursor-pointer"
-        >
-          <option value="">전체 기간</option>
-          {monthList.map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
 
         {/* Pending toggle */}
         <label className="flex items-center gap-1.5 cursor-pointer select-none">

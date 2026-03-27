@@ -7,7 +7,7 @@ import { executeSQL } from '@/egdesk-helpers';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const date = searchParams.get('date') || '2026-02-04';
+    const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
 
     // SQL to aggregate collection data
     // 1. Cash and Card from 'ledger' (Account 1089: AR, branch categorized by client group)

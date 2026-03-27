@@ -8,8 +8,11 @@ import { executeSQL } from '@/egdesk-helpers';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const date = searchParams.get('date') || '2025-11-01';
+    const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const division = searchParams.get('division') || '창원';
+    const includeVat = searchParams.get('includeVat') === 'true';
+
+    const divisor = includeVat ? '1.0' : '1.1';
 
     // Calculate the start of the month for the given date
     const startDate = `${date.substring(0, 7)}-01`;
@@ -62,7 +65,7 @@ export async function GET(request: Request) {
           END as category,
           CASE
             WHEN i.품목그룹1코드 = 'MB' THEN 0
-            ELSE CAST(REPLACE(s.합계, ',', '') AS NUMERIC)
+            ELSE CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}
           END as amount,
           CAST(REPLACE(s.중량, ',', '') AS NUMERIC) as weight,
           s.일자
@@ -231,7 +234,7 @@ export async function GET(request: Request) {
       FROM (
         SELECT
           CAST(REPLACE(p.중량, ',', '') AS NUMERIC) as volume,
-          CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) as amount,
+          CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} as amount,
           p.일자
         FROM purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드

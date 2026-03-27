@@ -52,15 +52,11 @@ export async function GET(request: Request) {
       ORDER BY 창고명
     `);
 
-    // Fetch units for selection
+    // Fetch units for selection from East and West division tables
     const units = await executeSQL(`
-      SELECT DISTINCT 단위 as unit
-      FROM south_division_sales
-      WHERE 단위 IS NOT NULL AND 단위 != ''
+      SELECT DISTINCT 단위 as unit FROM east_division_purchases WHERE 단위 IS NOT NULL AND 단위 != ''
       UNION
-      SELECT DISTINCT 단위 as unit
-      FROM east_division_purchases
-      WHERE 단위 IS NOT NULL AND 단위 != ''
+      SELECT DISTINCT 단위 as unit FROM west_division_purchases WHERE 단위 IS NOT NULL AND 단위 != ''
     `);
 
     // Map saved items with their current categories
@@ -105,7 +101,7 @@ export async function GET(request: Request) {
             SELECT 품목코드, 일자 FROM sales
             UNION ALL SELECT 품목코드, 일자 FROM east_division_sales
             UNION ALL SELECT 품목코드, 일자 FROM west_division_sales
-            UNION ALL SELECT 품목코드, 일자 FROM south_division_sales
+            UNION ALL SELECT 품목코드, 일자 FROM internal_uses
           ) GROUP BY 품목코드
         ) last_sales ON i.품목코드 = last_sales.품목코드
         LEFT JOIN (
@@ -114,7 +110,7 @@ export async function GET(request: Request) {
             SELECT 품목코드, 수량, 일자 FROM sales
             UNION ALL SELECT 품목코드, 수량, 일자 FROM east_division_sales
             UNION ALL SELECT 품목코드, 수량, 일자 FROM west_division_sales
-            UNION ALL SELECT 품목코드, 수량, 일자 FROM south_division_sales
+            UNION ALL SELECT 품목코드, 수량, 일자 FROM internal_uses
           ) 
           WHERE 일자 >= '${cutoffDateStr}'
           GROUP BY 품목코드
@@ -145,7 +141,7 @@ export async function GET(request: Request) {
           SELECT 품목코드, 일자 FROM sales
           UNION ALL SELECT 품목코드, 일자 FROM east_division_sales
           UNION ALL SELECT 품목코드, 일자 FROM west_division_sales
-          UNION ALL SELECT 품목코드, 일자 FROM south_division_sales
+          UNION ALL SELECT 품목코드, 일자 FROM internal_uses
         ) GROUP BY 품목코드
       ) last_sales ON i.품목코드 = last_sales.품목코드
       LEFT JOIN (
@@ -154,7 +150,7 @@ export async function GET(request: Request) {
           SELECT 품목코드, 수량, 일자 FROM sales
           UNION ALL SELECT 품목코드, 수량, 일자 FROM east_division_sales
           UNION ALL SELECT 품목코드, 수량, 일자 FROM west_division_sales
-          UNION ALL SELECT 품목코드, 수량, 일자 FROM south_division_sales
+          UNION ALL SELECT 품목코드, 수량, 일자 FROM internal_uses
         ) 
         WHERE 일자 >= '${cutoffDateStr}'
         GROUP BY 품목코드

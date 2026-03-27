@@ -19,8 +19,6 @@ export async function GET(request: NextRequest) {
         SELECT 거래처코드 FROM east_division_sales
         UNION
         SELECT 거래처코드 FROM west_division_sales
-        UNION
-        SELECT 거래처코드 FROM south_division_sales
       )
     `);
 
@@ -35,8 +33,6 @@ export async function GET(request: NextRequest) {
         SELECT 일자 FROM east_division_sales
         UNION ALL
         SELECT 일자 FROM west_division_sales
-        UNION ALL
-        SELECT 일자 FROM south_division_sales
       )
     `);
 
@@ -53,8 +49,6 @@ export async function GET(request: NextRequest) {
         SELECT 거래처코드, 일자 FROM east_division_sales
         UNION ALL
         SELECT 거래처코드, 일자 FROM west_division_sales
-        UNION ALL
-        SELECT 거래처코드, 일자 FROM south_division_sales
       ) s ON c.거래처코드 = s.거래처코드
       GROUP BY c.거래처코드, c.거래처명
       ORDER BY last_sale_date DESC NULLS LAST
@@ -75,11 +69,9 @@ export async function GET(request: NextRequest) {
           SELECT 거래처코드, 일자 FROM east_division_sales
           UNION ALL
           SELECT 거래처코드, 일자 FROM west_division_sales
-          UNION ALL
-          SELECT 거래처코드, 일자 FROM south_division_sales
         ) s ON c.거래처코드 = s.거래처코드
         GROUP BY c.거래처코드
-        HAVING last_sale_date IS NULL OR last_sale_date < date('2025-03-31', '-1 month')
+        HAVING last_sale_date IS NULL OR last_sale_date < date('now', '-1 month')
       )
     `);
 

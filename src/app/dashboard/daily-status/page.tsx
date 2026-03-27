@@ -29,7 +29,7 @@ export default function DailyStatusPage() {
   const [purchaseView, setPurchaseView] = useState<'office' | 'warehouse'>('warehouse');
   const [monthlySalesView, setMonthlySalesView] = useState<'office' | 'warehouse'>('office');
   const [monthlyPurchaseView, setMonthlyPurchaseView] = useState<'office' | 'warehouse'>('warehouse');
-  const [selectedDate, setSelectedDate] = useState("2026-02-04");
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [includeVat, setIncludeVat] = useState(false);
   
   const [salesData, setSalesData] = useState<any[]>([]);
@@ -102,16 +102,23 @@ export default function DailyStatusPage() {
           return [...raw, totalRow];
         };
 
-        setSalesData(addTotalRow(result.salesData, 'sales'));
-        setSalesByWarehouse(addTotalRow(result.salesByWarehouse, 'sales'));
-        setPurchaseData(addTotalRow(result.purchaseData, 'purchase'));
-        setPurchaseByOffice(addTotalRow(result.purchaseByOffice, 'purchase'));
+        const sales = addTotalRow(result.salesData, 'sales');
+        const salesWH = addTotalRow(result.salesByWarehouse, 'sales');
+        const purchase = addTotalRow(result.purchaseData, 'purchase');
+        const purchaseOff = addTotalRow(result.purchaseByOffice, 'purchase');
+
+        setSalesData(sales);
+        setSalesByWarehouse(salesWH);
+        setPurchaseData(purchase);
+        setPurchaseByOffice(purchaseOff);
+        return { sales, salesWH, purchase, purchaseOff, miscMobil: result.miscMobil };
       }
     } catch (error) {
       console.error("Failed to fetch data:", error);
     } finally {
       setIsLoading(false);
     }
+    return null;
   };
 
   const fetchMonthlyData = async () => {
@@ -126,12 +133,14 @@ export default function DailyStatusPage() {
         setMonthlyPurchaseData(result.purchaseData || []);
         setMonthlyPurchaseByOffice(result.purchaseByOffice || []);
         setMonthlyMiscMobil(result.miscMobil);
+        return result;
       }
     } catch (error) {
       console.error("Failed to fetch monthly data:", error);
     } finally {
       setIsLoading(false);
     }
+    return null;
   };
 
   const fetchCollectionsData = async () => {
@@ -141,12 +150,14 @@ export default function DailyStatusPage() {
       const result = await response.json();
       if (result.success) {
         setCollectionsData(result.data || []);
+        return result.data;
       }
     } catch (error) {
       console.error("Failed to fetch collections data:", error);
     } finally {
       setIsLoading(false);
     }
+    return null;
   };
 
   const fetchMonthlyCollectionsData = async () => {
@@ -157,12 +168,14 @@ export default function DailyStatusPage() {
       const result = await response.json();
       if (result.success) {
         setMonthlyCollectionsData(result.data || []);
+        return result.data;
       }
     } catch (error) {
       console.error("Failed to fetch monthly collections data:", error);
     } finally {
       setIsLoading(false);
     }
+    return null;
   };
 
   const fetchFundsData = async () => {
@@ -172,12 +185,14 @@ export default function DailyStatusPage() {
       const result = await response.json();
       if (result.success) {
         setFundsData(result.data);
+        return result.data;
       }
     } catch (error) {
       console.error("Failed to fetch funds data:", error);
     } finally {
       setIsLoading(false);
     }
+    return null;
   };
 
   const fetchInOutData = async () => {
@@ -187,12 +202,14 @@ export default function DailyStatusPage() {
       const result = await response.json();
       if (result.success) {
         setInOutData(result.data);
+        return result.data;
       }
     } catch (error) {
       console.error("Failed to fetch in-out data:", error);
     } finally {
       setIsLoading(false);
     }
+    return null;
   };
 
   const fetchMobilPaymentsData = async () => {
@@ -202,12 +219,14 @@ export default function DailyStatusPage() {
       const result = await response.json();
       if (result.success) {
         setMobilPaymentsData(result.data || []);
+        return result.data;
       }
     } catch (error) {
       console.error("Failed to fetch mobil payments data:", error);
     } finally {
       setIsLoading(false);
     }
+    return null;
   };
 
   const sTotals = salesData.find(d => d.id === 'total') || { 
@@ -258,108 +277,162 @@ export default function DailyStatusPage() {
   const handleExcelDownload = async () => {
     try {
       setIsLoading(true);
-      // Simplified for brevity, same logic as before but with updated data sets
-      const islands: IslandTable[] = [];
-      if (salesData.length > 0) {
-        islands.push({ 
-          title: '매출현황', 
-          headers: ['사업소', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
-          data: salesData.map(r => [
-            r.branch, 
-            r.totalSales, 
-            r.totalSalesWeight,
-            r.mobileSalesAmount, 
-            r.mobileSalesWeight, 
-            r.flagshipSalesAmount,
-            r.flagshipSalesWeight
-          ]) 
+      
+      // Fetch all data for all tabs in parallel
+      const [
+        salesRes,
+        monthlyRes,
+        collectionsRes,
+        monthlyCollectionsRes,
+        fundsRes,
+        inOutRes,
+        mobilRes
+      ] = await Promise.all([
+        fetchSalesAndPurchaseData(),
+        fetchMonthlyData(),
+        fetchCollectionsData(),
+        fetchMonthlyCollectionsData(),
+        fetchFundsData(),
+        fetchInOutData(),
+        fetchMobilPaymentsData()
+      ]);
+
+      const sheets: any[] = [];
+
+      // Tab 1: 매출/매입현황
+      if (salesRes) {
+        const islands: IslandTable[] = [
+          { 
+            title: '매출현황 (사업소별)', 
+            headers: ['사업소', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
+            data: salesRes.sales.map((r: any) => [r.branch, r.totalSales, r.totalSalesWeight, r.mobileSalesAmount, r.mobileSalesWeight, r.flagshipSalesAmount, r.flagshipSalesWeight]) 
+          },
+          { 
+            title: '매출현황 (창고별)', 
+            headers: ['창고', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
+            data: salesRes.salesWH.map((r: any) => [r.branch, r.totalSales, r.totalSalesWeight, r.mobileSalesAmount, r.mobileSalesWeight, r.flagshipSalesAmount, r.flagshipSalesWeight]) 
+          },
+          { 
+            title: '매입현황 (창고/그룹별)', 
+            headers: ['창고/그룹', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
+            data: salesRes.purchase.map((r: any) => [r.branch, r.totalPurchases, r.totalPurchaseWeight, r.mobilePurchaseAmount, r.mobilePurchaseWeight, r.flagshipPurchaseAmount, r.flagshipPurchaseWeight]) 
+          },
+          { 
+            title: '매입현황 (사업소별)', 
+            headers: ['사업소', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
+            data: salesRes.purchaseOff.map((r: any) => [r.branch, r.totalPurchases, r.totalPurchaseWeight, r.mobilePurchaseAmount, r.mobilePurchaseWeight, r.flagshipPurchaseAmount, r.flagshipPurchaseWeight]) 
+          }
+        ];
+        
+        if (mobilRes) {
+          islands.push({
+            title: '모빌결제내역',
+            headers: ['사업소', 'IL', 'AUTO', 'MBK', '합계'],
+            data: mobilRes.map((r: any) => [r.branch, r.il, r.auto, r.mbk, r.total])
+          });
+        }
+
+        sheets.push({ name: '매출매입현황', islands, referenceDate: selectedDate });
+      }
+
+      // Tab 2: 월별매출현황
+      if (monthlyRes) {
+        const islands: IslandTable[] = [
+          { 
+            title: '월별매출현황 (사업소별)', 
+            headers: ['월', '사업소', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
+            data: monthlyRes.salesData.map((r: any) => [r.month, r.branch, r.totalSales, r.totalSalesWeight, r.mobileSalesAmount, r.mobileSalesWeight, r.flagshipSalesAmount, r.flagshipSalesWeight]) 
+          },
+          { 
+            title: '월별매출현황 (창고별)', 
+            headers: ['월', '창고', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
+            data: monthlyRes.salesByWarehouse.map((r: any) => [r.month, r.branch, r.totalSales, r.totalSalesWeight, r.mobileSalesAmount, r.mobileSalesWeight, r.flagshipSalesAmount, r.flagshipSalesWeight]) 
+          },
+          { 
+            title: '월별매입현황 (창고/그룹별)', 
+            headers: ['월', '창고/그룹', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
+            data: monthlyRes.purchaseData.map((r: any) => [r.month, r.branch, r.totalPurchases, r.totalPurchaseWeight, r.mobilePurchaseAmount, r.mobilePurchaseWeight, r.flagshipPurchaseAmount, r.flagshipPurchaseWeight]) 
+          },
+          { 
+            title: '월별매입현황 (사업소별)', 
+            headers: ['월', '사업소', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
+            data: monthlyRes.purchaseByOffice.map((r: any) => [r.month, r.branch, r.totalPurchases, r.totalPurchaseWeight, r.mobilePurchaseAmount, r.mobilePurchaseWeight, r.flagshipPurchaseAmount, r.flagshipPurchaseWeight]) 
+          }
+        ];
+        sheets.push({ name: '월별매출현황', islands, referenceDate: selectedDate });
+      }
+
+      // Tab 3: 외상매출금현황
+      if (collectionsRes) {
+        sheets.push({
+          name: '외상매출금현황',
+          referenceDate: selectedDate,
+          islands: [{
+            title: '사업소별 외상매출금 현황',
+            headers: ['사업소', '전월이월', '당월매출', '당월수금', '기타', '당월잔액'],
+            data: collectionsRes.map((r: any) => [r.branch, r.prev_balance, r.current_sales, r.current_collections, r.others, r.current_balance])
+          }]
         });
       }
-      if (purchaseData.length > 0) {
-        islands.push({ 
-          title: '매입현황', 
-          headers: ['창고/그룹', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
-          data: purchaseData.map(r => [
-            r.branch, 
-            r.totalPurchases, 
-            r.totalPurchaseWeight,
-            r.mobilePurchaseAmount, 
-            r.mobilePurchaseWeight, 
-            r.flagshipPurchaseAmount,
-            r.flagshipPurchaseWeight
-          ]) 
+
+      // Tab 4: 월별외상매출금현황
+      if (monthlyCollectionsRes) {
+        sheets.push({
+          name: '월별외상매출금현황',
+          referenceDate: selectedDate,
+          islands: [{
+            title: '월별 외상매출금 현황',
+            headers: ['월', '사업소', '기초잔액', '매출액', '수금액', '기타', '기말잔액'],
+            data: monthlyCollectionsRes.map((r: any) => [r.month, r.branch, r.beginning_balance, r.sales_amount, r.collection_amount, r.others, r.ending_balance])
+          }]
         });
       }
-      if (salesByWarehouse.length > 0) {
-        islands.push({ 
-          title: '매출현황(창고)', 
-          headers: ['창고', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
-          data: salesByWarehouse.map(r => [r.branch, r.totalSales, r.totalSalesWeight, r.mobileSalesAmount, r.mobileSalesWeight, r.flagshipSalesAmount, r.flagshipSalesWeight]) 
-        });
+
+      // Tab 5: 자금현황
+      if (fundsRes) {
+        const islands: IslandTable[] = [];
+        if (fundsRes.accounts) {
+          islands.push({
+            title: '은행별 예금 현황',
+            headers: ['은행/계좌', '전일잔액', '입금액', '출금액', '현재잔액'],
+            data: fundsRes.accounts.map((r: any) => [r.account_name, r.prev_balance, r.income, r.outcome, r.current_balance])
+          });
+        }
+        if (fundsRes.loans) {
+          islands.push({
+            title: '차입금 현황',
+            headers: ['구분', '은행', '금액', '만기일', '비고'],
+            data: fundsRes.loans.map((r: any) => [r.type, r.bank, r.amount, r.due_date, r.memo])
+          });
+        }
+        sheets.push({ name: '자금현황', islands, referenceDate: selectedDate });
       }
-      if (purchaseByOffice.length > 0) {
-        islands.push({ 
-          title: '매입현황(사업소)', 
-          headers: ['사업소', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
-          data: purchaseByOffice.map(r => [r.branch, r.totalPurchases, r.totalPurchaseWeight, r.mobilePurchaseAmount, r.mobilePurchaseWeight, r.flagshipPurchaseAmount, r.flagshipPurchaseWeight]) 
-        });
+
+      // Tab 6: 입출금현황
+      if (inOutRes) {
+        const islands: IslandTable[] = [];
+        if (inOutRes.income) {
+          islands.push({
+            title: '입금 내역',
+            headers: ['계정과목', '거래처', '금액', '적요'],
+            data: inOutRes.income.map((r: any) => [r.account, r.client, r.amount, r.summary])
+          });
+        }
+        if (inOutRes.outcome) {
+          islands.push({
+            title: '출금 내역',
+            headers: ['계정과목', '거래처', '금액', '적요'],
+            data: inOutRes.outcome.map((r: any) => [r.account, r.client, r.amount, r.summary])
+          });
+        }
+        sheets.push({ name: '입출금현황', islands, referenceDate: selectedDate });
       }
-      if (mobilPaymentsData.length > 0) {
-        islands.push({ 
-          title: '모빌결제내역', 
-          headers: ['사업소', 'IL', 'AUTO', 'MBK', '합계'], 
-          data: mobilPaymentsData.map(r => [r.branch, r.il, r.auto, r.mbk, r.total]) 
-        });
-      }
-      if (monthlySalesData.length > 0) {
-        islands.push({ 
-          title: '월별매출현황', 
-          headers: ['월', '사업소', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
-          data: monthlySalesData.map(r => [
-            r.month, 
-            r.branch, 
-            r.totalSales, 
-            r.totalSalesWeight,
-            r.mobileSalesAmount, 
-            r.mobileSalesWeight, 
-            r.flagshipSalesAmount,
-            r.flagshipSalesWeight
-          ]) 
-        });
-      }
-      if (monthlyPurchaseData.length > 0) {
-        islands.push({ 
-          title: '월별매입현황', 
-          headers: ['월', '창고/그룹', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
-          data: monthlyPurchaseData.map(r => [
-            r.month, 
-            r.branch, 
-            r.totalPurchases, 
-            r.totalPurchaseWeight,
-            r.mobilePurchaseAmount, 
-            r.mobilePurchaseWeight, 
-            r.flagshipPurchaseAmount,
-            r.flagshipPurchaseWeight
-          ]) 
-        });
-      }
-      if (monthlySalesByWarehouse.length > 0) {
-        islands.push({ 
-          title: '월별매출현황(창고)', 
-          headers: ['월', '창고', '총매출액', '총판매량(L)', '모빌매출', '모빌판매량(L)', '플래그십매출', '플래그십판매량(L)'], 
-          data: monthlySalesByWarehouse.map(r => [r.month, r.branch, r.totalSales, r.totalSalesWeight, r.mobileSalesAmount, r.mobileSalesWeight, r.flagshipSalesAmount, r.flagshipSalesWeight]) 
-        });
-      }
-      if (monthlyPurchaseByOffice.length > 0) {
-        islands.push({ 
-          title: '월별매입현황(사업소)', 
-          headers: ['월', '사업소', '총매입액', '총매입량(L)', '모빌매입', '모빌매입량(L)', '플래그십매입', '플래그십매입량(L)'], 
-          data: monthlyPurchaseByOffice.map(r => [r.month, r.branch, r.totalPurchases, r.totalPurchaseWeight, r.mobilePurchaseAmount, r.mobilePurchaseWeight, r.flagshipPurchaseAmount, r.flagshipPurchaseWeight]) 
-        });
-      }
-      exportIslandTables(islands, `daily-status-${selectedDate}.xlsx`);
+
+      const { exportMultiSheetIslandTables } = await import('@/lib/excel-export');
+      exportMultiSheetIslandTables(sheets, `daily-status-full-${selectedDate}.xlsx`);
     } catch (error) {
       console.error('Excel export error:', error);
+      alert('엑셀 다운로드 중 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
     }

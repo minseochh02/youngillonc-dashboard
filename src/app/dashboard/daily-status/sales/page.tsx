@@ -25,7 +25,8 @@ const divisions = [
 export default function DailySalesPage() {
   const [activeTab, setActiveTab] = useState(divisions[1].id); // Default to 'changwon'
   const [viewMode, setViewMode] = useState<"table" | "report">("report");
-  const [selectedDate, setSelectedDate] = useState("2025-11-01"); // Default to target date
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // Default to current date
+  const [includeVat, setIncludeVat] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [closingData, setClosingData] = useState<any>(null);
   const [tableData, setTableData] = useState<any[]>([]);
@@ -34,7 +35,7 @@ export default function DailySalesPage() {
 
   useEffect(() => {
     fetchData();
-  }, [selectedDate, activeTab, viewMode]);
+  }, [selectedDate, activeTab, viewMode, includeVat]);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -42,7 +43,7 @@ export default function DailySalesPage() {
       const divisionLabel = activeDivision.label;
       
       if (viewMode === "report") {
-        const response = await apiFetch(`/api/dashboard/daily-status/sales-collections/closing?date=${selectedDate}&division=${divisionLabel}`);
+        const response = await apiFetch(`/api/dashboard/daily-status/sales-collections/closing?date=${selectedDate}&division=${divisionLabel}&includeVat=${includeVat}`);
         const result = await response.json();
         if (result.success) {
           setClosingData({
@@ -54,7 +55,7 @@ export default function DailySalesPage() {
           });
         }
       } else {
-        const response = await apiFetch(`/api/dashboard/daily-status/sales-collections/customer-detail?date=${selectedDate}&division=${divisionLabel}`);
+        const response = await apiFetch(`/api/dashboard/daily-status/sales-collections/customer-detail?date=${selectedDate}&division=${divisionLabel}&includeVat=${includeVat}`);
         const result = await response.json();
         if (result.success) {
           setTableData(result.data || []);
@@ -74,84 +75,64 @@ export default function DailySalesPage() {
     collectionMTD: acc.collectionMTD + Number(curr.collectionMTD || 0),
   }), { sales: 0, collection: 0, salesMTD: 0, collectionMTD: 0 });
 
-  const handleExcelDownload = () => {
-    const divisionLabel = activeDivision.label;
+  const handleExcelDownload = async () => {
+    setIsLoading(true);
+    try {
+      const sheets: IslandSheetData[] = [];
 
-    if (viewMode === "table") {
-      // Table mode - export customer detail
-      if (tableData.length === 0) {
-        alert('다운로드할 데이터가 없습니다.');
-        return;
+      // Fetch data for all divisions
+      const results = await Promise.all(
+        divisions.map(async (division) => {
+          if (division.id === 'all') return null; // Skip "all" if redundant, or handle it
+
+          // Fetch both report and table data for each division
+          const [reportRes, tableRes] = await Promise.all([
+            apiFetch(`/api/dashboard/daily-status/sales-collections/closing?date=${selectedDate}&division=${division.label}&includeVat=${includeVat}`).then(r => r.json()),
+            apiFetch(`/api/dashboard/daily-status/sales-collections/customer-detail?date=${selectedDate}&division=${division.label}&includeVat=${includeVat}`).then(r => r.json())
+          ]);
+
+          return { 
+            label: division.label, 
+            report: reportRes.success ? reportRes : null, 
+            table: tableRes.success ? tableRes.data : null 
+          };
+        })
+      );
+
+      for (const res of results) {
+        if (!res) continue;
+        const islands: IslandTable[] = [];
+
+        // Add Report (Closing Status) Island Tables
+        if (res.report) {
+          const { salesData, collectionData, inventoryData, purchaseData } = res.report;
+          if (salesData) islands.push({ title: '매출현황', headers: ['항목', '금액'], data: Object.entries(salesData).map(([k, v]) => [k, v]) });
+          if (collectionData) islands.push({ title: '수금현황', headers: ['항목', '금액'], data: Object.entries(collectionData).map(([k, v]) => [k, v]) });
+          if (purchaseData) islands.push({ title: '매입현황', headers: ['항목', '금액'], data: Object.entries(purchaseData).map(([k, v]) => [k, v]) });
+          if (inventoryData) islands.push({ title: '재고현황', headers: ['항목', '수량'], data: Object.entries(inventoryData).map(([k, v]) => [k, v]) });
+        }
+
+        // Add Table (Customer Detail) Island Table
+        if (res.table && res.table.length > 0) {
+          islands.push({
+            title: '거래처별 상세',
+            headers: ['거래처', '매출금액', '수금금액', '월 누계 매출', '월 누계 수금', '비고'],
+            data: res.table.map((row: any) => [row.customerName, row.salesAmount, row.collectionAmount, row.salesMTD, row.collectionMTD, row.remarks])
+          });
+        }
+
+        if (islands.length > 0) {
+          sheets.push({ name: res.label, islands, referenceDate: selectedDate });
+        }
       }
 
-      const exportData = tableData.map(row => ({
-        '거래처': row.customerName || '',
-        '매출금액': row.salesAmount || 0,
-        '수금금액': row.collectionAmount || 0,
-        '월 누계 매출': row.salesMTD || 0,
-        '월 누계 수금': row.collectionMTD || 0,
-        '비고': row.remarks || '',
-      }));
-
-      const filename = `daily-sales-table-${divisionLabel}-${selectedDate}.xlsx`;
-      exportToExcel(exportData, filename);
-
-    } else {
-      // Report mode - export closing status as island tables
-      if (!closingData) {
-        alert('다운로드할 데이터가 없습니다.');
-        return;
-      }
-
-      const islands: IslandTable[] = [];
-
-      // 1. Sales Data
-      if (closingData.salesData) {
-        const headers = ['항목', '금액'];
-        const rows = Object.entries(closingData.salesData).map(([key, value]) => [
-          key, Number(value) || 0
-        ]);
-        islands.push({ title: '매출현황', headers, data: rows });
-      }
-
-      // 2. Collection Data
-      if (closingData.collectionData) {
-        const headers = ['항목', '금액'];
-        const rows = Object.entries(closingData.collectionData).map(([key, value]) => [
-          key, Number(value) || 0
-        ]);
-        islands.push({ title: '수금현황', headers, data: rows });
-      }
-
-      // 3. Inventory Data
-      if (closingData.inventoryData) {
-        const headers = ['항목', '수량'];
-        const rows = Object.entries(closingData.inventoryData).map(([key, value]) => [
-          key, Number(value) || 0
-        ]);
-        islands.push({ title: '재고현황', headers, data: rows });
-      }
-
-      // 4. Flagship Data
-      if (closingData.flagship) {
-        const headers = ['항목', '값'];
-        const rows = Object.entries(closingData.flagship).map(([key, value]) => [
-          key, value || ''
-        ]);
-        islands.push({ title: '대표현황', headers, data: rows });
-      }
-
-      // 5. Purchase Data
-      if (closingData.purchaseData) {
-        const headers = ['항목', '금액'];
-        const rows = Object.entries(closingData.purchaseData).map(([key, value]) => [
-          key, Number(value) || 0
-        ]);
-        islands.push({ title: '매입현황', headers, data: rows });
-      }
-
-      const filename = `daily-sales-report-${divisionLabel}-${selectedDate}.xlsx`;
-      exportIslandTables(islands, filename);
+      const { exportMultiSheetIslandTables } = await import('@/lib/excel-export');
+      exportMultiSheetIslandTables(sheets, `daily-sales-full-report-${selectedDate}.xlsx`);
+    } catch (error) {
+      console.error('Full Sales Export Error:', error);
+      alert('엑셀 다운로드 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -183,6 +164,19 @@ export default function DailySalesPage() {
               <LayoutDashboard className="w-3.5 h-3.5" />
               거래처별
             </button>
+          </div>
+
+          <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
+            <input
+              type="checkbox"
+              id="includeVat"
+              checked={includeVat}
+              onChange={(e) => setIncludeVat(e.target.checked)}
+              className="w-4 h-4 text-blue-600 bg-zinc-100 border-zinc-300 rounded focus:ring-blue-500"
+            />
+            <label htmlFor="includeVat" className="text-sm font-medium text-zinc-600 dark:text-zinc-300 cursor-pointer">
+              VAT 포함
+            </label>
           </div>
 
           <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">

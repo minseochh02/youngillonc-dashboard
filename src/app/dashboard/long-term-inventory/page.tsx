@@ -385,7 +385,17 @@ export default function LongTermInventoryPage() {
     }));
 
     const filename = `long-term-inventory-${selectedMonth}.xlsx`;
-    exportToExcel(exportData, filename);
+    
+    // Use island format for reference date support
+    const { exportIslandTables } = require('@/lib/excel-export');
+    const headers = Object.keys(exportData[0]);
+    const rows = exportData.map(row => headers.map(h => (row as any)[h]));
+    
+    exportIslandTables(
+      [{ title: '장기재고 관리 목록', headers, data: rows }],
+      filename,
+      selectedMonth
+    );
   };
 
   if (isLoading && !data) {

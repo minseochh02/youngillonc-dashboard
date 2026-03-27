@@ -6,7 +6,7 @@
  */
 
 export const EGDESK_CONFIG = {
-  apiUrl: 'http://localhost:8080',
+  apiUrl: 'https://tunneling-service.onrender.com/t/vicky-cha4',
   apiKey: '901ff376-242e-417e-939a-120598b4e7c7',
 } as const;
 

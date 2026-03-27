@@ -175,7 +175,7 @@ export default function DailyInventorySheet() {
     });
 
     const filename = `daily-inventory-sheet-${date}.xlsx`;
-    exportToExcel(exportData, filename);
+    exportToExcel(exportData, filename, { referenceDate: date });
   };
 
   return (

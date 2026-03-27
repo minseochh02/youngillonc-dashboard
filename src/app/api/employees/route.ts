@@ -31,8 +31,11 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const employeeFilter = searchParams.get('employee');
   const customerFilter = searchParams.get('customer');
-  const startDate = searchParams.get('startDate') || '2024-01-01';
-  const endDate = searchParams.get('endDate') || '2026-12-31';
+  const now = new Date();
+  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const today = now.toISOString().split('T')[0];
+  const startDate = searchParams.get('startDate') || firstDayOfMonth;
+  const endDate = searchParams.get('endDate') || today;
 
   try {
     // Get all planned tasks (activity_type = 'planned_task')

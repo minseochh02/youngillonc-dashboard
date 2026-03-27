@@ -72,8 +72,8 @@ type ProductGrouping = 'group1' | 'group2' | 'group3';
 type CategoryType = 'employee' | 'client' | 'product';
 
 export default function SalesAnalysisPage() {
-  const [startDate, setStartDate] = useState('2026-01-01');
-  const [endDate, setEndDate] = useState('2026-03-31');
+  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
   // Grouping dimensions - now supports multiple selections per category
   const [employeeGroupings, setEmployeeGroupings] = useState<EmployeeGrouping[]>(['branch']);
@@ -746,7 +746,17 @@ export default function SalesAnalysisPage() {
     const exportData = flattenHierarchyForExcel(hierarchicalData);
 
     const filename = generateFilename('판매현황분석');
-    exportToExcel(exportData, filename);
+    
+    // Convert to island format for consistency with reference date support
+    const { exportIslandTables } = require('@/lib/excel-export');
+    const headers = Object.keys(exportData[0] || {});
+    const data = exportData.map(row => headers.map(h => row[h]));
+    
+    exportIslandTables(
+      [{ title: '판매현황 분석 결과', headers, data }],
+      filename,
+      `${startDate} ~ ${endDate}`
+    );
   };
 
   const getActiveGroupingLabel = () => {

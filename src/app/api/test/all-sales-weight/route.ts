@@ -41,18 +41,6 @@ export async function GET() {
         공급가액
       FROM west_division_sales
 
-      UNION ALL
-
-      SELECT
-        '남부사업소' as source,
-        일자,
-        거래처코드,
-        품목코드,
-        수량,
-        중량,
-        공급가액
-      FROM south_division_sales
-
       ORDER BY 일자 DESC
       LIMIT 1000
     `;

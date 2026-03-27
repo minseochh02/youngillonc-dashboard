@@ -9,7 +9,7 @@ import { executeSQL } from '@/egdesk-helpers';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const date = searchParams.get('date') || '2026-01-02';
+    const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
 
     const query = `
       SELECT 

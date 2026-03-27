@@ -55,8 +55,6 @@ export async function GET(request: Request) {
         SELECT 일자, 거래처코드, 품목코드, 수량, 공급가액 FROM east_division_purchases
         UNION ALL
         SELECT 일자, 거래처코드, 품목코드, 수량, 공급가액 FROM west_division_purchases
-        UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 수량, 공급가액 FROM south_division_purchases
       ) p
       LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
       LEFT JOIN clients vendor_client ON p.거래처코드 = vendor_client.거래처코드

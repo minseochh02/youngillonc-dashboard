@@ -56,8 +56,8 @@ export default function FollowUpTrackerPage() {
   // Filters
   const [employeeFilter, setEmployeeFilter] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
-  const [startDate, setStartDate] = useState('2024-02-01');
-  const [endDate, setEndDate] = useState('2026-12-31');
+  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'missed' | 'future'>('all');
 
   // Filter options

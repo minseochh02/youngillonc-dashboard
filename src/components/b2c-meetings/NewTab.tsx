@@ -191,7 +191,7 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
     });
 
     const filename = generateFilename('B2C신규거래처');
-    exportToExcel(exportData, filename);
+    exportToExcel(exportData, filename, { referenceDate: selectedMonth });
   };
 
   return (

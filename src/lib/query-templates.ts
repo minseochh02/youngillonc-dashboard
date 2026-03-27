@@ -443,13 +443,15 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     paramExtractor: (query) => ({}),
     sqlGenerator: (params) => `
       SELECT
-        품명_및_규격,
-        거래처명,
-        CAST(REPLACE(잔량, ',', '') AS NUMERIC) as 잔량,
-        납기일자
-      FROM pending_purchases
-      WHERE CAST(REPLACE(잔량, ',', '') AS NUMERIC) > 0
-      ORDER BY 납기일자 ASC
+        (i.품목명 || ' ' || COALESCE(i.규격정보, '')) as 품명_및_규격,
+        c.거래처명 as 거래처명,
+        CAST(REPLACE(pp.잔량, ',', '') AS NUMERIC) as 잔량,
+        pp.납기일자
+      FROM pending_purchases pp
+      LEFT JOIN items i ON pp.품목코드 = i.품목코드
+      LEFT JOIN clients c ON pp.거래처코드 = c.거래처코드
+      WHERE CAST(REPLACE(pp.잔량, ',', '') AS NUMERIC) > 0
+      ORDER BY pp.납기일자 ASC
       LIMIT 50
     `
   },
@@ -461,13 +463,15 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     paramExtractor: (query) => ({}),
     sqlGenerator: (params) => `
       SELECT
-        품명_및_규격,
-        거래처명,
-        CAST(REPLACE(잔량, ',', '') AS NUMERIC) as 잔량,
-        납기일자
-      FROM pending_sales
-      WHERE CAST(REPLACE(잔량, ',', '') AS NUMERIC) > 0
-      ORDER BY 납기일자 ASC
+        (i.품목명 || ' ' || COALESCE(i.규격정보, '')) as 품명_및_규격,
+        c.거래처명 as 거래처명,
+        CAST(REPLACE(ps.잔량, ',', '') AS NUMERIC) as 잔량,
+        ps.납기일자
+      FROM pending_sales ps
+      LEFT JOIN items i ON ps.품목코드 = i.품목코드
+      LEFT JOIN clients c ON ps.거래처코드 = c.거래처코드
+      WHERE CAST(REPLACE(ps.잔량, ',', '') AS NUMERIC) > 0
+      ORDER BY ps.납기일자 ASC
     `
   },
 

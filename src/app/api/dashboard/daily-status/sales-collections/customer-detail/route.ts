@@ -8,8 +8,11 @@ import { executeSQL } from '@/egdesk-helpers';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const date = searchParams.get('date') || '2025-11-01';
+    const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const division = searchParams.get('division') || '창원';
+    const includeVat = searchParams.get('includeVat') === 'true';
+
+    const divisor = includeVat ? '1.0' : '1.1';
 
     // Calculate the start of the month for the given date
     const startDate = `${date.substring(0, 7)}-01`;
@@ -41,9 +44,9 @@ export async function GET(request: Request) {
       SELECT
         cust.name as customer,
         COALESCE(ts_prev.amount, 0) - COALESCE(tc_prev.amount, 0) as prevBalance,
-        COALESCE(ts.amount, 0) as salesAmount,
+        COALESCE(ts.amount, 0) / ${divisor} as salesAmount,
         COALESCE(tc.amount, 0) as collectionAmount,
-        COALESCE(ms.amount, 0) as salesMTD,
+        COALESCE(ms.amount, 0) / ${divisor} as salesMTD,
         COALESCE(mc.amount, 0) as collectionMTD,
         (COALESCE(ts_prev.amount, 0) - COALESCE(tc_prev.amount, 0) + COALESCE(ts.amount, 0) - COALESCE(tc.amount, 0)) as currentBalance
       FROM (

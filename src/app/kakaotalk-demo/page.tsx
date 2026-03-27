@@ -38,7 +38,7 @@ interface DailyStandup {
 }
 
 export default function KakaoTalkDemoPage() {
-  const [selectedDate, setSelectedDate] = useState('2024-03-11');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [rawMessages, setRawMessages] = useState<RawMessage[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [standups, setStandups] = useState<DailyStandup[]>([]);

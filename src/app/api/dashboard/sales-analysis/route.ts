@@ -13,8 +13,11 @@ export async function GET(request: Request) {
     const baseSalesTable = 'sales';
 
     // Date range
-    const startDate = searchParams.get('startDate') || '2025-01-01';
-    const endDate = searchParams.get('endDate') || '2025-12-31';
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const today = now.toISOString().split('T')[0];
+    const startDate = searchParams.get('startDate') || firstDayOfMonth;
+    const endDate = searchParams.get('endDate') || today;
 
     // Multiple grouping support - can now pass comma-separated values
     const employeeGroups = searchParams.get('employeeGroups')?.split(',').filter(v => v.trim() !== '' && v !== 'none') || [];

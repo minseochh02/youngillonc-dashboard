@@ -3,8 +3,11 @@ import { executeSQL } from '@/egdesk-helpers';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const startDate = searchParams.get('startDate') || '2025-01-01';
-  const endDate = searchParams.get('endDate') || '2025-12-31';
+  const now = new Date();
+  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const today = now.toISOString().split('T')[0];
+  const startDate = searchParams.get('startDate') || firstDayOfMonth;
+  const endDate = searchParams.get('endDate') || today;
 
   try {
     const query = `

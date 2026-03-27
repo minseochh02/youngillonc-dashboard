@@ -4,8 +4,8 @@ import { executeSQL } from '@/egdesk-helpers';
 export async function GET(request: Request) {
   try {
     // Exact same query as closing endpoint
-    const date = '2025-11-01';
-    const startDate = '2025-11-01';
+    const date = new Date().toISOString().split('T')[0];
+    const startDate = date.substring(0, 7) + '-01';
 
     const salesQuery = `
       SELECT

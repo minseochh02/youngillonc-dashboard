@@ -22,29 +22,33 @@ export async function GET(request: Request) {
     // 2. Pending sales (미판매) by item
     const pendingSales = await executeSQL(`
       SELECT
-        품목코드,
-        품명_및_규격 as item_name,
-        거래처명 as customer,
-        CAST(REPLACE(잔량, ',', '') AS NUMERIC) as remaining_qty,
-        CAST(REPLACE(COALESCE(공급가액, '0'), ',', '') AS NUMERIC) as supply_amount,
-        납기일자 as due_date,
-        적요 as memo
-      FROM pending_sales
-      ORDER BY 품목코드
+        ps.품목코드,
+        (i.품목명 || ' ' || COALESCE(i.규격정보, '')) as item_name,
+        c.거래처명 as customer,
+        CAST(REPLACE(ps.잔량, ',', '') AS NUMERIC) as remaining_qty,
+        CAST(REPLACE(COALESCE(ps.합계, '0'), ',', '') AS NUMERIC) as supply_amount,
+        ps.납기일자 as due_date,
+        ps.적요 as memo
+      FROM pending_sales ps
+      LEFT JOIN items i ON ps.품목코드 = i.품목코드
+      LEFT JOIN clients c ON ps.거래처코드 = c.거래처코드
+      ORDER BY ps.품목코드
     `);
 
     // 3. Pending purchases (미구매) by item
     const pendingPurchases = await executeSQL(`
       SELECT
-        품목코드,
-        품명_및_규격 as item_name,
-        거래처명 as supplier,
-        CAST(REPLACE(잔량, ',', '') AS NUMERIC) as remaining_qty,
-        CAST(REPLACE(COALESCE(합계, '0'), ',', '') AS NUMERIC) as outstanding_total,
-        납기일자 as due_date,
-        COALESCE(창고명, '') as warehouse
-      FROM pending_purchases
-      ORDER BY 품목코드
+        pp.품목코드,
+        (i.품목명 || ' ' || COALESCE(i.규격정보, '')) as item_name,
+        c.거래처명 as supplier,
+        CAST(REPLACE(pp.잔량, ',', '') AS NUMERIC) as remaining_qty,
+        CAST(REPLACE(COALESCE(pp.합계, '0'), ',', '') AS NUMERIC) as outstanding_total,
+        pp.납기일자 as due_date,
+        pp.창고명 as warehouse
+      FROM pending_purchases pp
+      LEFT JOIN items i ON pp.품목코드 = i.품목코드
+      LEFT JOIN clients c ON pp.거래처코드 = c.거래처코드
+      ORDER BY pp.품목코드
     `);
 
     // 4. Distinct warehouses for filters

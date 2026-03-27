@@ -31,8 +31,6 @@ export async function GET(request: NextRequest) {
         SELECT 거래처코드, 일자 FROM east_division_sales
         UNION ALL
         SELECT 거래처코드, 일자 FROM west_division_sales
-        UNION ALL
-        SELECT 거래처코드, 일자 FROM south_division_sales
       ) s ON c.거래처코드 = s.거래처코드
         AND s.일자 <= '${selectedMonthEnd}'
       WHERE c.거래처코드 IS NOT NULL
@@ -55,8 +53,6 @@ export async function GET(request: NextRequest) {
         SELECT 거래처코드, 일자, 담당자코드, NULL as 담당자명 FROM east_division_sales
         UNION ALL
         SELECT 거래처코드, 일자, 담당자코드, NULL as 담당자명 FROM west_division_sales
-        UNION ALL
-        SELECT 거래처코드, 일자, NULL as 담당자코드, 담당자명 FROM south_division_sales
       ) s ON c.거래처코드 = s.거래처코드
         AND s.일자 <= '${selectedMonthEnd}'
       LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)
@@ -81,8 +77,6 @@ export async function GET(request: NextRequest) {
         SELECT 거래처코드, 일자, 담당자코드, NULL as 담당자명 FROM east_division_sales
         UNION ALL
         SELECT 거래처코드, 일자, 담당자코드, NULL as 담당자명 FROM west_division_sales
-        UNION ALL
-        SELECT 거래처코드, 일자, NULL as 담당자코드, 담당자명 FROM south_division_sales
       ) s ON c.거래처코드 = s.거래처코드
         AND s.일자 <= '${selectedMonthEnd}'
       LEFT JOIN employees e ON (s.담당자코드 IS NOT NULL AND s.담당자코드 = e.사원_담당_코드) OR (s.담당자코드 IS NULL AND s.담당자명 = e.사원_담당_명)

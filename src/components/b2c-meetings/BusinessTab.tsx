@@ -201,7 +201,7 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
     });
 
     const filename = generateFilename('B2C사업소별');
-    exportToExcel(exportData, filename);
+    exportToExcel(exportData, filename, { referenceDate: selectedMonth });
   };
 
   return (
