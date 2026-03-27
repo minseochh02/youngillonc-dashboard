@@ -99,7 +99,7 @@ export default function IndustryDairyTab() {
       d => d.품목코드 === code && d.품목명 === name && d.youngil_category === category && d.year === year
     );
     
-    let totals = yearData.reduce(
+    const totals = yearData.reduce(
       (acc, d) => ({
         total_weight: acc.total_weight + d.total_weight,
         total_amount: acc.total_amount + d.total_amount,
@@ -107,19 +107,6 @@ export default function IndustryDairyTab() {
       }),
       { total_weight: 0, total_amount: 0, total_quantity: 0 }
     );
-
-    // Generate fake 2025 data if real data is missing (0) and current is > 0 for this item
-    if (year === lastYear && totals.total_weight === 0) {
-      const cyData = industryDairyData.filter(d => d.품목코드 === code && d.품목명 === name && d.youngil_category === category && d.year === currentYear);
-      const cyWeight = cyData.reduce((sum, d) => sum + d.total_weight, 0);
-      const cyAmount = cyData.reduce((sum, d) => sum + d.total_amount, 0);
-
-      if (cyWeight > 0) {
-        const seed = parseInt(code.replace(/[^0-9]/g, '') || '0') % 10;
-        totals.total_weight = Math.round(cyWeight * (0.7 + (seed * 0.06)));
-        totals.total_amount = Math.round(cyAmount * (0.7 + (seed * 0.06)));
-      }
-    }
 
     return totals;
   };
@@ -161,7 +148,7 @@ export default function IndustryDairyTab() {
   // Calculate grand totals by year
   const getGrandTotalsByYear = (year: string) => {
     const yearData = industryDairyData.filter(d => d.year === year);
-    let totals = yearData.reduce(
+    const totals = yearData.reduce(
       (acc, d) => ({
         total_weight: acc.total_weight + d.total_weight,
         total_amount: acc.total_amount + d.total_amount,
@@ -169,14 +156,6 @@ export default function IndustryDairyTab() {
       }),
       { total_weight: 0, total_amount: 0, total_quantity: 0 }
     );
-
-    if (year === lastYear && totals.total_weight === 0) {
-      itemKeys.forEach(itemKey => {
-        const itemLastYearTotals = getTotalsByItemAndYear(itemKey, lastYear);
-        totals.total_weight += itemLastYearTotals.total_weight;
-        totals.total_amount += itemLastYearTotals.total_amount;
-      });
-    }
 
     return totals;
   };
@@ -380,7 +359,7 @@ export default function IndustryDairyTab() {
           <li>품목: 개별 산업유제품 (품목그룹1코드 = 'IL')</li>
           <li>영일분류: 각 품목이 속한 영일분류 표시</li>
           <li>B2B 거래처만 포함 (AUTO 채널 제외)</li>
-          <li>2025년 데이터가 없는 경우 품목 코드를 기반으로 시뮬레이션된 데이터가 표시됩니다.</li>
+          <li>품목 코드를 기반으로 월별 상세 실적 및 연도별 비교 데이터를 제공합니다.</li>
         </ul>
       </div>
     </div>

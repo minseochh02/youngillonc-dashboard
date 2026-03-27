@@ -100,16 +100,7 @@ export async function GET(request: Request) {
 
       const productData = productDataArray.map((row: any) => {
         const currentWeight = Number(row.current_year_weight || 0);
-        let lastWeight = Number(row.last_year_weight || 0);
-
-        // Generate fake 2025 data if real data is missing (0) and current is > 0
-        if (lastWeight === 0 && currentWeight > 0) {
-          // Use product code to create a stable but varied fake comparison
-          const prodCode = row.품목코드 || row.품목명 || '0';
-          const seed = parseInt(prodCode.toString().replace(/[^0-9]/g, '') || '0') % 10;
-          // Randomly make it an increase or decrease (70% to 130% of current)
-          lastWeight = Math.round(currentWeight * (0.7 + (seed * 0.06)));
-        }
+        const lastWeight = Number(row.last_year_weight || 0);
 
         return {
           품목코드: row.품목코드,
@@ -571,12 +562,7 @@ export async function GET(request: Request) {
 
       const industryDairyData = industryDairyDataArray.map((row: any) => {
         const currentWeight = Number(row.total_weight || 0);
-        let weight = currentWeight;
-        const isCurrentYear = row.year === currentYear.toString();
-
-        // If it's the last year and weight is 0 (missing), we don't handle it here because the query groups by year
-        // We'll handle the "Fake 2025" logic in the frontend or during mapping if needed, 
-        // but since the query returns rows per year/month, we need to be careful.
+        const weight = currentWeight;
         
         return {
           품목코드: row.품목코드,
