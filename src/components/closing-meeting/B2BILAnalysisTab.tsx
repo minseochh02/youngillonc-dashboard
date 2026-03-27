@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, Fragment } from 'react';
-import { Loader2, TrendingUp, TrendingDown, Database, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Database, ChevronDown, ChevronRight, Pencil, Save } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
@@ -74,6 +74,8 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
   const [isLoading, setIsLoading] = useState(true);
   const [expandedBranches, setExpandedBranches] = useState<Set<string>>(new Set());
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+  const [editingTargets, setEditingTargets] = useState<Map<string, number>>(new Map());
+  const [isSaving, setIsSaving] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -90,6 +92,7 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
         // Expand all branches by default
         const allBranches = new Set(result.data.branches.map((b: BranchILData) => b.branch));
         setExpandedBranches(allBranches);
+        setEditingTargets(new Map());
       }
     } catch (error) {
       console.error('Failed to fetch B2B analysis:', error);
@@ -101,6 +104,86 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
   const formatNumber = (num: number | null | undefined) => {
     if (num === null || num === undefined) return "0";
     return num.toLocaleString();
+  };
+
+  const handleTargetChange = (teamName: string, value: string) => {
+    const numValue = parseFloat(value.replace(/,/g, '')) || 0;
+    const newEditingTargets = new Map(editingTargets);
+    newEditingTargets.set(teamName, numValue);
+    setEditingTargets(newEditingTargets);
+  };
+
+  const getTargetValue = (teamName: string, defaultValue: number) => {
+    return editingTargets.has(teamName) ? editingTargets.get(teamName)! : defaultValue;
+  };
+
+  const saveGoal = async (teamName: string) => {
+    if (!data || !selectedMonth) return;
+    
+    const targetWeight = getTargetValue(teamName, 0);
+    const [year, month] = selectedMonth.split('-');
+    
+    setIsSaving(teamName);
+    try {
+      const response = await apiFetch('/api/dashboard/closing-meeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          year,
+          month,
+          goal_type: 'b2b-il',
+          target_name: teamName,
+          target_weight: targetWeight,
+          target_amount: 0
+        }),
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        // Update local data
+        const newData = { ...data };
+        newData.branches = newData.branches.map(b => ({
+          ...b,
+          teams: b.teams.map(t => {
+            if (t.team_name === teamName) {
+              return {
+                ...t,
+                target_weight: targetWeight,
+                achievement_rate: targetWeight > 0 ? (t.current_month_weight / targetWeight) * 100 : 0
+              };
+            }
+            return t;
+          })
+        }));
+        
+        // Recalculate branch totals
+        newData.branches = newData.branches.map(b => ({
+          ...b,
+          target_weight: b.teams.reduce((sum, t) => sum + t.target_weight, 0),
+          achievement_rate: b.teams.reduce((sum, t) => sum + t.target_weight, 0) > 0 
+            ? (b.current_month_weight / b.teams.reduce((sum, t) => sum + t.target_weight, 0)) * 100 
+            : 0
+        }));
+        
+        // Recalculate overall total
+        newData.total.target_weight = newData.branches.reduce((sum, b) => sum + b.target_weight, 0);
+        newData.total.achievement_rate = newData.total.target_weight > 0
+          ? (newData.total.current_month_weight / newData.total.target_weight) * 100
+          : 0;
+
+        setData(newData);
+        const newEditingTargets = new Map(editingTargets);
+        newEditingTargets.delete(teamName);
+        setEditingTargets(newEditingTargets);
+      } else {
+        alert('목표 저장에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('Failed to save goal:', error);
+      alert('오류가 발생했습니다.');
+    } finally {
+      setIsSaving(null);
+    }
   };
 
   const toggleBranch = (branch: string) => {
@@ -169,7 +252,6 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
     exportData.push({ '사업소': '--- 계층별 B2B 분석 ---' });
 
     data.branches.forEach(branch => {
-      // Branch Row
       exportData.push({
         '사업소': branch.branch,
         '팀': '',
@@ -184,7 +266,6 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
       });
 
       branch.teams.forEach(team => {
-        // Team Row
         exportData.push({
           '사업소': '',
           '팀': team.team_name,
@@ -198,7 +279,6 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
           '달성율(%)': (team.achievement_rate ?? 0).toFixed(1),
         });
 
-        // Category Rows within Team
         team.categories.forEach(cat => {
           exportData.push({
             '사업소': '',
@@ -216,7 +296,6 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
       });
     });
 
-    // Total row
     exportData.push({
       '사업소': '합계',
       '팀': '전체',
@@ -255,68 +334,53 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
     <div className="space-y-6">
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* B2B Summary Card */}
         <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/20 dark:to-purple-950/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg">
               <TrendingUp className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                B2B 실적 요약
-              </h3>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">B2B 실적 요약</h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">{data.currentMonth} 기준</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">당월 실적</p>
-              <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">
-                {formatNumber(data.total.current_month_weight)} L
-              </p>
+              <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">{formatNumber(data.total.current_month_weight)} L</p>
             </div>
             <div>
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">목표 달성율</p>
-              <p className={`text-2xl font-bold mt-1 ${
-                (data.total.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-yellow-600'
-              }`}>
+              <p className={`text-2xl font-bold mt-1 ${data.total.achievement_rate >= 100 ? 'text-green-600' : 'text-yellow-600'}`}>
                 {(data.total.achievement_rate ?? 0).toFixed(1)}%
               </p>
             </div>
           </div>
         </div>
 
-        {/* B2C Summary Card (Comparison) */}
         <div className="bg-gradient-to-r from-zinc-50 to-slate-50 dark:from-zinc-950/20 dark:to-slate-950/20 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
               <Database className="w-6 h-6 text-zinc-600 dark:text-zinc-400" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                B2C 실적 (참조)
-              </h3>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">B2C 실적 (참조)</h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">{data.currentMonth} 기준</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">B2C 당월 중량</p>
-              <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-300 mt-1">
-                {formatNumber(data.b2cTotal.weight)} L
-              </p>
+              <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-300 mt-1">{formatNumber(data.b2cTotal.weight)} L</p>
             </div>
             <div>
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">B2C 당월 금액</p>
-              <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-300 mt-1">
-                {formatNumber(data.b2cTotal.amount)}
-              </p>
+              <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-300 mt-1">{formatNumber(data.b2cTotal.amount)}</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Category Analysis Table (Summary) */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
           <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">품목그룹별 B2B 분석 요약</h4>
@@ -342,57 +406,29 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
             <tbody>
               {data.categories.map((cat) => {
                 const momChange = cat.current_month_weight - cat.last_month_weight;
-                const momChangeRate = cat.last_month_weight > 0
-                  ? (momChange / cat.last_month_weight) * 100
-                  : 0;
-
+                const momChangeRate = cat.last_month_weight > 0 ? (momChange / cat.last_month_weight) * 100 : 0;
                 return (
-                  <tr
-                    key={cat.category}
-                    className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
-                  >
-                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100">
-                      {cat.category}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300 font-semibold">
-                      {formatNumber(cat.current_month_weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatNumber(cat.current_month_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatNumber(cat.last_month_weight)}
-                    </td>
+                  <tr key={cat.category} className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
+                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100">{cat.category}</td>
+                    <td className="py-3 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300 font-semibold">{formatNumber(cat.current_month_weight)}</td>
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(cat.current_month_amount)}</td>
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(cat.last_month_weight)}</td>
                     <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                        momChange >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
+                      <span className={`inline-flex items-center gap-1 font-medium text-xs ${momChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {momChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                         {momChange >= 0 ? '+' : ''}{momChangeRate.toFixed(1)}%
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatNumber(cat.yoy_weight)}
-                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(cat.yoy_weight)}</td>
                     <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium ${
-                        (cat.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
+                      <span className={`inline-flex items-center gap-1 font-medium ${(cat.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {(cat.yoy_growth_rate ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                         {(cat.yoy_growth_rate ?? 0) >= 0 ? '+' : ''}{(cat.yoy_growth_rate ?? 0).toFixed(1)}%
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatNumber(cat.target_weight)}
-                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(cat.target_weight)}</td>
                     <td className="py-3 px-4 text-right">
-                      <span className={`font-bold ${
-                        (cat.achievement_rate ?? 0) >= 100
-                          ? 'text-green-600'
-                          : (cat.achievement_rate ?? 0) >= 80
-                          ? 'text-yellow-600'
-                          : 'text-red-600'
-                      }`}>
+                      <span className={`font-bold ${(cat.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-red-600'}`}>
                         {(cat.achievement_rate ?? 0).toFixed(1)}%
                       </span>
                     </td>
@@ -404,23 +440,12 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
         </div>
       </div>
 
-      {/* Hierarchical Analysis Table (Branch > Team > Category) */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
           <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">지사/팀/품목별 B2B 상세 분석</h4>
           <div className="flex gap-2">
-            <button
-              onClick={expandAll}
-              className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
-            >
-              모두 펼치기
-            </button>
-            <button
-              onClick={collapseAll}
-              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-            >
-              모두 접기
-            </button>
+            <button onClick={expandAll} className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors">모두 펼치기</button>
+            <button onClick={collapseAll} className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">모두 접기</button>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -429,7 +454,7 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
               <tr>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider w-32">지사</th>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider w-32">팀/품목</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-500 uppercase tracking-wider">당월(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-indigo-500 uppercase tracking-wider">당월(L)</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">전월(L)</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">전월대비</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">전년동월(L)</th>
@@ -442,169 +467,109 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
               {data.branches.map((branch) => {
                 const isBranchExpanded = expandedBranches.has(branch.branch);
                 const branchMomChange = branch.current_month_weight - branch.last_month_weight;
-                const branchMomChangeRate = branch.last_month_weight > 0
-                  ? (branchMomChange / branch.last_month_weight) * 100
-                  : 0;
-
+                const branchMomChangeRate = branch.last_month_weight > 0 ? (branchMomChange / branch.last_month_weight) * 100 : 0;
                 return (
                   <Fragment key={branch.branch}>
-                    {/* Branch Row */}
-                    <tr
-                      className="border-b border-zinc-100 dark:border-zinc-800/60 bg-indigo-50/10 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer"
-                      onClick={() => toggleBranch(branch.branch)}
-                    >
+                    <tr className="border-b border-zinc-100 dark:border-zinc-800/60 bg-indigo-50/10 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer" onClick={() => toggleBranch(branch.branch)}>
                       <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100">
                         <div className="flex items-center gap-2">
-                          {isBranchExpanded ? (
-                            <ChevronDown className="w-4 h-4 text-zinc-400" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4 text-zinc-400" />
-                          )}
+                          {isBranchExpanded ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronRight className="w-4 h-4 text-zinc-400" />}
                           {branch.branch}
                         </div>
                       </td>
-                      <td className="py-3 px-4 font-semibold text-zinc-500 dark:text-zinc-400 text-xs">
-                        지사합계
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300 font-semibold">
-                        {formatNumber(branch.current_month_weight)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                        {formatNumber(branch.last_month_weight)}
-                      </td>
+                      <td className="py-3 px-4 font-semibold text-zinc-500 dark:text-zinc-400 text-xs">지사합계</td>
+                      <td className="py-3 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300 font-semibold">{formatNumber(branch.current_month_weight)}</td>
+                      <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(branch.last_month_weight)}</td>
                       <td className="py-3 px-4 text-right">
-                        <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                          branchMomChange >= 0 ? 'text-green-600' : 'text-red-600'
-                        }`}>
+                        <span className={`inline-flex items-center gap-1 font-medium text-xs ${branchMomChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {branchMomChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                           {branchMomChange >= 0 ? '+' : ''}{branchMomChangeRate.toFixed(1)}%
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                        {formatNumber(branch.yoy_weight)}
-                      </td>
+                      <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(branch.yoy_weight)}</td>
                       <td className="py-3 px-4 text-right">
-                        <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                          (branch.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                        }`}>
+                        <span className={`inline-flex items-center gap-1 font-medium text-xs ${(branch.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {(branch.yoy_growth_rate ?? 0).toFixed(1)}%
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                        {formatNumber(branch.target_weight)}
-                      </td>
+                      <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(branch.target_weight)}</td>
                       <td className="py-3 px-4 text-right">
-                        <span className={`font-bold ${
-                          (branch.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-red-600'
-                        }`}>
+                        <span className={`font-bold ${(branch.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-red-600'}`}>
                           {(branch.achievement_rate ?? 0).toFixed(1)}%
                         </span>
                       </td>
                     </tr>
 
-                    {/* Team Rows */}
                     {isBranchExpanded && branch.teams.map((team) => {
                       const teamKey = `${branch.branch}-${team.team_name}`;
                       const isTeamExpanded = expandedTeams.has(teamKey);
                       const teamMomChange = team.current_month_weight - team.last_month_weight;
-                      const teamMomChangeRate = team.last_month_weight > 0
-                        ? (teamMomChange / team.last_month_weight) * 100
-                        : 0;
+                      const teamMomChangeRate = team.last_month_weight > 0 ? (teamMomChange / team.last_month_weight) * 100 : 0;
+                      const currentTargetValue = getTargetValue(team.team_name, team.target_weight);
+                      const currentAchievementRate = currentTargetValue > 0 ? (team.current_month_weight / currentTargetValue) * 100 : 0;
 
                       return (
                         <Fragment key={teamKey}>
-                          <tr
-                            className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleTeam(teamKey);
-                            }}
-                          >
+                          <tr className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); toggleTeam(teamKey); }}>
                             <td className="py-2 px-4"></td>
                             <td className="py-2 px-4 font-semibold text-zinc-800 dark:text-zinc-200">
                               <div className="flex items-center gap-2 pl-4">
-                                {isTeamExpanded ? (
-                                  <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
-                                ) : (
-                                  <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
-                                )}
+                                {isTeamExpanded ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />}
                                 {team.team_name}
                               </div>
                             </td>
-                            <td className="py-2 px-4 text-right font-mono text-indigo-600 dark:text-indigo-400">
-                              {formatNumber(team.current_month_weight)}
-                            </td>
-                            <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                              {formatNumber(team.last_month_weight)}
-                            </td>
+                            <td className="py-2 px-4 text-right font-mono text-indigo-600 dark:text-indigo-400">{formatNumber(team.current_month_weight)}</td>
+                            <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">{formatNumber(team.last_month_weight)}</td>
                             <td className="py-2 px-4 text-right">
-                              <span className={`inline-flex items-center gap-1 text-xs ${
-                                teamMomChange >= 0 ? 'text-green-600' : 'text-red-600'
-                              }`}>
-                                {teamMomChange >= 0 ? '↑' : '↓'}
-                                {teamMomChangeRate.toFixed(1)}%
+                              <span className={`inline-flex items-center gap-1 text-xs ${teamMomChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {teamMomChange >= 0 ? '↑' : '↓'}{teamMomChangeRate.toFixed(1)}%
                               </span>
                             </td>
-                            <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                              {formatNumber(team.yoy_weight)}
-                            </td>
+                            <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">{formatNumber(team.yoy_weight)}</td>
                             <td className="py-2 px-4 text-right">
-                              <span className={`inline-flex items-center gap-1 text-xs ${
-                                (team.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                              }`}>
+                              <span className={`inline-flex items-center gap-1 text-xs ${(team.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 {(team.yoy_growth_rate ?? 0).toFixed(1)}%
                               </span>
                             </td>
-                            <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                              {formatNumber(team.target_weight)}
+                            <td className="py-2 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1">
+                                <input
+                                  type="text"
+                                  value={formatNumber(currentTargetValue)}
+                                  onChange={(e) => handleTargetChange(team.team_name, e.target.value)}
+                                  className="w-20 text-right font-mono bg-transparent border-b border-zinc-300 dark:border-zinc-600 px-1 pb-0.5 text-xs text-zinc-600 dark:text-zinc-400 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                                />
+                                {editingTargets.has(team.team_name) ? (
+                                  <button onClick={() => saveGoal(team.team_name)} disabled={isSaving === team.team_name} className="p-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded">
+                                    {isSaving === team.team_name ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3 text-blue-500" />}
+                                  </button>
+                                ) : (
+                                  <Pencil className="w-2.5 h-2.5 text-zinc-400" />
+                                )}
+                              </div>
                             </td>
                             <td className="py-2 px-4 text-right">
-                              <span className={`text-xs font-medium ${
-                                (team.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-red-600'
-                              }`}>
-                                {(team.achievement_rate ?? 0).toFixed(1)}%
+                              <span className={`text-xs font-medium ${currentAchievementRate >= 100 ? 'text-green-600' : 'text-red-600'}`}>
+                                {currentAchievementRate.toFixed(1)}%
                               </span>
                             </td>
                           </tr>
 
-                          {/* Category (Product) Rows within Team */}
                           {isTeamExpanded && team.categories.map((cat) => {
                             const catMomChange = cat.current_month_weight - cat.last_month_weight;
-                            const catMomChangeRate = cat.last_month_weight > 0
-                              ? (catMomChange / cat.last_month_weight) * 100
-                              : 0;
-
+                            const catMomChangeRate = cat.last_month_weight > 0 ? (catMomChange / cat.last_month_weight) * 100 : 0;
                             return (
-                              <tr
-                                key={`${teamKey}-${cat.category}`}
-                                className="border-b border-zinc-100 dark:border-zinc-800/40 bg-zinc-50/30 dark:bg-zinc-900/20 text-xs"
-                              >
+                              <tr key={`${teamKey}-${cat.category}`} className="border-b border-zinc-100 dark:border-zinc-800/40 bg-zinc-50/30 dark:bg-zinc-900/20 text-xs">
                                 <td className="py-1.5 px-4"></td>
-                                <td className="py-1.5 px-4 pl-12 text-zinc-500 dark:text-zinc-400">
-                                  {cat.category}
-                                </td>
-                                <td className="py-1.5 px-4 text-right font-mono text-indigo-600 dark:text-indigo-400">
-                                  {formatNumber(cat.current_month_weight)}
-                                </td>
-                                <td className="py-1.5 px-4 text-right font-mono text-zinc-500 dark:text-zinc-500">
-                                  {formatNumber(cat.last_month_weight)}
-                                </td>
+                                <td className="py-1.5 px-4 pl-12 text-zinc-500 dark:text-zinc-400">{cat.category}</td>
+                                <td className="py-1.5 px-4 text-right font-mono text-indigo-600 dark:text-indigo-400">{formatNumber(cat.current_month_weight)}</td>
+                                <td className="py-1.5 px-4 text-right font-mono text-zinc-500 dark:text-zinc-500">{formatNumber(cat.last_month_weight)}</td>
                                 <td className="py-1.5 px-4 text-right">
-                                  <span className={`text-[10px] ${
-                                    catMomChange >= 0 ? 'text-green-500' : 'text-red-500'
-                                  }`}>
-                                    {catMomChangeRate.toFixed(1)}%
-                                  </span>
+                                  <span className={`text-[10px] ${catMomChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>{catMomChangeRate.toFixed(1)}%</span>
                                 </td>
-                                <td className="py-1.5 px-4 text-right font-mono text-zinc-500 dark:text-zinc-500">
-                                  {formatNumber(cat.yoy_weight)}
-                                </td>
+                                <td className="py-1.5 px-4 text-right font-mono text-zinc-500 dark:text-zinc-500">{formatNumber(cat.yoy_weight)}</td>
                                 <td className="py-1.5 px-4 text-right">
-                                  <span className={`text-[10px] ${
-                                    (cat.yoy_growth_rate ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
-                                  }`}>
-                                    {(cat.yoy_growth_rate ?? 0).toFixed(1)}%
-                                  </span>
+                                  <span className={`text-[10px] ${(cat.yoy_growth_rate ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>{(cat.yoy_growth_rate ?? 0).toFixed(1)}%</span>
                                 </td>
                                 <td className="py-1.5 px-4 text-right text-zinc-400">-</td>
                                 <td className="py-1.5 px-4 text-right text-zinc-400">-</td>
@@ -618,48 +583,26 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
                 );
               })}
 
-              {/* Total Row */}
               <tr className="bg-indigo-50 dark:bg-indigo-900/20 font-bold border-t-2 border-indigo-300 dark:border-indigo-700">
                 <td className="py-3 px-4 text-indigo-900 dark:text-indigo-100">전체 합계</td>
                 <td className="py-3 px-4 text-indigo-900 dark:text-indigo-100">전체</td>
-                <td className="py-3 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300">
-                  {formatNumber(data.total.current_month_weight)}
-                </td>
-                <td className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">
-                  {formatNumber(data.total.last_month_weight)}
-                </td>
+                <td className="py-3 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300">{formatNumber(data.total.current_month_weight)}</td>
+                <td className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">{formatNumber(data.total.last_month_weight)}</td>
                 <td className="py-3 px-4 text-right">
-                  <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                    (data.total.current_month_weight - (data.total.last_month_weight ?? 0)) >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
+                  <span className={`inline-flex items-center gap-1 font-medium text-xs ${(data.total.current_month_weight - (data.total.last_month_weight ?? 0)) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {(data.total.current_month_weight - (data.total.last_month_weight ?? 0)) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {(data.total.last_month_weight && data.total.last_month_weight !== 0) 
-                      ? (((data.total.current_month_weight - data.total.last_month_weight) / data.total.last_month_weight * 100).toFixed(1))
-                      : '0.0'}%
+                    {(data.total.last_month_weight && data.total.last_month_weight !== 0) ? (((data.total.current_month_weight - data.total.last_month_weight) / data.total.last_month_weight * 100).toFixed(1)) : '0.0'}%
                   </span>
                 </td>
-                <td className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">
-                  {formatNumber(data.total.yoy_weight)}
-                </td>
+                <td className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">{formatNumber(data.total.yoy_weight)}</td>
                 <td className="py-3 px-4 text-right">
-                  <span className={`inline-flex items-center gap-1 font-bold ${
-                    (data.total.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {(data.total.yoy_growth_rate ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                  <span className={`inline-flex items-center gap-1 font-bold ${(data.total.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {(data.total.yoy_growth_rate ?? 0).toFixed(1)}%
                   </span>
                 </td>
-                <td className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">
-                  {formatNumber(data.total.target_weight)}
-                </td>
+                <td className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">{formatNumber(data.total.target_weight)}</td>
                 <td className="py-3 px-4 text-right">
-                  <span className={`font-bold ${
-                    (data.total.achievement_rate ?? 0) >= 100
-                      ? 'text-green-600'
-                      : (data.total.achievement_rate ?? 0) >= 80
-                      ? 'text-yellow-600'
-                      : 'text-red-600'
-                  }`}>
+                  <span className={`font-bold ${(data.total.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-red-600'}`}>
                     {(data.total.achievement_rate ?? 0).toFixed(1)}%
                   </span>
                 </td>
@@ -669,7 +612,6 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
         </div>
       </div>
 
-      {/* Info */}
       <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
         <p className="font-semibold mb-1">B2B 상세 분석:</p>
         <p>B2B 사업부의 판매 실적을 <strong>지사 &gt; 팀 &gt; 품목그룹</strong> 순으로 상세 분석한 데이터입니다. 지사를 클릭하면 팀이 나타나며, 팀을 클릭하면 품목그룹별 상세 데이터를 확인할 수 있습니다.</p>
