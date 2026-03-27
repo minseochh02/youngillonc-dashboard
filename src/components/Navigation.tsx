@@ -54,6 +54,11 @@ const Navigation = () => {
 
   const standaloneItems: NavItem[] = [
     {
+      name: "직원별 현황",
+      href: "/dashboard/employees",
+      icon: <Users className="w-5 h-5" />,
+    },
+    {
       name: "대시보드",
       href: "/dashboard",
       icon: <LayoutDashboard className="w-5 h-5" />,
