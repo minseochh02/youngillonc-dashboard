@@ -36,9 +36,16 @@ export async function GET(request: Request) {
       return `${prefix}부서명 LIKE '%${division}%'`;
     };
 
-    // 0. Base table for sales
-    const baseSalesTable = 'sales';
-    const baseSalesSubquery = `(SELECT 일자, 거래처코드, 담당자코드, 합계, 출하창고코드 FROM ${baseSalesTable})`;
+    // 0. Base subquery to combine sales tables (excluding south division)
+    const baseSalesSubquery = `
+      (
+        SELECT 일자, 거래처코드, 담당자코드, 합계, 출하창고코드 FROM sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, 합계, 창고코드 as 출하창고코드 FROM east_division_sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, 합계, 창고코드 as 출하창고코드 FROM west_division_sales
+      )
+    `;
 
     const query = `
       SELECT
@@ -51,7 +58,7 @@ export async function GET(request: Request) {
         (COALESCE(ts_prev.amount, 0) - COALESCE(tc_prev.amount, 0) + COALESCE(ts.amount, 0) - COALESCE(tc.amount, 0)) as currentBalance
       FROM (
         SELECT DISTINCT c.거래처명 as name, s.거래처코드
-        FROM (${baseSalesSubquery}) s
+        FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -81,7 +88,7 @@ export async function GET(request: Request) {
         SELECT
           거래처코드,
           SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as amount
-        FROM (${baseSalesSubquery})
+        FROM ${baseSalesSubquery}
         WHERE 일자 < '${date}'
         GROUP BY 거래처코드
       ) ts_prev ON cust.거래처코드 = ts_prev.거래처코드
@@ -89,7 +96,7 @@ export async function GET(request: Request) {
         SELECT
           거래처코드,
           SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as amount
-        FROM (${baseSalesSubquery})
+        FROM ${baseSalesSubquery}
         WHERE 일자 = '${date}'
         GROUP BY 거래처코드
       ) ts ON cust.거래처코드 = ts.거래처코드
@@ -108,7 +115,7 @@ export async function GET(request: Request) {
         SELECT
           거래처코드,
           SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as amount
-        FROM (${baseSalesSubquery})
+        FROM ${baseSalesSubquery}
         WHERE 일자 >= '${startDate}' AND 일자 <= '${date}'
         GROUP BY 거래처코드
       ) ms ON cust.거래처코드 = ms.거래처코드

@@ -42,9 +42,27 @@ export async function GET(request: Request) {
       return `${prefix}부서명 LIKE '%${division}%'`;
     };
 
-    // 0. Base table for sales
-    const baseSalesTable = 'sales';
-    const baseSalesSubquery = `(SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 출하창고코드, 실납업체 FROM ${baseSalesTable})`;
+    // 0. Base subquery to combine sales tables (excluding south division)
+    const baseSalesSubquery = `
+      (
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 출하창고코드, 실납업체 FROM sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 창고코드 as 출하창고코드, 실납업체 FROM east_division_sales
+        UNION ALL
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 창고코드 as 출하창고코드, 실납업체 FROM west_division_sales
+      )
+    `;
+
+    // Base subquery for purchases
+    const basePurchSubquery = `
+      (
+        SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 as 합계, 창고코드 FROM purchases
+        UNION ALL
+        SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 as 합계, 창고명 as 창고코드 FROM east_division_purchases
+        UNION ALL
+        SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 as 합계, 창고명 as 창고코드 FROM west_division_purchases
+      )
+    `;
 
     // 1. Sales Status Aggregation
     const salesQuery = `
@@ -168,9 +186,9 @@ export async function GET(request: Request) {
           CAST(REPLACE(p.중량, ',', '') AS NUMERIC) / 200.0 as amount,
           'in' as type,
           p.일자
-        FROM purchases p
+        FROM ${basePurchSubquery} p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
-        LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
+        LEFT JOIN warehouses w ON p.창고코드 = w.창고코드 OR p.창고코드 = w.창고명
         LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
         WHERE ${getPurchBranchFilter()} AND p.일자 >= '${BASELINE_DATE}' AND p.일자 <= '${date}'
 
@@ -188,7 +206,7 @@ export async function GET(request: Request) {
           CAST(REPLACE(s.중량, ',', '') AS NUMERIC) / 200.0 as amount,
           'out' as type,
           s.일자
-        FROM (${baseSalesSubquery}) s
+        FROM ${baseSalesSubquery} s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN clients c2 ON (s.실납업체 IS NOT NULL AND s.실납업체 != '' AND s.실납업체 = c2.거래처코드)
@@ -209,7 +227,7 @@ export async function GET(request: Request) {
         SUM(CASE WHEN type = 'purchase' THEN volume ELSE 0 END) as purchaseMTD
       FROM (
         SELECT CAST(REPLACE(s.중량, ',', '') AS NUMERIC) as volume, 'sales' as type, s.일자
-        FROM (${baseSalesSubquery}) s
+        FROM ${baseSalesSubquery} s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN clients c2 ON (s.실납업체 IS NOT NULL AND s.실납업체 != '' AND s.실납업체 = c2.거래처코드)
@@ -219,26 +237,26 @@ export async function GET(request: Request) {
         WHERE s.일자 >= '${startDate}' AND s.일자 <= '${date}' AND i.품목그룹3코드 = 'FLA' AND i.품목그룹1코드 = 'IL' AND ${getSalesBranchFilter()}
         UNION ALL
         SELECT CAST(REPLACE(p.중량, ',', '') AS NUMERIC) as volume, 'purchase' as type, p.일자
-        FROM purchases p
+        FROM ${basePurchSubquery} p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
-        LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
+        LEFT JOIN warehouses w ON p.창고코드 = w.창고코드 OR p.창고코드 = w.창고명
         WHERE p.일자 >= '${startDate}' AND p.일자 <= '${date}' AND i.품목그룹3코드 = 'FLA' AND i.품목그룹1코드 = 'IL' AND ${getPurchBranchFilter()}
       )
     `;
 
     // 5. Mobil Purchase Metrics (당일 입고량 / 매입액)
-    const purchaseQuery = `
+    const purchaseMetricsQuery = `
       SELECT
         SUM(CASE WHEN 일자 = '${date}' THEN volume ELSE 0 END) as todayVolume,
         SUM(CASE WHEN 일자 = '${date}' THEN amount ELSE 0 END) as todayAmount
       FROM (
         SELECT
           CAST(REPLACE(p.중량, ',', '') AS NUMERIC) as volume,
-          CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} as amount,
+          CAST(REPLACE(p.합계, ',', '') AS NUMERIC) / ${divisor} as amount,
           p.일자
-        FROM purchases p
+        FROM ${basePurchSubquery} p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
-        LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
+        LEFT JOIN warehouses w ON p.창고코드 = w.창고코드 OR p.창고코드 = w.창고명
         WHERE p.일자 >= '${startDate}' AND p.일자 <= '${date}'
           AND i.품목그룹1코드 IN ('IL', 'PVL', 'CVL', 'MB', 'AVI', 'MAR')
           AND ${getPurchBranchFilter()}
@@ -250,7 +268,7 @@ export async function GET(request: Request) {
       executeSQL(collectionQuery),
       executeSQL(inventoryQuery),
       executeSQL(flagshipQuery),
-      executeSQL(purchaseQuery)
+      executeSQL(purchaseMetricsQuery)
     ]);
 
     // Map Sales Results

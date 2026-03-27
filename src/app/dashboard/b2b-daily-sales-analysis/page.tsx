@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Filter, Loader2, TrendingUp, Building2, ChevronDown, ChevronRight } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -29,6 +29,7 @@ const BRANCHES = ['all', 'MB', '화성', '창원', '남부', '중부', '서부',
 
 interface SalesProfitItem {
   id: number;
+  branch: string;
   품목코드: string;
   품목명: string;
   판매수량: number;
@@ -39,7 +40,6 @@ interface SalesProfitItem {
   이익단가: number;
   이익금액: number;
   이익율: number;
-  imported_at: string;
 }
 
 // ── Helpers ──
@@ -76,6 +76,17 @@ export default function B2BDailySalesAnalysisPage() {
   const [expandedBranches, setExpandedBranches] = useState<Set<string>>(new Set());
   const [expandedPersons, setExpandedPersons] = useState<Set<string>>(new Set());
   const [expandedVendors, setExpandedVendors] = useState<Set<string>>(new Set());
+  const [expandedProfitBranches, setExpandedProfitBranches] = useState<Set<string>>(new Set());
+
+  const groupedProfitData = useMemo(() => {
+    const grouped: { [branch: string]: SalesProfitItem[] } = {};
+    profitData.forEach(item => {
+      const b = item.branch || '기타';
+      if (!grouped[b]) grouped[b] = [];
+      grouped[b].push(item);
+    });
+    return grouped;
+  }, [profitData]);
 
   const profitTotals = useMemo(() => {
     return profitData.reduce((acc, row) => ({
@@ -183,6 +194,16 @@ export default function B2BDailySalesAnalysisPage() {
     setExpandedVendors(newExpanded);
   };
 
+  const toggleProfitBranch = (branch: string) => {
+    const newExpanded = new Set(expandedProfitBranches);
+    if (newExpanded.has(branch)) {
+      newExpanded.delete(branch);
+    } else {
+      newExpanded.add(branch);
+    }
+    setExpandedProfitBranches(newExpanded);
+  };
+
   const handleExcelDownload = () => {
     if (activeView === 'hierarchy') {
       if (data.length === 0) {
@@ -219,6 +240,7 @@ export default function B2BDailySalesAnalysisPage() {
       }
 
       const exportData = profitData.map(row => ({
+        '사업소': row.branch,
         '품목코드': row.품목코드,
         '품목명': row.품목명,
         '판매수량': parseNumeric(row.판매수량),
@@ -510,42 +532,86 @@ export default function B2BDailySalesAnalysisPage() {
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-zinc-50 dark:bg-zinc-800 sticky top-0 z-10 shadow-sm">
                 <tr>
-                  <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300">품목코드</th>
-                  <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300">품목명</th>
+                  <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300">사업소 / 품목</th>
                   <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300 text-right">판매수량</th>
                   <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300 text-right">판매단가</th>
                   <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300 text-right">판매금액</th>
                   <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300 text-right">원가단가</th>
                   <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300 text-right">원가금액</th>
-                  <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300 text-right">이익단가</th>
                   <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300 text-right font-bold text-rose-600">이익금액</th>
                   <th className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300 text-right">이익율(%)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {profitData.length === 0 ? (
+                {Object.keys(groupedProfitData).length === 0 ? (
                   <tr>
                     <td colSpan={10} className="py-12 text-center text-zinc-400">조회된 이익 분석 데이터가 없습니다</td>
                   </tr>
                 ) : (
-                  profitData.map((row) => (
-                    <tr key={row.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                      <td className="px-3 py-2 text-zinc-900 dark:text-zinc-100 font-medium">{row.품목코드}</td>
-                      <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300 truncate max-w-[150px]" title={row.품목명}>{row.품목명}</td>
-                      <td className="px-3 py-2 text-right font-mono">{fmt(parseNumeric(row.판매수량))}</td>
-                      <td className="px-3 py-2 text-right font-mono">{fmtCurrency(parseNumeric(row.판매단가))}</td>
-                      <td className="px-3 py-2 text-right font-mono text-blue-600 font-semibold">{fmtCurrency(parseNumeric(row.판매금액))}</td>
-                      <td className="px-3 py-2 text-right font-mono">{fmtCurrency(parseNumeric(row.원가단가))}</td>
-                      <td className="px-3 py-2 text-right font-mono">{fmtCurrency(parseNumeric(row.원가금액))}</td>
-                      <td className="px-3 py-2 text-right font-mono">{fmtCurrency(parseNumeric(row.이익단가))}</td>
-                      <td className="px-3 py-2 text-right font-mono text-rose-600 font-bold">{fmtCurrency(parseNumeric(row.이익금액))}</td>
-                      <td className="px-3 py-2 text-right font-mono font-medium">
-                        <span className={`px-1.5 py-0.5 rounded ${parseNumeric(row.이익율) >= 0.2 ? 'bg-green-100 text-green-700' : parseNumeric(row.이익율) <= 0.05 ? 'bg-red-100 text-red-700' : ''}`}>
-                          {(parseNumeric(row.이익율) * 100).toFixed(1)}%
-                        </span>
-                      </td>
-                    </tr>
-                  ))
+                  Object.entries(groupedProfitData).map(([branchName, items]) => {
+                    const branchTotal = items.reduce((acc, item) => ({
+                      quantity: acc.quantity + parseNumeric(item.판매수량),
+                      amount: acc.amount + parseNumeric(item.판매금액),
+                      cost: acc.cost + parseNumeric(item.원가금액),
+                      profit: acc.profit + parseNumeric(item.이익금액)
+                    }), { quantity: 0, amount: 0, cost: 0, profit: 0 });
+                    
+                    const branchProfitRate = branchTotal.amount > 0 ? (branchTotal.profit / branchTotal.amount) * 100 : 0;
+
+                    return (
+                      <React.Fragment key={branchName}>
+                        {/* Branch Row */}
+                        <tr 
+                          className="bg-blue-50/50 dark:bg-blue-900/10 hover:bg-blue-100/50 dark:hover:bg-blue-900/20 cursor-pointer transition-colors"
+                          onClick={() => toggleProfitBranch(branchName)}
+                        >
+                          <td className="px-3 py-2 font-bold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                            {expandedProfitBranches.has(branchName) ? (
+                              <ChevronDown className="w-4 h-4" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4" />
+                            )}
+                            <Building2 className="w-4 h-4" />
+                            {branchName}
+                          </td>
+                          <td className="px-3 py-2 text-right font-bold">{fmt(branchTotal.quantity)}</td>
+                          <td className="px-3 py-2 text-right"></td>
+                          <td className="px-3 py-2 text-right font-bold text-blue-600">{fmtCurrency(branchTotal.amount)}</td>
+                          <td className="px-3 py-2 text-right"></td>
+                          <td className="px-3 py-2 text-right font-bold">{fmtCurrency(branchTotal.cost)}</td>
+                          <td className="px-3 py-2 text-right font-bold text-rose-600">{fmtCurrency(branchTotal.profit)}</td>
+                          <td className="px-3 py-2 text-right font-bold">
+                            <span className={`px-1.5 py-0.5 rounded ${branchProfitRate >= 20 ? 'bg-green-100 text-green-700' : branchProfitRate <= 5 ? 'bg-red-100 text-red-700' : ''}`}>
+                              {branchProfitRate.toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
+
+                        {/* Item Rows under Branch */}
+                        {expandedProfitBranches.has(branchName) && items.map((row) => (
+                          <tr key={row.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors border-l-4 border-blue-200 dark:border-blue-800">
+                            <td className="px-6 py-2">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-zinc-900 dark:text-zinc-100">{row.품목명}</span>
+                                <span className="text-[10px] text-zinc-500">{row.품목코드}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono">{fmt(parseNumeric(row.판매수량))}</td>
+                            <td className="px-3 py-2 text-right font-mono">{fmtCurrency(parseNumeric(row.판매단가))}</td>
+                            <td className="px-3 py-2 text-right font-mono text-blue-600">{fmtCurrency(parseNumeric(row.판매금액))}</td>
+                            <td className="px-3 py-2 text-right font-mono">{fmtCurrency(parseNumeric(row.원가단가))}</td>
+                            <td className="px-3 py-2 text-right font-mono">{fmtCurrency(parseNumeric(row.원가금액))}</td>
+                            <td className="px-3 py-2 text-right font-mono text-rose-600 font-semibold">{fmtCurrency(parseNumeric(row.이익금액))}</td>
+                            <td className="px-3 py-2 text-right font-mono font-medium">
+                              <span className={`px-1.5 py-0.5 rounded ${parseNumeric(row.이익율) >= 0.2 ? 'bg-green-100/50 text-green-700' : parseNumeric(row.이익율) <= 0.05 ? 'bg-red-100/50 text-red-700' : ''}`}>
+                                {(parseNumeric(row.이익율) * 100).toFixed(1)}%
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>

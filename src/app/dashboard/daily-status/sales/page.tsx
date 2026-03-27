@@ -83,8 +83,6 @@ export default function DailySalesPage() {
       // Fetch data for all divisions
       const results = await Promise.all(
         divisions.map(async (division) => {
-          if (division.id === 'all') return null; // Skip "all" if redundant, or handle it
-
           // Fetch both report and table data for each division
           const [reportRes, tableRes] = await Promise.all([
             apiFetch(`/api/dashboard/daily-status/sales-collections/closing?date=${selectedDate}&division=${division.label}&includeVat=${includeVat}`).then(r => r.json()),
@@ -105,11 +103,53 @@ export default function DailySalesPage() {
 
         // Add Report (Closing Status) Island Tables
         if (res.report) {
-          const { salesData, collectionData, inventoryData, purchaseData } = res.report;
-          if (salesData) islands.push({ title: '매출현황', headers: ['항목', '금액'], data: Object.entries(salesData).map(([k, v]) => [k, v]) });
-          if (collectionData) islands.push({ title: '수금현황', headers: ['항목', '금액'], data: Object.entries(collectionData).map(([k, v]) => [k, v]) });
-          if (purchaseData) islands.push({ title: '매입현황', headers: ['항목', '금액'], data: Object.entries(purchaseData).map(([k, v]) => [k, v]) });
-          if (inventoryData) islands.push({ title: '재고현황', headers: ['항목', '수량'], data: Object.entries(inventoryData).map(([k, v]) => [k, v]) });
+          const { salesData, collectionData, inventoryData, flagship, purchaseData } = res.report;
+          
+          if (salesData && salesData.length > 0) {
+            islands.push({
+              title: '판매현황',
+              headers: ['구분', '전일누계', '당일', '누계', '비고'],
+              data: salesData.map((r: any) => [r.category, r.prevTotal, r.today, r.total, r.remarks])
+            });
+          }
+
+          if (collectionData && collectionData.length > 0) {
+            islands.push({
+              title: '수금액',
+              headers: ['구분', '전일누계', '당일', '누계'],
+              data: collectionData.map((r: any) => [r.method, r.prevTotal, r.today, r.total])
+            });
+          }
+
+          if (inventoryData && inventoryData.length > 0) {
+            islands.push({
+              title: '재고현황 (단위: D/M)',
+              headers: ['구분', '전일재고', '입고', '출고', '기말재고'],
+              data: inventoryData.map((r: any) => [r.category, r.prevStock, r.in, r.out, r.stock])
+            });
+          }
+
+          if (flagship) {
+            islands.push({
+              title: 'IL (Flagship) 실적',
+              headers: ['항목', '당일(L)', '누계(L)'],
+              data: [
+                ['매출 실적', flagship.salesVol, flagship.salesMTD],
+                ['매입 실적', flagship.purchaseVol, flagship.purchaseMTD]
+              ]
+            });
+          }
+
+          if (purchaseData) {
+            islands.push({
+              title: '매입/발주 현황 (Mobil)',
+              headers: ['항목', '실적'],
+              data: [
+                ['당일 입고량(L)', purchaseData.todayVolume],
+                ['당일 매입액(원)', purchaseData.todayAmount]
+              ]
+            });
+          }
         }
 
         // Add Table (Customer Detail) Island Table

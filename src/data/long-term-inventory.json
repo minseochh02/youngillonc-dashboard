@@ -11,5 +11,19 @@
     "targetMonth": "2026-02",
     "id": "1772285642219",
     "createdAt": "2026-02-28T13:34:02.219Z"
+  },
+  {
+    "itemCode": "144166-P3",
+    "itemName": "MOBIL HYDRAULIC AW 32-BUFFER OIL-4L [4]",
+    "warehouse": "화성",
+    "quantity": 172,
+    "unit": "EA",
+    "spec": "4",
+    "remarks": "자동분석 추천 (마지막 판매: 2026-01-20)",
+    "actionPlan": "테스트",
+    "targetMonth": "2026-03",
+    "id": "1774586526426",
+    "createdAt": "2026-03-27T04:42:06.427Z",
+    "updatedAt": "2026-03-27T04:42:17.602Z"
   }
 ]
