@@ -59,11 +59,6 @@ const Navigation = () => {
       icon: <Users className="w-5 h-5" />,
     },
     {
-      name: "대시보드",
-      href: "/dashboard",
-      icon: <LayoutDashboard className="w-5 h-5" />,
-    },
-    {
       name: "일일현황",
       href: "/dashboard/daily-status",
       icon: <ClipboardList className="w-5 h-5" />,

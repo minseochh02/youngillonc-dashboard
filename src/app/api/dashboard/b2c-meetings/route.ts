@@ -583,61 +583,56 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'shopping-mall') {
-      // Query shopping mall sales data (업종분류코드 = 28800, 웹샵) across all three tables
+      // Query shopping mall sales data from the new shopping_sales table
+      // Grouping by teams and month breakdown
       const query = `
         SELECT
-          CASE
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            ELSE 'Others'
-          END as region,
-          strftime('%Y', s.일자) as year,
-          COUNT(DISTINCT s.id) as transaction_count,
-          COUNT(DISTINCT s.거래처코드) as client_count,
+          ec.b2c_팀 as team,
+          strftime('%Y', s.주문_날짜) as year,
+          strftime('%m', s.주문_날짜) as month,
+          COUNT(DISTINCT s.주문번호) as transaction_count,
+          COUNT(DISTINCT s.사업자번호) as client_count,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC) * CAST(REPLACE(s.단가, ',', '') AS NUMERIC)) as total_supply_amount,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount
-        FROM ${baseSalesTable} s
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
-        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
-          AND c.업종분류코드 = '28800'
-          AND ca.거래처그룹2 = '웹샵'
-          AND (ec.전체사업소 LIKE '%동부%'
-            OR ec.전체사업소 LIKE '%서부%'
-            OR ec.전체사업소 LIKE '%중부%')
-          AND e.사원_담당_명 != '김도량'
-        GROUP BY region, year
-        ORDER BY region, year
+          SUM(CAST(REPLACE(s.용량, ',', '') AS NUMERIC) * CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_weight,
+          SUM(CAST(REPLACE(s.주문금액, ',', '') AS NUMERIC)) as total_supply_amount,
+          SUM(CAST(REPLACE(s.총_주문금액, ',', '') AS NUMERIC)) as total_amount,
+          SUM(CAST(REPLACE(s.사용한_포인트, ',', '') AS NUMERIC)) as total_points,
+          SUM(CAST(REPLACE(s.결제한_금액, ',', '') AS NUMERIC)) as net_amount
+        FROM shopping_sales s
+        LEFT JOIN employee_category ec ON s.담당자 = ec.담당자
+        WHERE s.주문_날짜 >= '${currentYear}-01-01'
+          AND s.주문_날짜 <= '${currentYear}-12-31'
+          AND ec.b2c_팀 IS NOT NULL
+        GROUP BY team, year, month
+        ORDER BY team, month
       `;
 
       const salesDataRaw = await executeSQL(query);
       const salesDataArray = Array.isArray(salesDataRaw) ? salesDataRaw : (salesDataRaw?.rows || []);
 
       const salesData = salesDataArray.map((row: any) => ({
-        region: row.region,
+        region: row.team || 'Unknown Team',
         year: row.year,
+        month: row.month,
         transaction_count: Number(row.transaction_count || 0),
         client_count: Number(row.client_count || 0),
         total_quantity: Number(row.total_quantity || 0),
         total_weight: Number(row.total_weight || 0),
         total_supply_amount: Number(row.total_supply_amount || 0),
         total_amount: Number(row.total_amount || 0),
+        total_points: Number(row.total_points || 0),
+        net_amount: Number(row.net_amount || 0),
       }));
+
+      // Get unique teams for the UI
+      const uniqueTeams = Array.from(new Set(salesData.map((d: any) => d.region))).sort();
 
       return NextResponse.json({
         success: true,
         data: {
           salesData,
-          regions: ['동부', '서부', '중부'],
+          regions: uniqueTeams,
           currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
           availableMonths,
           currentMonth: currentMonthStr,
         },

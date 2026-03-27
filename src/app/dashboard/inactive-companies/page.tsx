@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
-import { Calendar, Building, AlertCircle, TrendingDown, Loader2, ChevronRight, ChevronDown, Filter, User, Clock } from 'lucide-react';
+import { Calendar, Building, AlertCircle, TrendingDown, Loader2, ChevronRight, ChevronDown, Filter, User, Clock, Edit2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
@@ -22,6 +22,7 @@ interface InactiveCompanyData {
   earliest_last_transaction?: string;
   latest_last_transaction?: string;
   transaction_count?: number;
+  action_plan?: string;
 }
 
 interface HierarchicalNode {
@@ -35,6 +36,54 @@ interface HierarchicalNode {
 
 interface FilterOptions {
   branches: string[];
+}
+
+function EditableCell({ 
+  value, 
+  onSave, 
+}: { 
+  value: string; 
+  onSave: (val: string) => Promise<void>;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [currentValue, setCurrentValue] = useState(value);
+
+  const handleSave = async () => {
+    if (currentValue === value) {
+      setIsEditing(false);
+      return;
+    }
+    await onSave(currentValue);
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          type="text"
+          autoFocus
+          value={currentValue}
+          onChange={(e) => setCurrentValue(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+          onBlur={handleSave}
+          className="w-full text-xs bg-white dark:bg-zinc-800 border border-blue-500 rounded px-1.5 py-1 outline-none"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      onClick={() => setIsEditing(true)}
+      className="group/cell relative cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800/50 rounded px-1 -mx-1 py-1"
+    >
+      <span className={!value ? "text-zinc-400 italic" : ""}>
+        {value || "입력하세요..."}
+      </span>
+      <Edit2 className="w-3 h-3 absolute -right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/cell:opacity-100 text-zinc-400" />
+    </div>
+  );
 }
 
 export default function InactiveCompaniesPage() {
@@ -240,6 +289,25 @@ export default function InactiveCompaniesPage() {
     setExpandedNodes(new Set());
   };
 
+  const handleUpdatePlan = async (clientCode: string, plan: string) => {
+    try {
+      const response = await apiFetch('/api/dashboard/inactive-companies', {
+        method: 'PATCH',
+        body: JSON.stringify({ client_code: clientCode, action_plan: plan }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        // Optimistic update
+        setData(prev => prev.map(item => 
+          item.client_code === clientCode ? { ...item, action_plan: plan } : item
+        ));
+      }
+    } catch (error) {
+      console.error('Failed to update plan:', error);
+      alert('처리방안 저장에 실패했습니다.');
+    }
+  };
+
   const renderHierarchicalRows = (nodes: HierarchicalNode[], indent: number = 0) => {
     const rows: any[] = [];
 
@@ -271,25 +339,39 @@ export default function InactiveCompaniesPage() {
               </div>
             </div>
           </td>
-          <td className="px-4 py-3 text-sm text-right text-red-600 dark:text-red-400 font-bold">
+          <td className={`px-4 py-3 text-sm text-right font-bold ${
+            inactiveMonths === 3 ? 'text-yellow-600 dark:text-yellow-400' :
+            inactiveMonths === 6 ? 'text-orange-600 dark:text-orange-400' :
+            'text-red-600 dark:text-red-400'
+          }`}>
             {node.data.inactive_count !== undefined ? node.data.inactive_count.toLocaleString() : '-'}
           </td>
           <td className="px-4 py-3 text-sm text-right text-zinc-500 dark:text-zinc-400">
             {node.data.last_transaction_date || '-'}
           </td>
           <td className="px-4 py-3 text-sm text-right font-semibold">
-            <span className={`px-2 py-1 rounded ${
+            <span className={`px-2 py-1 rounded-md text-xs font-bold ring-1 ring-inset ${
               (node.data.days_inactive || node.data.avg_days_inactive || 0) >= 365
-                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 ring-red-600/20'
                 : (node.data.days_inactive || node.data.avg_days_inactive || 0) >= 180
-                ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
-                : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 ring-orange-600/20'
+                : 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 ring-yellow-600/20'
             }`}>
               {Math.round(node.data.days_inactive || node.data.avg_days_inactive || 0)}일
             </span>
           </td>
           <td className="px-4 py-3 text-sm text-right text-blue-600 dark:text-blue-400 font-semibold">
             ₩{Number(node.data.last_period_sales || 0).toLocaleString()}
+          </td>
+          <td className="px-4 py-3 text-sm min-w-[200px]">
+            {node.level === 'client' && node.data.client_code ? (
+              <EditableCell 
+                value={node.data.action_plan || ''} 
+                onSave={(val) => handleUpdatePlan(node.data.client_code!, val)}
+              />
+            ) : (
+              <span className="text-zinc-300 dark:text-zinc-700">-</span>
+            )}
           </td>
         </tr>
       );
@@ -317,6 +399,7 @@ export default function InactiveCompaniesPage() {
       '마지막 거래일': item.last_transaction_date || '',
       '미거래 일수': Math.round(item.days_inactive || item.avg_days_inactive || 0),
       '이전 거래액': item.last_period_sales || 0,
+      '처리방안': item.action_plan || '',
     }));
 
     const filename = generateFilename('미거래업체현황');
@@ -381,44 +464,7 @@ export default function InactiveCompaniesPage() {
 
       {/* Filters */}
       {showFilters && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Inactive Period Filter */}
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Clock className="w-5 h-5 text-red-500" />
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">미거래 기간</h3>
-            </div>
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 p-3 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer transition-colors">
-                <input
-                  type="radio"
-                  checked={inactiveMonths === 3}
-                  onChange={() => setInactiveMonths(3)}
-                  className="text-red-500"
-                />
-                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">3개월 이상</span>
-              </label>
-              <label className="flex items-center gap-3 p-3 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer transition-colors">
-                <input
-                  type="radio"
-                  checked={inactiveMonths === 6}
-                  onChange={() => setInactiveMonths(6)}
-                  className="text-red-500"
-                />
-                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">6개월 이상</span>
-              </label>
-              <label className="flex items-center gap-3 p-3 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer transition-colors">
-                <input
-                  type="radio"
-                  checked={inactiveMonths === 12}
-                  onChange={() => setInactiveMonths(12)}
-                  className="text-red-500"
-                />
-                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">12개월 이상</span>
-              </label>
-            </div>
-          </div>
-
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Grouping Filter */}
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
             <div className="flex items-center gap-2 mb-4">
@@ -487,35 +533,101 @@ export default function InactiveCompaniesPage() {
         </div>
       )}
 
+      {/* Period Tabs */}
+      <div className="flex p-1 bg-zinc-100 dark:bg-zinc-800/50 rounded-xl w-fit">
+        {[
+          { label: '3개월', value: 3, color: 'yellow', icon: Clock },
+          { label: '6개월', value: 6, color: 'orange', icon: AlertCircle },
+          { label: '1년', value: 12, color: 'red', icon: TrendingDown },
+        ].map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setInactiveMonths(tab.value as 3 | 6 | 12)}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+              inactiveMonths === tab.value
+                ? tab.color === 'yellow'
+                  ? 'bg-white dark:bg-zinc-900 text-yellow-600 dark:text-yellow-400 shadow-sm'
+                  : tab.color === 'orange'
+                  ? 'bg-white dark:bg-zinc-900 text-orange-600 dark:text-orange-400 shadow-sm'
+                  : 'bg-white dark:bg-zinc-900 text-red-600 dark:text-red-400 shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
+          >
+            <tab.icon className={`w-4 h-4 ${
+              inactiveMonths === tab.value
+                ? tab.color === 'yellow' ? 'text-yellow-500' : tab.color === 'orange' ? 'text-orange-500' : 'text-red-500'
+                : 'text-zinc-400'
+            }`} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+        <div className={`p-4 rounded-xl border transition-all ${
+          inactiveMonths === 3 ? 'border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-900/10' :
+          inactiveMonths === 6 ? 'border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-900/10' :
+          'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10'
+        }`}>
           <div className="flex items-center gap-2 mb-2">
-            <AlertCircle className="w-4 h-4 text-red-500" />
+            <AlertCircle className={`w-4 h-4 ${
+              inactiveMonths === 3 ? 'text-yellow-500' :
+              inactiveMonths === 6 ? 'text-orange-500' :
+              'text-red-500'
+            }`} />
             <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">총 미거래업체 수</p>
           </div>
-          <p className="text-xl font-bold text-red-600 dark:text-red-400">
+          <p className={`text-xl font-bold ${
+            inactiveMonths === 3 ? 'text-yellow-600 dark:text-yellow-400' :
+            inactiveMonths === 6 ? 'text-orange-600 dark:text-orange-400' :
+            'text-red-600 dark:text-red-400'
+          }`}>
             {totals.inactiveCount.toLocaleString()}개
           </p>
         </div>
 
-        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+        <div className={`p-4 rounded-xl border transition-all ${
+          inactiveMonths === 3 ? 'border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-900/10' :
+          inactiveMonths === 6 ? 'border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-900/10' :
+          'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10'
+        }`}>
           <div className="flex items-center gap-2 mb-2">
-            <TrendingDown className="w-4 h-4 text-orange-500" />
+            <TrendingDown className={`w-4 h-4 ${
+              inactiveMonths === 3 ? 'text-yellow-500' :
+              inactiveMonths === 6 ? 'text-orange-500' :
+              'text-red-500'
+            }`} />
             <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">이전 거래액 합계</p>
           </div>
-          <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
+          <p className={`text-xl font-bold ${
+            inactiveMonths === 3 ? 'text-yellow-600 dark:text-yellow-400' :
+            inactiveMonths === 6 ? 'text-orange-600 dark:text-orange-400' :
+            'text-red-600 dark:text-red-400'
+          }`}>
             ₩{totals.lastPeriodSales.toLocaleString()}
           </p>
         </div>
 
-        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+        <div className={`p-4 rounded-xl border transition-all ${
+          inactiveMonths === 3 ? 'border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-900/10' :
+          inactiveMonths === 6 ? 'border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-900/10' :
+          'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10'
+        }`}>
           <div className="flex items-center gap-2 mb-2">
-            <Clock className="w-4 h-4 text-blue-500" />
+            <Clock className={`w-4 h-4 ${
+              inactiveMonths === 3 ? 'text-yellow-500' :
+              inactiveMonths === 6 ? 'text-orange-500' :
+              'text-red-500'
+            }`} />
             <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">미거래 기준</p>
           </div>
-          <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
-            {inactiveMonths}개월 이상
+          <p className={`text-xl font-bold ${
+            inactiveMonths === 3 ? 'text-yellow-600 dark:text-yellow-400' :
+            inactiveMonths === 6 ? 'text-orange-600 dark:text-orange-400' :
+            'text-red-600 dark:text-red-400'
+          }`}>
+            {inactiveMonths === 12 ? '1년' : `${inactiveMonths}개월`} 이상
           </p>
         </div>
       </div>
@@ -557,22 +669,29 @@ export default function InactiveCompaniesPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-zinc-50 dark:bg-zinc-800">
+              <thead className={`${
+                inactiveMonths === 3 ? 'bg-yellow-50 dark:bg-yellow-900/10' :
+                inactiveMonths === 6 ? 'bg-orange-50 dark:bg-orange-900/10' :
+                'bg-red-50 dark:bg-red-900/10'
+              }`}>
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
                     구분
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
                     미거래업체 수
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
                     마지막 거래일
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
                     미거래 일수
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
                     이전 거래액
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
+                    처리방안 (담당자 입력)
                   </th>
                 </tr>
               </thead>
@@ -583,7 +702,11 @@ export default function InactiveCompaniesPage() {
                   <td className="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
                     합계
                   </td>
-                  <td className="px-4 py-3 text-sm text-right text-red-600 dark:text-red-400">
+                  <td className={`px-4 py-3 text-sm text-right font-bold ${
+                    inactiveMonths === 3 ? 'text-yellow-600 dark:text-yellow-400' :
+                    inactiveMonths === 6 ? 'text-orange-600 dark:text-orange-400' :
+                    'text-red-600 dark:text-red-400'
+                  }`}>
                     {totals.inactiveCount.toLocaleString()}개
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-zinc-500 dark:text-zinc-400">
@@ -594,6 +717,9 @@ export default function InactiveCompaniesPage() {
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-blue-600 dark:text-blue-400">
                     ₩{totals.lastPeriodSales.toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-right text-zinc-500 dark:text-zinc-400">
+                    -
                   </td>
                 </tr>
               </tbody>

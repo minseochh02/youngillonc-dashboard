@@ -1,7 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import fs from 'fs/promises';
+import path from 'path';
 
 export const dynamic = 'force-dynamic';
+
+const DATA_FILE = path.join(process.cwd(), 'src/data/inactive-companies-plans.json');
+
+async function readPlans() {
+  try {
+    const data = await fs.readFile(DATA_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch (error) {
+    return [];
+  }
+}
+
+async function savePlans(plans: any[]) {
+  await fs.writeFile(DATA_FILE, JSON.stringify(plans, null, 2));
+}
 
 function interpolateQuery(query: string, params: any[]): string {
   let index = 0;
@@ -155,14 +172,66 @@ export async function GET(request: NextRequest) {
     const result = await executeSQL(finalQuery);
     const data = result?.rows || [];
 
+    // Merge plans
+    const plans = await readPlans();
+    const planMap = new Map();
+    plans.forEach((p: any) => planMap.set(p.client_code, p.action_plan));
+
+    const enrichedData = data.map((item: any) => {
+      if (item.client_code) {
+        return {
+          ...item,
+          action_plan: planMap.get(item.client_code) || ''
+        };
+      }
+      return item;
+    });
+
     return NextResponse.json({
       success: true,
-      data,
+      data: enrichedData,
     });
   } catch (error) {
     console.error('Error fetching inactive companies:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch inactive companies data' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const { client_code, action_plan } = await request.json();
+    
+    if (!client_code) {
+      return NextResponse.json({ success: false, error: 'Missing client_code' }, { status: 400 });
+    }
+    
+    let plans = await readPlans();
+    const planIndex = plans.findIndex((p: any) => p.client_code === client_code);
+    
+    if (planIndex === -1) {
+      plans.push({
+        client_code,
+        action_plan,
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      plans[planIndex] = {
+        ...plans[planIndex],
+        action_plan,
+        updatedAt: new Date().toISOString()
+      };
+    }
+    
+    await savePlans(plans);
+    
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error updating inactive company plan:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update plan' },
       { status: 500 }
     );
   }

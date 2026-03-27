@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Loader2, Save, Calendar, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Loader2, Save, Calendar, CheckCircle2, AlertCircle, Download } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
+import { ExcelUploadButton } from '@/components/ExcelUploadButton';
+import { generateFilename } from '@/lib/excel-export';
+import * as XLSX from 'xlsx';
 
 interface Goal {
   year: string;
@@ -23,7 +27,7 @@ interface Actual {
 
 const GOAL_TYPES = [
   { id: 'category', label: '월간총괄 (품목그룹)' },
-  { id: 'b2c-auto', label: 'B2C AUTO 팀별' },
+  { id: 'b2c-auto', label: 'B2C 품목그룹별' },
   { id: 'b2b-il', label: 'B2B IL 팀별' },
 ];
 
@@ -47,15 +51,6 @@ export default function GoalSettingTab() {
   const fetchInitialData = async () => {
     setIsLoading(true);
     try {
-      // 1. Fetch available teams first
-      const teamsRes = await apiFetch(`/api/dashboard/sales-analysis`);
-      const teamsData = await teamsRes.json();
-      if (teamsData.success) {
-        // This is a bit of a hack, we should ideally have a cleaner way to get teams
-        // but let's use what we have or just wait until we fetch goal data which might have them
-      }
-
-      // 2. Fetch goal setting data
       const response = await apiFetch(`/api/dashboard/closing-meeting?tab=goal-setting&year=${year}`);
       const result = await response.json();
       
@@ -70,27 +65,44 @@ export default function GoalSettingTab() {
         setGoals(goalMap);
 
         const actualMap: { [key: string]: Actual } = {};
-        const b2cTeams = new Set<string>();
-        const b2bTeams = new Set<string>();
-
         result.data.prevYearActual.forEach((a: Actual) => {
           const key = `${a.goal_type_group}_${a.target_name}_${a.month}`;
           actualMap[key] = a;
-          
-          if (a.goal_type_group === 'b2c-auto') b2cTeams.add(a.target_name);
-          if (a.goal_type_group === 'b2b-il') b2bTeams.add(a.target_name);
         });
         setActuals(actualMap);
+
+        // Process all available teams and branches
+        const b2cTeams = new Set<string>();
+        const b2bTeams = new Set<string>();
+        const branches = new Set<string>();
+
+        if (result.data.allTeams) {
+          result.data.allTeams.forEach((t: { name: string, type: string }) => {
+            if (t.type === 'b2c-auto') b2cTeams.add(t.name);
+            else if (t.type === 'b2b-il') b2bTeams.add(t.name);
+            else if (t.type === 'branch') branches.add(t.name);
+          });
+        }
+
+        const sortedB2CTeams = Array.from(b2cTeams).sort();
+        const sortedB2BTeams = Array.from(b2bTeams).sort();
+        const sortedBranches = Array.from(branches).sort();
+
         setTeams({
-          'b2c-auto': Array.from(b2cTeams).sort(),
-          'b2b-il': Array.from(b2bTeams).sort(),
+          'category': [...CATEGORIES, ...sortedBranches],
+          'b2c-auto': CATEGORIES,
+          'b2b-il': sortedB2BTeams,
         });
 
+        const allCategoryTargets = [...CATEGORIES, ...sortedBranches];
+
         // Set default target if not already set or invalid for new type
-        if (activeGoalType === 'b2c-auto' && b2cTeams.size > 0 && !b2cTeams.has(activeTarget)) {
-          setActiveTarget(Array.from(b2cTeams).sort()[0]);
-        } else if (activeGoalType === 'b2b-il' && b2bTeams.size > 0 && !b2bTeams.has(activeTarget)) {
-          setActiveTarget(Array.from(b2bTeams).sort()[0]);
+        if (activeGoalType === 'category' && !allCategoryTargets.includes(activeTarget)) {
+          setActiveTarget(allCategoryTargets[0]);
+        } else if (activeGoalType === 'b2c-auto' && sortedB2CTeams.length > 0 && !b2cTeams.has(activeTarget)) {
+          setActiveTarget(sortedB2CTeams[0]);
+        } else if (activeGoalType === 'b2b-il' && sortedB2BTeams.length > 0 && !b2bTeams.has(activeTarget)) {
+          setActiveTarget(sortedB2BTeams[0]);
         }
       }
     } catch (error) {
@@ -120,7 +132,7 @@ export default function GoalSettingTab() {
     setIsSaving(true);
     setMessage(null);
     try {
-      const response = await fetch('/api/dashboard/closing-meeting', {
+      const response = await apiFetch('/api/dashboard/closing-meeting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(goal),
@@ -143,24 +155,102 @@ export default function GoalSettingTab() {
     setIsSaving(true);
     setMessage(null);
     try {
-      const months = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'));
-      for (const month of months) {
-        const key = `${activeGoalType}_${activeTarget}_${month}`;
-        const goal = goals[key];
-        if (goal) {
-          await fetch('/api/dashboard/closing-meeting', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(goal),
-          });
-        }
+      const allGoalList = Object.values(goals).filter(g => g.year === year);
+      
+      const response = await apiFetch('/api/dashboard/closing-meeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(allGoalList),
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        setMessage({ type: 'success', text: '모든 목표가 저장되었습니다.' });
+      } else {
+        setMessage({ type: 'error', text: '저장 중 오류가 발생했습니다.' });
       }
-      setMessage({ type: 'success', text: '모든 목표가 저장되었습니다.' });
     } catch (error) {
       setMessage({ type: 'error', text: '저장 중 오류가 발생했습니다.' });
     } finally {
       setIsSaving(false);
       setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const handleTemplateDownload = () => {
+    const wb = XLSX.utils.book_new();
+    
+    GOAL_TYPES.forEach(type => {
+      const currentTargets = type.id === 'category' ? teams['category'] || CATEGORIES : teams[type.id] || [];
+      const headers = ['대상명'];
+      for (let i = 1; i <= 12; i++) {
+        headers.push(`${i}월(중량)`);
+        headers.push(`${i}월(금액)`);
+      }
+      
+      const rows = currentTargets.map(target => {
+        const row = [target];
+        for (let i = 1; i <= 12; i++) {
+          const month = i.toString().padStart(2, '0');
+          const key = `${type.id}_${target}_${month}`;
+          const goal = goals[key];
+          row.push(goal?.target_weight || 0);
+          row.push(goal?.target_amount || 0);
+        }
+        return row;
+      });
+      
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      XLSX.utils.book_append_sheet(wb, ws, type.label.substring(0, 31));
+    });
+    
+    XLSX.writeFile(wb, generateFilename(`목표설정_템플릿_${year}`));
+  };
+
+  const handleExcelUpload = async (uploadedData: any[]) => {
+    const newGoals: { [key: string]: Goal } = { ...goals };
+    let updateCount = 0;
+
+    uploadedData.forEach(sheet => {
+      const type = GOAL_TYPES.find(t => t.label.substring(0, 31) === sheet.sheetName);
+      if (!type) return;
+
+      const data = sheet.data;
+      if (data.length < 2) return;
+
+      const headers = data[0];
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        const targetName = row[0];
+        if (!targetName) continue;
+
+        for (let m = 1; m <= 12; m++) {
+          const month = m.toString().padStart(2, '0');
+          const weightIdx = (m - 1) * 2 + 1;
+          const amountIdx = (m - 1) * 2 + 2;
+          
+          const target_weight = parseFloat(String(row[weightIdx] || '0').replace(/,/g, '')) || 0;
+          const target_amount = parseFloat(String(row[amountIdx] || '0').replace(/,/g, '')) || 0;
+          
+          const key = `${type.id}_${targetName}_${month}`;
+          newGoals[key] = {
+            year,
+            month,
+            goal_type: type.id,
+            target_name: targetName,
+            target_weight,
+            target_amount
+          };
+          updateCount++;
+        }
+      }
+    });
+
+    if (updateCount > 0) {
+      setGoals(newGoals);
+      setMessage({ type: 'success', text: '엑셀 데이터가 반영되었습니다. "전체 저장"을 눌러 확정하세요.' });
+    } else {
+      setMessage({ type: 'error', text: '유효한 데이터를 찾을 수 없습니다.' });
     }
   };
 
@@ -174,7 +264,7 @@ export default function GoalSettingTab() {
   }
 
   const months = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'));
-  const currentTargets = activeGoalType === 'category' ? CATEGORIES : teams[activeGoalType] || [];
+  const currentTargets = teams[activeGoalType] || (activeGoalType === 'category' ? CATEGORIES : []);
 
   return (
     <div className="space-y-6">
@@ -191,6 +281,17 @@ export default function GoalSettingTab() {
                 <option key={y} value={y.toString()}>{y}년 목표 설정</option>
               ))}
             </select>
+          </div>
+          <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-2" />
+          <div className="flex items-center gap-2">
+            <ExcelDownloadButton 
+              label="템플릿 다운로드" 
+              onClick={handleTemplateDownload}
+              variant="secondary"
+            />
+            <ExcelUploadButton 
+              onUpload={handleExcelUpload}
+            />
           </div>
         </div>
 
@@ -227,7 +328,7 @@ export default function GoalSettingTab() {
                   key={type.id}
                   onClick={() => {
                     setActiveGoalType(type.id);
-                    const nextTargets = type.id === 'category' ? CATEGORIES : teams[type.id] || [];
+                    const nextTargets = teams[type.id] || (type.id === 'category' ? CATEGORIES : []);
                     setActiveTarget(nextTargets[0] || '');
                   }}
                   className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
@@ -295,7 +396,7 @@ export default function GoalSettingTab() {
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                   {months.map(month => {
                     const goalKey = `${activeGoalType}_${activeTarget}_${month}`;
-                    const actualKey = `${activeGoalType === 'category' ? `category-${activeTarget}` : activeGoalType}_${activeTarget}_${month}`;
+                    const actualKey = `${activeGoalType}_${activeTarget}_${month}`;
                     
                     const goal = goals[goalKey] || { target_weight: 0, target_amount: 0 };
                     const actual = actuals[actualKey] || { weight: 0, amount: 0 };
@@ -348,3 +449,4 @@ export default function GoalSettingTab() {
     </div>
   );
 }
+

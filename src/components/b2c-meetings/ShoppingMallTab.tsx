@@ -9,19 +9,21 @@ import { exportToExcel, generateFilename } from '@/lib/excel-export';
 interface SalesData {
   region: string;
   year: string;
+  month?: string;
   transaction_count: number;
   client_count: number;
   total_quantity: number;
   total_weight: number;
   total_supply_amount: number;
   total_amount: number;
+  total_points: number;
+  net_amount: number;
 }
 
 interface ShoppingMallData {
   salesData: SalesData[];
   regions: string[];
   currentYear: string;
-  lastYear: string;
 }
 
 interface ShoppingMallTabProps {
@@ -53,7 +55,7 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
   };
 
   const formatNumber = (num: number) => {
-    return num.toLocaleString();
+    return Math.round(num).toLocaleString();
   };
 
   if (isLoading) {
@@ -73,23 +75,25 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
     );
   }
 
-  const { salesData, regions, currentYear, lastYear } = data;
+  const { salesData, regions, currentYear } = data;
 
-  // Organize data by region and year
-  const getRegionData = (region: string, year: string) => {
-    return salesData.find(d => d.region === region && d.year === year);
+  // Get data for a specific team and month
+  const getTeamMonthData = (team: string, month: string) => {
+    return salesData.find(d => d.region === team && d.month === month);
   };
 
-  // Calculate totals for each year
-  const getTotalsByYear = (year: string) => {
-    const yearData = salesData.filter(d => d.year === year);
-    return yearData.reduce((acc, d) => ({
+  // Calculate totals for a specific month across all teams
+  const getMonthTotals = (month: string) => {
+    const monthData = salesData.filter(d => d.month === month);
+    return monthData.reduce((acc, d) => ({
       transaction_count: acc.transaction_count + d.transaction_count,
       client_count: acc.client_count + d.client_count,
       total_quantity: acc.total_quantity + d.total_quantity,
       total_weight: acc.total_weight + d.total_weight,
       total_supply_amount: acc.total_supply_amount + d.total_supply_amount,
       total_amount: acc.total_amount + d.total_amount,
+      total_points: acc.total_points + d.total_points,
+      net_amount: acc.net_amount + d.net_amount,
     }), {
       transaction_count: 0,
       client_count: 0,
@@ -97,11 +101,13 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
       total_weight: 0,
       total_supply_amount: 0,
       total_amount: 0,
+      total_points: 0,
+      net_amount: 0,
     });
   };
 
-  const currentYearTotals = getTotalsByYear(currentYear);
-  const lastYearTotals = getTotalsByYear(lastYear);
+  // All months in a year
+  const months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 
   const handleExcelDownload = () => {
     if (!data) {
@@ -111,191 +117,142 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
 
     const exportData: any[] = [];
 
-    // Add data for each region
-    regions.forEach((region) => {
-      const currentData = getRegionData(region, currentYear);
-      const lastData = getRegionData(region, lastYear);
-
-      exportData.push({
-        '지역': region,
-        [`거래건수(${currentYear})`]: currentData?.transaction_count || 0,
-        [`거래건수(${lastYear})`]: lastData?.transaction_count || 0,
-        [`거래처수(${currentYear})`]: currentData?.client_count || 0,
-        [`거래처수(${lastYear})`]: lastData?.client_count || 0,
-        [`중량(${currentYear})`]: currentData?.total_weight || 0,
-        [`중량(${lastYear})`]: lastData?.total_weight || 0,
-        [`합계(${currentYear})`]: currentData?.total_amount || 0,
-        [`합계(${lastYear})`]: lastData?.total_amount || 0,
+    // Monthly breakdown for Excel
+    months.forEach((month) => {
+      regions.forEach((team) => {
+        const monthData = getTeamMonthData(team, month);
+        if (monthData) {
+          exportData.push({
+            '월': `${month}월`,
+            '팀': team,
+            '거래건수': monthData.transaction_count,
+            '거래처수': monthData.client_count,
+            '중량': monthData.total_weight,
+            '총 주문금액': monthData.total_amount,
+            '사용한 포인트': monthData.total_points,
+            '실 결제금액': monthData.net_amount,
+          });
+        }
       });
     });
 
-    const filename = generateFilename('B2C쇼핑몰판매현황');
+    const filename = generateFilename(`B2C쇼핑몰판매현황_${currentYear}년_월별`);
     exportToExcel(exportData, filename);
   };
 
   return (
     <div className="space-y-6">
-      {/* Sales Data Table */}
+      {/* Monthly Sales Breakdown Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
-                <th
-                  rowSpan={2}
-                  className="py-3 px-4 text-left text-xs font-bold text-zinc-500 uppercase tracking-wider align-bottom border-r border-zinc-200 dark:border-zinc-700"
-                >
-                  지역
+                <th className="py-3 px-4 text-left text-xs font-bold text-zinc-500 uppercase tracking-wider border-r border-zinc-200 dark:border-zinc-700">
+                  월 / 팀
                 </th>
-                <th
-                  colSpan={2}
-                  className="py-2 px-4 text-center text-xs font-bold text-zinc-600 dark:text-zinc-300 border-r border-zinc-200 dark:border-zinc-700"
-                >
-                  거래건수
+                {regions.map(team => (
+                  <th key={team} className="py-3 px-4 text-center text-xs font-bold text-zinc-600 dark:text-zinc-300 border-r border-zinc-200 dark:border-zinc-700">
+                    {team}
+                  </th>
+                ))}
+                <th className="py-3 px-4 text-center text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  월별 합계
                 </th>
-                <th
-                  colSpan={2}
-                  className="py-2 px-4 text-center text-xs font-bold text-zinc-600 dark:text-zinc-300 border-r border-zinc-200 dark:border-zinc-700"
-                >
-                  거래처수
-                </th>
-                <th
-                  colSpan={2}
-                  className="py-2 px-4 text-center text-xs font-bold text-zinc-600 dark:text-zinc-300 border-r border-zinc-200 dark:border-zinc-700"
-                >
-                  중량
-                </th>
-                <th
-                  colSpan={3}
-                  className="py-2 px-4 text-center text-xs font-bold text-emerald-600 dark:text-emerald-400"
-                >
-                  합계
-                </th>
-              </tr>
-              <tr>
-                <th className="py-2 px-3 text-center text-xs text-zinc-500 dark:text-zinc-400">{currentYear}</th>
-                <th className="py-2 px-3 text-center text-xs text-zinc-400 dark:text-zinc-500 border-r border-zinc-200 dark:border-zinc-700">{lastYear}</th>
-                <th className="py-2 px-3 text-center text-xs text-zinc-500 dark:text-zinc-400">{currentYear}</th>
-                <th className="py-2 px-3 text-center text-xs text-zinc-400 dark:text-zinc-500 border-r border-zinc-200 dark:border-zinc-700">{lastYear}</th>
-                <th className="py-2 px-3 text-center text-xs text-zinc-500 dark:text-zinc-400">{currentYear}</th>
-                <th className="py-2 px-3 text-center text-xs text-zinc-400 dark:text-zinc-500 border-r border-zinc-200 dark:border-zinc-700">{lastYear}</th>
-                <th className="py-2 px-3 text-center text-xs text-emerald-600 dark:text-emerald-400">{currentYear}</th>
-                <th className="py-2 px-3 text-center text-xs text-emerald-500/70 dark:text-emerald-500/70">{lastYear}</th>
-                <th className="py-2 px-3 text-center text-xs text-blue-600 dark:text-blue-400">증감</th>
               </tr>
             </thead>
             <tbody>
-              {regions.map((region) => {
-                const currentData = getRegionData(region, currentYear);
-                const lastData = getRegionData(region, lastYear);
-
-                const amountChange = (currentData?.total_amount || 0) - (lastData?.total_amount || 0);
-                const amountChangePercent = lastData?.total_amount
-                  ? ((amountChange / lastData.total_amount) * 100).toFixed(1)
-                  : '0.0';
+              {months.map((month) => {
+                const monthTotals = getMonthTotals(month);
+                
+                // Only show rows that have data
+                if (monthTotals.total_amount === 0 && monthTotals.transaction_count === 0) return null;
 
                 return (
                   <tr
-                    key={region}
+                    key={month}
                     className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
                   >
                     <td className="py-3 px-4 font-semibold text-zinc-900 dark:text-zinc-100 border-r border-zinc-200 dark:border-zinc-700">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          region === '동부' ? 'bg-blue-500' :
-                          region === '서부' ? 'bg-purple-500' :
-                          'bg-emerald-500'
-                        }`} />
-                        {region}
-                      </div>
+                      {parseInt(month)}월
                     </td>
-                    <td className="py-3 px-3 text-center font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatNumber(currentData?.transaction_count || 0)}
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono text-zinc-500 dark:text-zinc-400 border-r border-zinc-200 dark:border-zinc-700">
-                      {formatNumber(lastData?.transaction_count || 0)}
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatNumber(currentData?.client_count || 0)}
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono text-zinc-500 dark:text-zinc-400 border-r border-zinc-200 dark:border-zinc-700">
-                      {formatNumber(lastData?.client_count || 0)}
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatNumber(currentData?.total_weight || 0)}
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono text-zinc-500 dark:text-zinc-400 border-r border-zinc-200 dark:border-zinc-700">
-                      {formatNumber(lastData?.total_weight || 0)}
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono font-semibold text-emerald-700 dark:text-emerald-300">
-                      ₩{formatNumber(currentData?.total_amount || 0)}
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono text-emerald-600/70 dark:text-emerald-500/70">
-                      ₩{formatNumber(lastData?.total_amount || 0)}
-                    </td>
-                    <td className={`py-3 px-3 text-center font-mono font-medium ${
-                      amountChange >= 0
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}>
-                      <div className="flex items-center justify-center gap-1">
-                        {amountChange >= 0 ? (
-                          <TrendingUp className="w-3 h-3" />
-                        ) : (
-                          <TrendingDown className="w-3 h-3" />
+                    {regions.map((team) => {
+                      const teamMonthData = getTeamMonthData(team, month);
+                      return (
+                        <td key={team} className="py-3 px-4 text-right font-mono border-r border-zinc-200 dark:border-zinc-700">
+                          <div className="flex flex-col">
+                            <span className="text-zinc-900 dark:text-zinc-100 font-semibold text-xs">₩{formatNumber(teamMonthData?.total_amount || 0)}</span>
+                            {teamMonthData && teamMonthData.total_points > 0 && (
+                              <span className="text-[10px] text-red-500">- ₩{formatNumber(teamMonthData.total_points)} (Pt)</span>
+                            )}
+                            <span className="text-blue-600 dark:text-blue-400 font-bold">₩{formatNumber(teamMonthData?.net_amount || 0)}</span>
+                            <span className="text-[10px] text-zinc-400 mt-1">{formatNumber(teamMonthData?.total_weight || 0)} kg / {teamMonthData?.transaction_count || 0}건</span>
+                          </div>
+                        </td>
+                      );
+                    })}
+                    <td className="py-3 px-4 text-right font-mono bg-emerald-50/30 dark:bg-emerald-900/10">
+                      <div className="flex flex-col">
+                        <span className="text-zinc-600 dark:text-zinc-400 font-semibold text-xs">₩{formatNumber(monthTotals.total_amount)}</span>
+                        {monthTotals.total_points > 0 && (
+                          <span className="text-[10px] text-red-600">- ₩{formatNumber(monthTotals.total_points)} (Pt)</span>
                         )}
-                        {amountChange >= 0 ? '+' : ''}{amountChangePercent}%
+                        <span className="text-emerald-700 dark:text-emerald-300 font-bold">₩{formatNumber(monthTotals.net_amount)}</span>
+                        <span className="text-[10px] text-emerald-600/70 mt-1">{formatNumber(monthTotals.total_weight)} kg / {monthTotals.transaction_count}건</span>
                       </div>
                     </td>
                   </tr>
                 );
               })}
 
-              {/* Totals Row */}
-              <tr className="bg-zinc-50 dark:bg-zinc-800/30 font-bold border-t-2 border-zinc-300 dark:border-zinc-700">
-                <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100 border-r border-zinc-200 dark:border-zinc-700">
-                  합계
+              {/* Annual Totals Row */}
+              <tr className="bg-zinc-100/50 dark:bg-zinc-800/50 font-bold border-t-2 border-zinc-300 dark:border-zinc-700">
+                <td className="py-4 px-4 text-zinc-900 dark:text-zinc-100 border-r border-zinc-200 dark:border-zinc-700">
+                  {currentYear}년 총계
                 </td>
-                <td className="py-3 px-3 text-center font-mono text-zinc-900 dark:text-zinc-100">
-                  {formatNumber(currentYearTotals.transaction_count)}
-                </td>
-                <td className="py-3 px-3 text-center font-mono text-zinc-700 dark:text-zinc-300 border-r border-zinc-200 dark:border-zinc-700">
-                  {formatNumber(lastYearTotals.transaction_count)}
-                </td>
-                <td className="py-3 px-3 text-center font-mono text-zinc-900 dark:text-zinc-100">
-                  {formatNumber(currentYearTotals.client_count)}
-                </td>
-                <td className="py-3 px-3 text-center font-mono text-zinc-700 dark:text-zinc-300 border-r border-zinc-200 dark:border-zinc-700">
-                  {formatNumber(lastYearTotals.client_count)}
-                </td>
-                <td className="py-3 px-3 text-center font-mono text-zinc-900 dark:text-zinc-100">
-                  {formatNumber(currentYearTotals.total_weight)}
-                </td>
-                <td className="py-3 px-3 text-center font-mono text-zinc-700 dark:text-zinc-300 border-r border-zinc-200 dark:border-zinc-700">
-                  {formatNumber(lastYearTotals.total_weight)}
-                </td>
-                <td className="py-3 px-3 text-center font-mono text-emerald-700 dark:text-emerald-300">
-                  ₩{formatNumber(currentYearTotals.total_amount)}
-                </td>
-                <td className="py-3 px-3 text-center font-mono text-emerald-600/70 dark:text-emerald-500/70">
-                  ₩{formatNumber(lastYearTotals.total_amount)}
-                </td>
-                <td className={`py-3 px-3 text-center font-mono ${
-                  (currentYearTotals.total_amount - lastYearTotals.total_amount) >= 0
-                    ? 'text-blue-700 dark:text-blue-300'
-                    : 'text-red-700 dark:text-red-300'
-                }`}>
-                  <div className="flex items-center justify-center gap-1">
-                    {(currentYearTotals.total_amount - lastYearTotals.total_amount) >= 0 ? (
-                      <TrendingUp className="w-3 h-3" />
-                    ) : (
-                      <TrendingDown className="w-3 h-3" />
-                    )}
-                    {lastYearTotals.total_amount > 0
-                      ? `${(currentYearTotals.total_amount - lastYearTotals.total_amount) >= 0 ? '+' : ''}${(((currentYearTotals.total_amount - lastYearTotals.total_amount) / lastYearTotals.total_amount) * 100).toFixed(1)}%`
-                      : '-'
-                    }
-                  </div>
+                {regions.map((team) => {
+                  const teamData = salesData.filter(d => d.region === team);
+                  const teamAnnualTotal = teamData.reduce((acc, d) => ({
+                    total_amount: acc.total_amount + d.total_amount,
+                    total_points: acc.total_points + d.total_points,
+                    net_amount: acc.net_amount + d.net_amount,
+                    total_weight: acc.total_weight + d.total_weight,
+                    transaction_count: acc.transaction_count + d.transaction_count,
+                  }), { total_amount: 0, total_points: 0, net_amount: 0, total_weight: 0, transaction_count: 0 });
+
+                  return (
+                    <td key={team} className="py-4 px-4 text-right font-mono border-r border-zinc-200 dark:border-zinc-700">
+                      <div className="flex flex-col">
+                        <span className="text-zinc-500 dark:text-zinc-400 text-xs">₩{formatNumber(teamAnnualTotal.total_amount)}</span>
+                        {teamAnnualTotal.total_points > 0 && (
+                          <span className="text-[10px] text-red-500">- ₩{formatNumber(teamAnnualTotal.total_points)}</span>
+                        )}
+                        <span className="text-zinc-900 dark:text-zinc-100 font-bold">₩{formatNumber(teamAnnualTotal.net_amount)}</span>
+                        <span className="text-[10px] text-zinc-500 mt-1">{formatNumber(teamAnnualTotal.total_weight)} kg / {teamAnnualTotal.transaction_count}건</span>
+                      </div>
+                    </td>
+                  );
+                })}
+                <td className="py-4 px-4 text-right font-mono bg-emerald-100/40 dark:bg-emerald-900/30">
+                  {(() => {
+                    const grandTotal = salesData.reduce((acc, d) => ({
+                      total_amount: acc.total_amount + d.total_amount,
+                      total_points: acc.total_points + d.total_points,
+                      net_amount: acc.net_amount + d.net_amount,
+                      total_weight: acc.total_weight + d.total_weight,
+                      transaction_count: acc.transaction_count + d.transaction_count,
+                    }), { total_amount: 0, total_points: 0, net_amount: 0, total_weight: 0, transaction_count: 0 });
+                    return (
+                      <div className="flex flex-col">
+                        <span className="text-emerald-600 dark:text-emerald-400 text-xs">₩{formatNumber(grandTotal.total_amount)}</span>
+                        {grandTotal.total_points > 0 && (
+                          <span className="text-[10px] text-red-600">- ₩{formatNumber(grandTotal.total_points)}</span>
+                        )}
+                        <span className="text-emerald-800 dark:text-emerald-200 text-base font-bold">₩{formatNumber(grandTotal.net_amount)}</span>
+                        <span className="text-[10px] text-emerald-700/80 mt-1">{formatNumber(grandTotal.total_weight)} kg / {grandTotal.transaction_count}건</span>
+                      </div>
+                    );
+                  })()}
                 </td>
               </tr>
             </tbody>
@@ -307,9 +264,9 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
       <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
         <p className="font-semibold mb-1 text-blue-700 dark:text-blue-300">필터 조건:</p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>업종분류코드: 28800 (인터넷/웹샵)</li>
-          <li>거래처그룹2: 웹샵</li>
-          <li>지역: 동부, 서부, 중부</li>
+          <li>데이터 소스: 쇼핑몰 판매현황 (shopping_sales)</li>
+          <li>분류 기준: B2C 팀별 (담당자 매칭)</li>
+          <li>대상 팀: {regions.join(', ')}</li>
         </ul>
       </div>
     </div>

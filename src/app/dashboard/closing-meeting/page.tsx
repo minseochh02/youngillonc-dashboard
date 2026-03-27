@@ -15,8 +15,8 @@ import { generateFilename, type IslandTable, type IslandSheetData } from '@/lib/
 
 const tabs = [
   { id: 'monthly-summary', label: '월간총괄' },
-  { id: 'b2c-auto', label: 'B2C AUTO 분석' },
-  { id: 'b2b-il', label: 'B2B IL 분석' },
+  { id: 'b2c-auto', label: 'B2C 분석' },
+  { id: 'b2b-il', label: 'B2B 분석' },
   { id: 'target-achievement', label: '목표 달성율' },
   { id: 'yoy-comparison', label: '전년 대비' },
   { id: 'branch-performance', label: '사업소별 실적' },
@@ -56,7 +56,7 @@ export default function ClosingMeetingPage() {
       
       const exportTabs = [
         { id: 'monthly-summary', name: '월간총괄' },
-        { id: 'b2c-auto', name: 'B2C_AUTO분석' },
+        { id: 'b2c-auto', name: 'B2C분석' },
         { id: 'b2b-il', name: 'B2B_IL분석' },
         { id: 'target-achievement', name: '목표달성율' },
         { id: 'yoy-comparison', name: '전년대비비교' },
@@ -103,38 +103,58 @@ export default function ClosingMeetingPage() {
               ])
             });
           }
-        } else if (res.id === 'b2c-auto' || res.id === 'b2b-il') {
-          const { branches, total, b2bAutoTotal, b2cIlTotal } = res.data;
-          const title = res.id === 'b2c-auto' ? 'B2C AUTO 분석' : 'B2B IL 분석';
+        } else if (res.id === 'b2c-auto') {
+          const { categories, total, b2bTotal } = res.data;
           
-          const dataRows: any[] = [];
-          branches.forEach((b: any) => {
-            // Branch Total Row
-            dataRows.push([b.branch, '합계', b.current_month_weight, b.current_month_amount, b.target_weight, b.achievement_rate.toFixed(1)]);
-            // Team Rows
-            if (b.teams) {
-              b.teams.forEach((t: any) => {
-                dataRows.push(['', t.team_name, t.current_month_weight, t.current_month_amount, t.target_weight, t.achievement_rate.toFixed(1)]);
-              });
-            }
-          });
+          const dataRows: any[] = categories.map((c: any) => [
+            c.category, 
+            c.current_month_weight, 
+            c.current_month_amount, 
+            c.target_weight, 
+            c.achievement_rate.toFixed(1)
+          ]);
 
           islands.push({
-            title: `${title} (사업소/팀별)`,
-            headers: ['사업소', '팀명', '당월중량(L)', '당월금액', '목표중량(L)', '달성율(%)'],
+            title: `B2C 분석 (품목그룹별)`,
+            headers: ['카테고리', '당월중량(L)', '당월금액', '목표중량(L)', '달성율(%)'],
             data: [
               ...dataRows,
-              ['전체합계', '', total.current_month_weight, total.current_month_amount, total.target_weight, total.achievement_rate.toFixed(1)]
+              ['전체합계', total.current_month_weight, total.current_month_amount, total.target_weight, total.achievement_rate.toFixed(1)]
             ]
           });
 
-          if (b2bAutoTotal || b2cIlTotal) {
-            const otherType = res.id === 'b2c-auto' ? 'B2B AUTO' : 'B2C IL';
-            const otherVal = b2bAutoTotal || b2cIlTotal;
+          if (b2bTotal) {
             islands.push({
-              title: `${otherType} 실적 (참고용)`,
+              title: `B2B 실적 (참고용)`,
               headers: ['구분', '중량(L)', '금액'],
-              data: [[otherType, otherVal.weight, otherVal.amount]]
+              data: [['B2B 합계', b2bTotal.weight, b2bTotal.amount]]
+            });
+          }
+        } else if (res.id === 'b2b-il') {
+          const { categories, branches, total, b2cTotal } = res.data;
+          
+          const catRows: any[] = categories.map((c: any) => [
+            c.category, 
+            c.current_month_weight, 
+            c.current_month_amount, 
+            c.target_weight, 
+            c.achievement_rate.toFixed(1)
+          ]);
+
+          islands.push({
+            title: `B2B 분석 (품목그룹별)`,
+            headers: ['카테고리', '당월중량(L)', '당월금액', '목표중량(L)', '달성율(%)'],
+            data: [
+              ...catRows,
+              ['전체합계', total.current_month_weight, total.current_month_amount, total.target_weight, total.achievement_rate.toFixed(1)]
+            ]
+          });
+
+          if (b2cTotal) {
+            islands.push({
+              title: `B2C 실적 (참고용)`,
+              headers: ['구분', '중량(L)', '금액'],
+              data: [['B2C 합계', b2cTotal.weight, b2cTotal.amount]]
             });
           }
         } else if (res.id === 'target-achievement') {
