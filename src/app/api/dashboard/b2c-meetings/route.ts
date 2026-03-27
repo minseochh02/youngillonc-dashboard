@@ -645,7 +645,7 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'team-strategy') {
-      // Query 1: PV/CV sales by team across all three tables
+      // Query 1: PVL/CVL sales by team across all three tables
       const teamPVCVQuery = `
         SELECT
           COALESCE(ec.b2c_팀, 'B2B팀') as team,
@@ -682,7 +682,7 @@ export async function GET(request: Request) {
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE s.일자 >= '${lastYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
-          AND ec.전체사업소 LIKE '%남부%'
+          AND (ec.전체사업소 LIKE '%남부%' OR c.거래처그룹1명 LIKE '%남부%')
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND e.사원_담당_명 != '김도량'
         GROUP BY year
@@ -694,11 +694,19 @@ export async function GET(request: Request) {
           strftime('%Y', p.일자) as year,
           SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC)) as total_amount
-        FROM purchases p
+        FROM (
+          SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 FROM purchases
+          UNION ALL
+          SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 FROM east_division_purchases
+          UNION ALL
+          SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 FROM west_division_purchases
+        ) p
+        LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
+        LEFT JOIN items i ON p.품목코드 = i.품목코드
         WHERE p.일자 >= '${lastYear}-01-01'
           AND p.일자 <= '${currentYear}-12-31'
-          AND p.거래처그룹1명 LIKE '%남부%'
-          AND p.품목그룹1코드 IN ('PVL', 'CVL')
+          AND c.거래처그룹1명 LIKE '%남부%'
+          AND i.품목그룹1코드 IN ('PVL', 'CVL')
         GROUP BY year
       `;
 
@@ -740,7 +748,7 @@ export async function GET(request: Request) {
       const nambujisaData = Array.isArray(nambujisaRaw) ? nambujisaRaw : (nambujisaRaw?.rows || []);
       const strategicDealersData = Array.isArray(strategicDealersRaw) ? strategicDealersRaw : (strategicDealersRaw?.rows || []);
 
-      // Process team PV/CV data
+      // Process team PVL/CVL data
       const teamData = teamPVCVData.map((row: any) => ({
         team: row.team || '사무실',
         product_group: row.product_group,

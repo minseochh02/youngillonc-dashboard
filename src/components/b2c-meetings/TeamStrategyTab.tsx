@@ -177,8 +177,8 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
 
     const exportData: any[] = [];
 
-    // PV/CV by Team section
-    exportData.push({ '구분': 'PV/CV 팀별 분석' });
+    // PVL/CVL by Team section
+    exportData.push({ '구분': 'PVL/CVL 팀별 분석' });
     exportData.push({
       '팀명': '팀명',
       [`${currentYear} PV`]: `${currentYear} PV`,
@@ -252,10 +252,10 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
         <ExcelDownloadButton onClick={handleExcelDownload} disabled={!data || isLoading} />
       </div>
 
-      {/* PV/CV by Team */}
+      {/* PVL/CVL by Team */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">PV/CV 팀별 분석</h4>
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">PVL/CVL 팀별 분석</h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
