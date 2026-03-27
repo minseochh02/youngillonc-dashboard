@@ -83,40 +83,6 @@ export default function IndustryDairyTab() {
     return acc;
   }, {} as Record<string, string[]>);
 
-  const sortedCategories = Object.keys(categoriesMap).sort((a, b) => {
-    // Sort by total amount of current year for each category
-    const aTotals = categoriesMap[a].reduce((sum, key) => sum + getTotalsByItemAndYear(key, currentYear).total_amount, 0);
-    const bTotals = categoriesMap[b].reduce((sum, key) => sum + getTotalsByItemAndYear(key, currentYear).total_amount, 0);
-    return bTotals - aTotals;
-  });
-
-  const getCategoryTotals = (category: string, year: string) => {
-    const itemKeys = categoriesMap[category] || [];
-    return itemKeys.reduce((acc, key) => {
-      const totals = getTotalsByItemAndYear(key, year);
-      return {
-        total_weight: acc.total_weight + totals.total_weight,
-        total_amount: acc.total_amount + totals.total_amount,
-      };
-    }, { total_weight: 0, total_amount: 0 });
-  };
-
-  // Get all months from Jan to Dec
-  const months = Array.from({ length: 12 }, (_, i) => {
-    const month = String(i + 1).padStart(2, '0');
-    return month;
-  }).filter(m => {
-    const monthNum = parseInt(m);
-    const now = new Date();
-    const currentYearNum = now.getFullYear();
-    const currentMonthNum = now.getMonth() + 1;
-    const yearNum = parseInt(currentYear);
-    
-    if (yearNum < currentYearNum) return true;
-    if (yearNum === currentYearNum && monthNum <= currentMonthNum) return true;
-    return false;
-  });
-
   // Organize data by item, year, and month
   const getMonthData = (itemKey: string, year: string, month: string) => {
     const [code, name, category] = itemKey.split('|');
@@ -157,6 +123,40 @@ export default function IndustryDairyTab() {
 
     return totals;
   };
+
+  const sortedCategories = Object.keys(categoriesMap).sort((a, b) => {
+    // Sort by total amount of current year for each category
+    const aTotals = categoriesMap[a].reduce((sum, key) => sum + getTotalsByItemAndYear(key, currentYear).total_amount, 0);
+    const bTotals = categoriesMap[b].reduce((sum, key) => sum + getTotalsByItemAndYear(key, currentYear).total_amount, 0);
+    return bTotals - aTotals;
+  });
+
+  const getCategoryTotals = (category: string, year: string) => {
+    const itemKeys = categoriesMap[category] || [];
+    return itemKeys.reduce((acc, key) => {
+      const totals = getTotalsByItemAndYear(key, year);
+      return {
+        total_weight: acc.total_weight + totals.total_weight,
+        total_amount: acc.total_amount + totals.total_amount,
+      };
+    }, { total_weight: 0, total_amount: 0 });
+  };
+
+  // Get all months from Jan to Dec
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const month = String(i + 1).padStart(2, '0');
+    return month;
+  }).filter(m => {
+    const monthNum = parseInt(m);
+    const now = new Date();
+    const currentYearNum = now.getFullYear();
+    const currentMonthNum = now.getMonth() + 1;
+    const yearNum = parseInt(currentYear);
+    
+    if (yearNum < currentYearNum) return true;
+    if (yearNum === currentYearNum && monthNum <= currentMonthNum) return true;
+    return false;
+  });
 
   // Calculate grand totals by year
   const getGrandTotalsByYear = (year: string) => {

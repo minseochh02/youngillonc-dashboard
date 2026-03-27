@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -290,7 +290,7 @@ export default function NewClientTab() {
                 if (!managerData) return null;
 
                 return (
-                  <>
+                  <Fragment key={managerKey}>
                     {/* Manager Row (Clickable) */}
                     <tr
                       key={managerKey}
@@ -346,7 +346,7 @@ export default function NewClientTab() {
                         ))}
                       </>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
