@@ -25,6 +25,23 @@ export async function GET(request: Request) {
       )
     `;
 
+    // Base subquery to combine purchase tables
+    const basePurchasesSubquery = `
+      (
+        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합_계 as 합계, p.창고코드, i.품목그룹1코드
+        FROM purchases p
+        LEFT JOIN items i ON p.품목코드 = i.품목코드
+        UNION ALL
+        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합_계 as 합계, p.창고명 as 창고코드, i.품목그룹1코드
+        FROM east_division_purchases p
+        LEFT JOIN items i ON p.품목코드 = i.품목코드
+        UNION ALL
+        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합_계 as 합계, p.창고명 as 창고코드, i.품목그룹1코드
+        FROM west_division_purchases p
+        LEFT JOIN items i ON p.품목코드 = i.품목코드
+      )
+    `;
+
     // Discover the actual months available in the database
     const dateRangeQuery = `
       SELECT DISTINCT substr(일자, 1, 7) as month FROM (
@@ -92,16 +109,8 @@ export async function GET(request: Request) {
             WHEN p.품목그룹1코드 = 'IL' THEN 'IL'
           END as category,
           SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC)) as amount
-        FROM (
-          SELECT p.일자, p.품목코드, p.중량, p.합_계, i.품목그룹1코드
-          FROM purchases p
-          LEFT JOIN items i ON p.품목코드 = i.품목코드
-          UNION ALL
-          SELECT 일자, 품목코드, 중량, 합_계, 품목그룹1코드 FROM east_division_purchases
-          UNION ALL
-          SELECT 일자, 품목코드, 중량, 합_계, 품목그룹1코드 FROM west_division_purchases
-        ) p
+          SUM(CAST(REPLACE(p.합계, ',', '') AS NUMERIC)) as amount
+        FROM (${basePurchasesSubquery}) p
         WHERE p.일자 IS NOT NULL
           AND p.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
         GROUP BY month, category

@@ -8,10 +8,8 @@ export default function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <Navigation />
-      <main className="flex-1 p-8">
-        <div className="max-w-6xl mx-auto">
+      <main className="flex-1">
           {children}
-        </div>
       </main>
     </div>
   );

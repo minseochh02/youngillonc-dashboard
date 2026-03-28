@@ -266,7 +266,7 @@ export default function EmployeesPage() {
   });
 
   return (
-    <div className="flex bg-gray-50 overflow-hidden min-h-[calc(100vh-4rem)]">
+    <div className="flex bg-gray-50 overflow-hidden h-screen">
       <style>{`
         .no-scrollbar::-webkit-scrollbar {
           display: none;
