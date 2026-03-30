@@ -2,7 +2,9 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import { Calendar, Loader2, Building, DollarSign, TrendingUp, Users, Package } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel } from '@/lib/excel-export';
 
@@ -20,6 +22,7 @@ interface IndustryData {
 }
 
 export default function IndustryTab() {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<IndustryData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [startDate, setStartDate] = useState(() => {
@@ -34,13 +37,16 @@ export default function IndustryTab() {
 
   useEffect(() => {
     fetchData();
-  }, [startDate, endDate]);
+  }, [startDate, endDate, includeVat]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
       const response = await apiFetch(
-        `/api/dashboard/b2b-meetings/industry?startDate=${startDate}&endDate=${endDate}`
+        withIncludeVat(
+          `/api/dashboard/b2b-meetings/industry?startDate=${startDate}&endDate=${endDate}`,
+          includeVat
+        )
       );
       const result = await response.json();
       if (result.success) {
@@ -231,45 +237,63 @@ export default function IndustryTab() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-          <div className="flex items-center gap-2 mb-2">
-            <Building className="w-4 h-4 text-blue-500" />
-            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">산업 분류 수</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Industry Overview Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <Building className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">산업별 실적 요약</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{startDate} ~ {endDate}</p>
+            </div>
           </div>
-          <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
-            {Object.keys(groupedData).length}
-          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">산업 분류 수</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{Object.keys(groupedData).length} 개</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 거래처: {formatNumber(totals.clients)} 개
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 거래건수</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(totals.transactions)} 건</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                평균 {formatNumber(Math.round(totals.transactions / (Object.keys(groupedData).length || 1)))} 건/산업
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-          <div className="flex items-center gap-2 mb-2">
-            <Users className="w-4 h-4 text-green-500" />
-            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">총 거래처 수</p>
+        {/* Volume and Amount Card */}
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">판매 규모</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">기간 내 총 합계</p>
+            </div>
           </div>
-          <p className="text-xl font-bold text-green-600 dark:text-green-400">
-            {totals.clients.toLocaleString()}
-          </p>
-        </div>
-
-        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-          <div className="flex items-center gap-2 mb-2">
-            <Package className="w-4 h-4 text-orange-500" />
-            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">총 중량</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 중량</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(totals.weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 중량 대비 100%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 매출액</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatCurrency(totals.totalAmount)}</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                공급가액: {formatCurrency(totals.supplyAmount)}
+              </p>
+            </div>
           </div>
-          <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
-            {totals.weight.toLocaleString()}
-          </p>
-        </div>
-
-        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-          <div className="flex items-center gap-2 mb-2">
-            <DollarSign className="w-4 h-4 text-purple-500" />
-            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">총 매출액</p>
-          </div>
-          <p className="text-xl font-bold text-purple-600 dark:text-purple-400">
-            ₩{totals.totalAmount.toLocaleString()}
-          </p>
         </div>
       </div>
 

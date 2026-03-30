@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -26,17 +28,21 @@ interface SalesAnalysisTabProps {
 }
 
 export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<SalesAnalysisData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchSalesAnalysisData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchSalesAnalysisData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/b2c-meetings?tab=sales-analysis${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/b2c-meetings?tab=sales-analysis${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -163,8 +169,99 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
     exportToExcel(exportData, filename);
   };
 
+  const pvlCurrent = channelData.filter(r => r.product_group === 'PVL' && r.year === currentYear).reduce((acc, r) => ({
+    weight: acc.weight + r.total_weight,
+    amount: acc.amount + r.total_amount
+  }), { weight: 0, amount: 0 });
+  const pvlLast = channelData.filter(r => r.product_group === 'PVL' && r.year === lastYear).reduce((acc, r) => ({
+    weight: acc.weight + r.total_weight,
+    amount: acc.amount + r.total_amount
+  }), { weight: 0, amount: 0 });
+  const pvlWeightChange = calculateChange(pvlCurrent.weight, pvlLast.weight);
+
+  const cvlCurrent = channelData.filter(r => r.product_group === 'CVL' && r.year === currentYear).reduce((acc, r) => ({
+    weight: acc.weight + r.total_weight,
+    amount: acc.amount + r.total_amount
+  }), { weight: 0, amount: 0 });
+  const cvlLast = channelData.filter(r => r.product_group === 'CVL' && r.year === lastYear).reduce((acc, r) => ({
+    weight: acc.weight + r.total_weight,
+    amount: acc.amount + r.total_amount
+  }), { weight: 0, amount: 0 });
+  const cvlWeightChange = calculateChange(cvlCurrent.weight, cvlLast.weight);
+
+  const totalCurrentWeight = pvlCurrent.weight + cvlCurrent.weight;
+
   return (
     <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* PVL Summary Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">PVL 실적</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 합계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 중량</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(pvlCurrent.weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatNumber(totalCurrentWeight)} L 중 {((pvlCurrent.weight / (totalCurrentWeight || 1)) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전년 대비</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${pvlWeightChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {pvlWeightChange.isPositive ? '+' : ''}{pvlWeightChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전년: {formatNumber(pvlLast.weight)} L
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* CVL Summary Card */}
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">CVL 실적</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 합계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 중량</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(cvlCurrent.weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatNumber(totalCurrentWeight)} L 중 {((cvlCurrent.weight / (totalCurrentWeight || 1)) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전년 대비</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${cvlWeightChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {cvlWeightChange.isPositive ? '+' : ''}{cvlWeightChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전년: {formatNumber(cvlLast.weight)} L
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* All Channels Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">

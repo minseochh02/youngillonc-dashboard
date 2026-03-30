@@ -6,6 +6,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const tab = searchParams.get('tab') || 'monthly-summary';
     const selectedMonthParam = searchParams.get('month');
+    const includeVat = searchParams.get('includeVat') === 'true';
+    const divisor = includeVat ? '1.0' : '1.1';
 
     // Base subquery to combine sales tables (excluding south division)
     // Joins with items to get 품목그룹1코드 and harmonizes '창고코드' to '출하창고코드'
@@ -74,6 +76,63 @@ export async function GET(request: Request) {
     const [latestYear, latestMonth] = currentMonthStr.split('-').map(Number);
     const currentYear = latestYear;
     const lastYear = currentYear - 1;
+    const monthNum = currentMonthStr.split('-')[1];
+
+    // Common Grand Totals for all tabs
+    const getGrandTotals = async () => {
+      const b2cTotalQuery = `
+        SELECT
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as weight,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as ytd_weight,
+          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as ytd_amount
+        FROM (${baseSalesSubquery}) s
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE (substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}')
+          AND ec.b2c_팀 != 'B2B'
+          AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
+          AND e.사원_담당_명 != '김도량'
+      `;
+
+      const b2bTotalQuery = `
+        SELECT
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as weight,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as ytd_weight,
+          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as ytd_amount
+        FROM (${baseSalesSubquery}) s
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE (substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}')
+          AND ec.b2c_팀 = 'B2B'
+          AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
+          AND e.사원_담당_명 != '김도량'
+      `;
+
+      const [b2cRes, b2bRes] = await Promise.all([
+        executeSQL(b2cTotalQuery),
+        executeSQL(b2bTotalQuery)
+      ]);
+
+      const b2c = b2cRes?.rows?.[0] || { weight: 0, amount: 0, ytd_weight: 0, ytd_amount: 0 };
+      const b2b = b2bRes?.rows?.[0] || { weight: 0, amount: 0, ytd_weight: 0, ytd_amount: 0 };
+
+      return {
+        b2c: {
+          weight: Math.round(Number(b2c.weight) || 0),
+          amount: Math.round(Number(b2c.amount) || 0),
+          ytd_weight: Math.round(Number(b2c.ytd_weight) || 0),
+          ytd_amount: Math.round(Number(b2c.ytd_amount) || 0),
+        },
+        b2b: {
+          weight: Math.round(Number(b2b.weight) || 0),
+          amount: Math.round(Number(b2b.amount) || 0),
+          ytd_weight: Math.round(Number(b2b.ytd_weight) || 0),
+          ytd_amount: Math.round(Number(b2b.ytd_amount) || 0),
+        }
+      };
+    };
 
     if (tab === 'monthly-summary') {
       // Query sales by month and category
@@ -87,7 +146,7 @@ export async function GET(request: Request) {
             WHEN s.품목그룹1코드 = 'IL' THEN 'IL'
           END as category,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
@@ -109,7 +168,7 @@ export async function GET(request: Request) {
             WHEN p.품목그룹1코드 = 'IL' THEN 'IL'
           END as category,
           SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(p.합계, ',', '') AS NUMERIC)) as amount
+          SUM(CAST(REPLACE(p.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
         FROM (${basePurchasesSubquery}) p
         WHERE p.일자 IS NOT NULL
           AND p.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
@@ -285,9 +344,10 @@ export async function GET(request: Request) {
       `;
 
       const monthNum = currentMonthStr.split('-')[1];
-      const [actualSalesResult, goalsResult] = await Promise.all([
+      const [actualSalesResult, goalsResult, grandTotals] = await Promise.all([
         executeSQL(actualSalesQuery),
-        executeSQL(`SELECT * FROM sales_goals WHERE year = '${currentYear}' AND month = '${monthNum}' AND goal_type = 'category'`)
+        executeSQL(`SELECT * FROM sales_goals WHERE year = '${currentYear}' AND month = '${monthNum}' AND goal_type = 'category'`),
+        getGrandTotals()
       ]);
 
       const actualSalesData = actualSalesResult?.rows || [];
@@ -323,6 +383,7 @@ export async function GET(request: Request) {
             achievement_rate: totalTarget > 0 ? (totalActual / totalTarget) * 100 : 0,
             gap: totalActual - totalTarget,
           },
+          grandTotals
         },
       });
     }
@@ -372,9 +433,10 @@ export async function GET(request: Request) {
         GROUP BY branch
       `;
 
-      const [currentYearResult, lastYearResult] = await Promise.all([
+      const [currentYearResult, lastYearResult, grandTotals] = await Promise.all([
         executeSQL(currentYearQuery),
-        executeSQL(lastYearQuery)
+        executeSQL(lastYearQuery),
+        getGrandTotals()
       ]);
 
       const currentYearData = currentYearResult?.rows || [];
@@ -419,6 +481,7 @@ export async function GET(request: Request) {
             growth_rate: totalLast > 0 ? ((totalCurrent - totalLast) / totalLast) * 100 : 0,
             growth_amount: totalCurrent - totalLast,
           },
+          grandTotals
         },
       });
     }
@@ -450,7 +513,7 @@ export async function GET(request: Request) {
           END as team,
           e.사원_담당_명 as employee,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -471,7 +534,7 @@ export async function GET(request: Request) {
           END as team,
           e.사원_담당_명 as employee,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -483,9 +546,10 @@ export async function GET(request: Request) {
         GROUP BY branch, team, employee
       `;
 
-      const [currentMonthResult, lastMonthResult] = await Promise.all([
+      const [currentMonthResult, lastMonthResult, grandTotals] = await Promise.all([
         executeSQL(currentMonthQuery),
-        executeSQL(lastMonthQuery)
+        executeSQL(lastMonthQuery),
+        getGrandTotals()
       ]);
 
       const currentMonthData = currentMonthResult?.rows || [];
@@ -568,6 +632,7 @@ export async function GET(request: Request) {
           currentMonth: currentMonthStr,
           lastMonth: lastMonthStr,
           availableMonths,
+          grandTotals
         },
       });
     }
@@ -599,9 +664,9 @@ export async function GET(request: Request) {
             WHEN s.품목그룹1코드 = 'IL' THEN 'IL'
           END as category,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) ELSE 0 END) as current_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as current_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) ELSE 0 END) as last_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as last_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -625,7 +690,7 @@ export async function GET(request: Request) {
             WHEN s.품목그룹1코드 = 'IL' THEN 'IL'
           END as category,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) ELSE 0 END) as current_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as current_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_month_weight,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
@@ -638,29 +703,18 @@ export async function GET(request: Request) {
         GROUP BY branch, team, category
       `;
 
-      // 3. Query B2B for comparison
-      const b2bTotalQuery = `
-        SELECT
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
-        FROM (${baseSalesSubquery}) s
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
-        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
-          AND ec.b2c_팀 = 'B2B'
-          AND e.사원_담당_명 != '김도량'
-      `;
-
-      const [catResult, hierarchyResult, b2bResult, goalsResult] = await Promise.all([
+      const [catResult, hierarchyResult, b2bResult, b2cYtdResult, goalsResult, grandTotals] = await Promise.all([
         executeSQL(b2cCategoryQuery),
         executeSQL(b2cHierarchyQuery),
         executeSQL(b2bTotalQuery),
-        executeSQL(`SELECT * FROM sales_goals WHERE year = '${currentYear}' AND month = '${monthNum}'`)
+        executeSQL(b2cYtdQuery),
+        executeSQL(`SELECT * FROM sales_goals WHERE year = '${currentYear}' AND month = '${monthNum}'`),
+        getGrandTotals()
       ]);
 
       const catData = catResult?.rows || [];
       const hierarchyData = hierarchyResult?.rows || [];
-      const b2bTotalData = b2bResult?.rows?.[0] || { weight: 0, amount: 0 };
+      // b2bTotalData and b2cYtdData are now handled by grandTotals.b2b
       const goalsData = goalsResult?.rows || [];
       
       const goalsMap = new Map<string, number>(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
@@ -770,13 +824,12 @@ export async function GET(request: Request) {
           currentYear: currentYear.toString(),
           categories,
           branches,
-          b2bTotal: {
-            weight: Math.round(Number(b2bTotalData.weight) || 0),
-            amount: Math.round(Number(b2bTotalData.amount) || 0),
-          },
+          b2bTotal: grandTotals.b2b,
           total: {
             current_month_weight: totalActualWeight,
             current_month_amount: categories.reduce((sum: number, c: any) => sum + c.current_month_amount, 0),
+            ytd_weight: grandTotals.b2c.ytd_weight,
+            ytd_amount: grandTotals.b2c.ytd_amount,
             last_month_weight: totalLastMonthWeight,
             last_month_amount: categories.reduce((sum: number, c: any) => sum + c.last_month_amount, 0),
             yoy_weight: totalYoyWeight,
@@ -819,9 +872,9 @@ export async function GET(request: Request) {
             WHEN s.품목그룹1코드 = 'IL' THEN 'IL'
           END as category,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) ELSE 0 END) as current_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as current_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) ELSE 0 END) as last_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as last_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -845,7 +898,7 @@ export async function GET(request: Request) {
             WHEN s.품목그룹1코드 = 'IL' THEN 'IL'
           END as category,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) ELSE 0 END) as current_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as current_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_month_weight,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
@@ -862,26 +915,45 @@ export async function GET(request: Request) {
       // 3. Query B2C for comparison
       const b2cTotalQuery = `
         SELECT
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as weight,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as ytd_weight,
+          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as ytd_amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
+        WHERE (substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}')
           AND ec.b2c_팀 != 'B2B'
+          AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
           AND e.사원_담당_명 != '김도량'
       `;
 
-      const [catResult, hierarchyResult, b2cResult, goalsResult] = await Promise.all([
+      // 4. Query current division YTD for comparison
+      const b2bYtdQuery = `
+        SELECT
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
+        FROM (${baseSalesSubquery}) s
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE (substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}')
+          AND ec.b2c_팀 = 'B2B'
+          AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
+          AND e.사원_담당_명 != '김도량'
+      `;
+
+      const [catResult, hierarchyResult, b2cResult, b2bYtdResult, goalsResult] = await Promise.all([
         executeSQL(b2bCategoryQuery),
         executeSQL(b2bHierarchyQuery),
         executeSQL(b2cTotalQuery),
+        executeSQL(b2bYtdQuery),
         executeSQL(`SELECT * FROM sales_goals WHERE year = '${currentYear}' AND month = '${monthNum}'`)
       ]);
 
       const catData = catResult?.rows || [];
       const hierarchyData = hierarchyResult?.rows || [];
-      const b2cTotalData = b2cResult?.rows?.[0] || { weight: 0, amount: 0 };
+      const b2cTotalData = b2cResult?.rows?.[0] || { weight: 0, amount: 0, ytd_weight: 0, ytd_amount: 0 };
+      const b2bYtdData = b2bYtdResult?.rows?.[0] || { weight: 0, amount: 0 };
       const goalsData = goalsResult?.rows || [];
       
       const goalsMap = new Map<string, number>(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));
@@ -995,10 +1067,14 @@ export async function GET(request: Request) {
           b2cTotal: {
             weight: Math.round(Number(b2cTotalData.weight) || 0),
             amount: Math.round(Number(b2cTotalData.amount) || 0),
+            ytd_weight: Math.round(Number(b2cTotalData.ytd_weight) || 0),
+            ytd_amount: Math.round(Number(b2cTotalData.ytd_amount) || 0),
           },
           total: {
             current_month_weight: totalActualWeight,
             current_month_amount: categories.reduce((sum: number, c: any) => sum + c.current_month_amount, 0),
+            ytd_weight: Math.round(Number(b2bYtdData.weight) || 0),
+            ytd_amount: Math.round(Number(b2bYtdData.amount) || 0),
             last_month_weight: totalLastMonthWeight,
             last_month_amount: categories.reduce((sum: number, c: any) => sum + c.last_month_amount, 0),
             yoy_weight: totalYoyWeight,
@@ -1063,7 +1139,7 @@ export async function GET(request: Request) {
             WHEN s.품목그룹1코드 = 'IL' THEN 'IL'
           END as target_name,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         WHERE s.일자 LIKE '${prevYear}-%'
@@ -1079,7 +1155,7 @@ export async function GET(request: Request) {
           'category' as goal_type_group,
           ${branchMappingForClients} as target_name,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
@@ -1104,7 +1180,7 @@ export async function GET(request: Request) {
             ELSE ''
           END as target_name,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as amount
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자

@@ -2,7 +2,9 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Package, ShoppingCart, Archive, ChevronDown, ChevronRight, Pencil } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -48,6 +50,7 @@ interface MonthlySummaryProps {
 }
 
 export default function MonthlySummaryTab({ selectedMonth }: MonthlySummaryProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<MonthlySummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
@@ -55,12 +58,15 @@ export default function MonthlySummaryTab({ selectedMonth }: MonthlySummaryProps
 
   useEffect(() => {
     fetchData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/closing-meeting?tab=monthly-summary${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/closing-meeting?tab=monthly-summary${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -186,11 +192,17 @@ export default function MonthlySummaryTab({ selectedMonth }: MonthlySummaryProps
               <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                 {formatNumber(currentMonth.purchase_weight)} L
               </p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(data.yearToDate.purchase_weight)} L 중 {((currentMonth.purchase_weight / data.yearToDate.purchase_weight) * 100).toFixed(1)}%
+              </p>
             </div>
             <div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">금액</p>
               <p className="text-lg font-semibold text-blue-700 dark:text-blue-300">
                 {formatNumber(currentMonth.purchase_amount)} 원
+              </p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(data.yearToDate.purchase_amount)} 원 중 {((currentMonth.purchase_amount / data.yearToDate.purchase_amount) * 100).toFixed(1)}%
               </p>
             </div>
           </div>
@@ -210,11 +222,17 @@ export default function MonthlySummaryTab({ selectedMonth }: MonthlySummaryProps
               <p className="text-2xl font-bold text-green-600 dark:text-green-400">
                 {formatNumber(currentMonth.sales_weight)} L
               </p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(data.yearToDate.sales_weight)} L 중 {((currentMonth.sales_weight / data.yearToDate.sales_weight) * 100).toFixed(1)}%
+              </p>
             </div>
             <div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">금액</p>
               <p className="text-lg font-semibold text-green-700 dark:text-blue-300">
                 {formatNumber(currentMonth.sales_amount)} 원
+              </p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(data.yearToDate.sales_amount)} 원 중 {((currentMonth.sales_amount / data.yearToDate.sales_amount) * 100).toFixed(1)}%
               </p>
             </div>
           </div>
@@ -234,11 +252,17 @@ export default function MonthlySummaryTab({ selectedMonth }: MonthlySummaryProps
               <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                 {formatNumber(currentMonth.inventory_weight)} L
               </p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(data.yearToDate.inventory_weight)} L 중 {((currentMonth.inventory_weight / data.yearToDate.inventory_weight) * 100).toFixed(1)}%
+              </p>
             </div>
             <div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">금액</p>
               <p className="text-lg font-semibold text-purple-700 dark:text-blue-300">
                 {formatNumber(currentMonth.inventory_amount)} 원
+              </p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(data.yearToDate.inventory_amount)} 원 중 {((currentMonth.inventory_amount / data.yearToDate.inventory_amount) * 100).toFixed(1)}%
               </p>
             </div>
           </div>
@@ -250,12 +274,15 @@ export default function MonthlySummaryTab({ selectedMonth }: MonthlySummaryProps
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">목표 달성율</p>
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">목표 달성율 (당월)</p>
               <p className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mt-2">
                 {(currentMonth.achievement_rate ?? 0).toFixed(1)}%
               </p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                 목표: {formatNumber(currentMonth.target_weight)} L
+              </p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 달성율: {(data.yearToDate.achievement_rate ?? 0).toFixed(1)}%
               </p>
             </div>
             <div className={`p-4 rounded-full ${

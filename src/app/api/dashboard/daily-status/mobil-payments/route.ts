@@ -10,6 +10,8 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
+    const includeVat = searchParams.get('includeVat') === 'true';
+    const divisor = includeVat ? '1.0' : '1.1';
 
     const query = `
       SELECT 
@@ -27,9 +29,9 @@ export async function GET(request: Request) {
       FROM (
         SELECT 
           COALESCE(w.창고명, p.창고코드, '기타') as branch,
-          SUM(CASE WHEN p.품목그룹1코드 = 'IL' THEN CAST(REPLACE(REPLACE(CAST(COALESCE(p.합계,'0') AS TEXT), ',', ''), '₩', '') AS NUMERIC) ELSE 0 END) as il,
-          SUM(CASE WHEN p.품목그룹1코드 IN ('PVL', 'CVL') THEN CAST(REPLACE(REPLACE(CAST(COALESCE(p.합계,'0') AS TEXT), ',', ''), '₩', '') AS NUMERIC) ELSE 0 END) as auto,
-          SUM(CASE WHEN p.품목그룹1코드 = 'MB' THEN CAST(REPLACE(REPLACE(CAST(COALESCE(p.합계,'0') AS TEXT), ',', ''), '₩', '') AS NUMERIC) ELSE 0 END) as mbk
+          SUM(CASE WHEN p.품목그룹1코드 = 'IL' THEN CAST(REPLACE(REPLACE(CAST(COALESCE(p.합계,'0') AS TEXT), ',', ''), '₩', '') AS NUMERIC) / ${divisor} ELSE 0 END) as il,
+          SUM(CASE WHEN p.품목그룹1코드 IN ('PVL', 'CVL') THEN CAST(REPLACE(REPLACE(CAST(COALESCE(p.합계,'0') AS TEXT), ',', ''), '₩', '') AS NUMERIC) / ${divisor} ELSE 0 END) as auto,
+          SUM(CASE WHEN p.품목그룹1코드 = 'MB' THEN CAST(REPLACE(REPLACE(CAST(COALESCE(p.합계,'0') AS TEXT), ',', ''), '₩', '') AS NUMERIC) / ${divisor} ELSE 0 END) as mbk
         FROM purchase_orders p
         LEFT JOIN warehouses w ON p.창고코드 = w.창고코드 OR p.창고코드 = CAST(w.창고코드 AS INTEGER)
         WHERE p.일자 = '${date}'

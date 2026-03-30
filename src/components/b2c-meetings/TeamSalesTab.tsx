@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -24,17 +26,21 @@ interface TeamSalesTabProps {
 }
 
 export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<TeamSalesData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/b2c-meetings?tab=team-sales${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/b2c-meetings?tab=team-sales${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -49,6 +55,13 @@ export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
 
   const formatNumber = (num: number) => {
     return num.toLocaleString();
+  };
+
+  // Helper for month display
+  const getMonthName = (monthStr: string) => {
+    if (!monthStr) return '';
+    const parts = monthStr.split('-');
+    return parts.length > 1 ? `${parseInt(parts[1])}월` : monthStr;
   };
 
   if (isLoading) {
@@ -182,8 +195,94 @@ export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
     exportToExcel(exportData, filename, { referenceDate: selectedMonth });
   };
 
+  // Calculate totals for summary cards
+  const latestMonth = months[months.length - 1];
+  const previousMonth = months[months.length - 2];
+  
+  const latestSales = monthlyTotals.get(latestMonth) || 0;
+  const previousSales = monthlyTotals.get(previousMonth) || 0;
+  
+  const calculateChangeInternal = (current: number, previous: number) => {
+    if (previous === 0) return { percent: 0, isPositive: current > 0 };
+    const change = ((current - previous) / previous) * 100;
+    return { percent: change, isPositive: change >= 0 };
+  };
+
+  const monthChange = calculateChangeInternal(latestSales, previousSales);
+  const annualTotal = Array.from(monthlyTotals.values()).reduce((sum, v) => sum + v, 0);
+
   return (
     <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Current Month Sales Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">최근 월별 매출</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{getMonthName(latestMonth)} 기준 실적</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">당월 총 매출액</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(latestSales)} 원</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(annualTotal)} 원 중 {((latestSales / (annualTotal || 1)) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전월 대비</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                {monthChange.isPositive ? (
+                  <TrendingUp className="w-4 h-4 text-green-600" />
+                ) : (
+                  <TrendingDown className="w-4 h-4 text-red-600" />
+                )}
+                <p className={`text-2xl font-bold ${monthChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {monthChange.isPositive ? '+' : ''}{monthChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전월({getMonthName(previousMonth)}): {formatNumber(previousSales)} 원
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Annual Total Card */}
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">연간 누적 매출액</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 전체 누계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">연간 총 매출액</p>
+              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">{formatNumber(annualTotal)} 원</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                현재까지 누적 실적
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">월평균 매출액</p>
+              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">{formatNumber(Math.round(annualTotal / months.length))} 원</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {months.length}개월 평균
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Sales Amount Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">

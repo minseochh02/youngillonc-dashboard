@@ -11,7 +11,10 @@ import NewClientTab from '@/components/b2b-meetings/NewClientTab';
 import AllProductsTab from '@/components/b2b-meetings/AllProductsTab';
 import IndustryDairyTab from '@/components/b2b-meetings/IndustryDairyTab';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
+import VatToggle from '@/components/VatToggle';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { generateFilename, type IslandTable, type IslandSheetData } from '@/lib/excel-export';
 import { Loader2 } from 'lucide-react';
 
@@ -28,6 +31,7 @@ const tabs = [
 ];
 
 export default function B2BMeetingsPage() {
+  const { includeVat } = useVatInclude();
   const [activeTab, setActiveTab] = useState(tabs[0].id);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -51,10 +55,10 @@ export default function B2BMeetingsPage() {
       const results = await Promise.all(
         exportTabs.map(async (tab) => {
           // Special case for industry which has its own route
-          const url = tab.id === 'industry' 
+          const baseUrl = tab.id === 'industry' 
             ? `/api/dashboard/b2b-meetings/industry`
             : `/api/dashboard/b2b-meetings?tab=${tab.id}`;
-          const response = await apiFetch(url);
+          const response = await apiFetch(withIncludeVat(baseUrl, includeVat));
           const result = await response.json();
           return { id: tab.id, name: tab.name, data: result.success ? result.data : null };
         })
@@ -256,6 +260,7 @@ export default function B2BMeetingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <VatToggle id="vat-b2b-meetings" />
           {isExporting && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
           <ExcelDownloadButton onClick={handleExcelDownload} disabled={isExporting} />
         </div>

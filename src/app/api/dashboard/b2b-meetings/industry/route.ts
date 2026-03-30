@@ -3,6 +3,8 @@ import { executeSQL } from '@/egdesk-helpers';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
+  const includeVat = searchParams.get('includeVat') === 'true';
+  const divisor = includeVat ? '1.0' : '1.1';
   const now = new Date();
   const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
   const today = now.toISOString().split('T')[0];
@@ -20,8 +22,8 @@ export async function GET(request: NextRequest) {
         COUNT(DISTINCT s.id) as transaction_count,
         SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-        SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC) * CAST(REPLACE(s.단가, ',', '') AS NUMERIC)) as total_supply_amount,
-        SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount
+        SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC) * CAST(REPLACE(s.단가, ',', '') AS NUMERIC)) / ${divisor} as total_supply_amount,
+        SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) / ${divisor} as total_amount
       FROM (
         SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM sales
         UNION ALL

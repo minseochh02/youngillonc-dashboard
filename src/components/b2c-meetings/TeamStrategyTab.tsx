@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, TrendingDown, Package } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -44,17 +46,21 @@ interface TeamStrategyTabProps {
 }
 
 export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<TeamStrategyData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/b2c-meetings?tab=team-strategy${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/b2c-meetings?tab=team-strategy${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -245,8 +251,84 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
     exportToExcel(exportData, filename);
   };
 
+  const currentTotals = totals.get(currentYear) || { pv: 0, cv: 0 };
+  const lastTotals = totals.get(lastYear) || { pv: 0, cv: 0 };
+  const pvChange = calculateChange(currentTotals.pv, lastTotals.pv);
+  const cvChange = calculateChange(currentTotals.cv, lastTotals.cv);
+
+  const totalCurrentWeight = currentTotals.pv + currentTotals.cv;
+
   return (
     <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* PV Performance Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">팀별 PV 실적</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 전체 팀 합계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">PV 총 중량</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(currentTotals.pv)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatNumber(totalCurrentWeight)} L 중 {((currentTotals.pv / (totalCurrentWeight || 1)) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전년 대비</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${pvChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {pvChange.isPositive ? '+' : ''}{pvChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전년: {formatNumber(lastTotals.pv)} L
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* CV Performance Card */}
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
+              <Package className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">팀별 CV 실적</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 전체 팀 합계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">CV 총 중량</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(currentTotals.cv)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatNumber(totalCurrentWeight)} L 중 {((currentTotals.cv / (totalCurrentWeight || 1)) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전년 대비</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${cvChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {cvChange.isPositive ? '+' : ''}{cvChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전년: {formatNumber(lastTotals.cv)} L
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* PVL/CVL by Team */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">

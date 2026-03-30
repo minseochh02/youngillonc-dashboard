@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -48,13 +50,14 @@ interface NewTabProps {
 }
 
 export default function NewTab({ selectedMonth }: NewTabProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<NewClientsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedManagers, setExpandedManagers] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchNewClientsData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const toggleManager = (managerKey: string) => {
     const newExpanded = new Set(expandedManagers);
@@ -83,7 +86,10 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
   const fetchNewClientsData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/b2c-meetings?tab=new${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/b2c-meetings?tab=new${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -208,43 +214,84 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
     exportToExcel(exportData, filename, { referenceDate: selectedMonth });
   };
 
+  const totalCurrent = totalsByYear[currentYear] || { total_weight: 0, client_count: 0 };
+  const totalLast = totalsByYear[lastYear] || { total_weight: 0, client_count: 0 };
+  const countChange = calculateChange(totalCurrent.client_count, totalLast.client_count);
+  const weightChange = calculateChange(totalCurrent.total_weight, totalLast.total_weight);
+
   return (
     <div className="space-y-6">
-      {/* Year Summary */}
-      <div className="grid grid-cols-2 gap-4">
-        {[currentYear, lastYear].map((year) => {
-          const yearData = totalsByYear[year] || { total_weight: 0, client_count: 0 };
-          const isCurrent = year === currentYear;
-
-          return (
-            <div
-              key={year}
-              className={`rounded-xl p-6 border ${
-                isCurrent
-                  ? 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-blue-200 dark:border-blue-800'
-                  : 'bg-zinc-50 dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800'
-              }`}
-            >
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-4">
-                {year}년 신규 거래처 현황
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase">신규 거래처수</p>
-                  <p className={`text-2xl font-bold mt-1 ${isCurrent ? 'text-blue-600 dark:text-blue-400' : ''}`}>
-                    {formatNumber(yearData.client_count)}개
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase">총 중량</p>
-                  <p className={`text-2xl font-bold mt-1 ${isCurrent ? 'text-blue-600 dark:text-blue-400' : ''}`}>
-                    {formatNumber(yearData.total_weight)} L
-                  </p>
-                </div>
-              </div>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Performance Summary Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             </div>
-          );
-        })}
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 신규 현황</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">전체 신규 거래처 합계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">신규 거래처수</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(totalCurrent.client_count)} 개</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전년: {formatNumber(totalLast.client_count)} 개
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">신규 총 중량</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(totalCurrent.total_weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전년: {formatNumber(totalLast.total_weight)} L
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Growth Trends Card */}
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
+              {weightChange.isPositive ? (
+                <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              ) : (
+                <TrendingDown className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              )}
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">전년 대비 변화</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear} vs {lastYear}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">거래처수 변화</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${countChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {countChange.isPositive ? '+' : ''}{countChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {countChange.isPositive ? '+' : ''}{formatNumber(totalCurrent.client_count - totalLast.client_count)} 개
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">중량 변화</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${weightChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {weightChange.isPositive ? '+' : ''}{weightChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {weightChange.isPositive ? '+' : ''}{formatNumber(totalCurrent.total_weight - totalLast.total_weight)} L
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Manager Summary Table */}

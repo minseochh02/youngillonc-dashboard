@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Package } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -22,17 +24,20 @@ interface ProductGroupResponse {
 }
 
 export default function ProductGroupTab() {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<ProductGroupResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchProductGroupData();
-  }, []);
+  }, [includeVat]);
 
   const fetchProductGroupData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch('/api/dashboard/b2b-meetings?tab=product-group');
+      const response = await apiFetch(
+        withIncludeVat('/api/dashboard/b2b-meetings?tab=product-group', includeVat)
+      );
       const result = await response.json();
       if (result.success) {
         setData(result.data);
@@ -46,6 +51,12 @@ export default function ProductGroupTab() {
 
   const formatNumber = (num: number) => {
     return num.toLocaleString();
+  };
+
+  const calculateChange = (current: number, previous: number) => {
+    if (previous === 0) return { percent: 0, isPositive: current > 0 };
+    const change = ((current - previous) / previous) * 100;
+    return { percent: change, isPositive: change >= 0 };
   };
 
   if (isLoading) {
@@ -122,6 +133,23 @@ export default function ProductGroupTab() {
 
   const currentYearGrandTotals = getGrandTotalsByYear(currentYear);
   const lastYearGrandTotals = getGrandTotalsByYear(lastYear);
+  const totalAmountChange = calculateChange(currentYearGrandTotals.total_amount, lastYearGrandTotals.total_amount);
+  const totalWeightChange = calculateChange(currentYearGrandTotals.total_weight, lastYearGrandTotals.total_weight);
+
+  const getProductGroupColor = (productGroup: string) => {
+    switch (productGroup) {
+      case 'Standard':
+        return 'bg-blue-500';
+      case 'Premium':
+        return 'bg-purple-500';
+      case 'Flagship':
+        return 'bg-emerald-500';
+      case 'Alliance':
+        return 'bg-orange-500';
+      default:
+        return 'bg-zinc-400';
+    }
+  };
 
   const handleExcelDownload = () => {
     if (!data) {
@@ -156,24 +184,82 @@ export default function ProductGroupTab() {
     exportToExcel(exportData, filename);
   };
 
-  const getProductGroupColor = (productGroup: string) => {
-    switch (productGroup) {
-      case 'Standard':
-        return 'bg-blue-500';
-      case 'Premium':
-        return 'bg-purple-500';
-      case 'Flagship':
-        return 'bg-emerald-500';
-      case 'Alliance':
-        return 'bg-orange-500';
-      default:
-        return 'bg-zinc-400';
-    }
-  };
-
   return (
     <div className="space-y-6">
-      {/* Product Group Summary Cards */}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Performance Summary Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 실적 요약</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">전체 제품군 합계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 중량</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(currentYearGrandTotals.total_weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 중량 대비 100%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 금액</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(currentYearGrandTotals.total_amount)} 원</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 금액 대비 100%
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Year-over-Year Change Card */}
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
+              {totalAmountChange.isPositive ? (
+                <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              ) : (
+                <TrendingDown className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              )}
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">전년 대비 증감</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear} vs {lastYear}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">중량 변화</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${totalWeightChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {totalWeightChange.isPositive ? '+' : ''}{totalWeightChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {totalWeightChange.isPositive ? '+' : ''}{formatNumber(currentYearGrandTotals.total_weight - lastYearGrandTotals.total_weight)} L
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">금액 변화</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${totalAmountChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {totalAmountChange.isPositive ? '+' : ''}{totalAmountChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {totalAmountChange.isPositive ? '+' : ''}{formatNumber(currentYearGrandTotals.total_amount - lastYearGrandTotals.total_amount)} 원
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Individual Group Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {productGroups.map(productGroup => {
           const currentTotals = getTotalsByProductGroupAndYear(productGroup, currentYear);
@@ -202,6 +288,9 @@ export default function ProductGroupTab() {
                   <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
                     ₩{formatNumber(currentTotals.total_amount)}
                   </div>
+                  <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                    전체 {formatNumber(currentYearGrandTotals.total_amount)} 원 중 {((currentTotals.total_amount / (currentYearGrandTotals.total_amount || 1)) * 100).toFixed(1)}%
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   {amountChange >= 0 ? (

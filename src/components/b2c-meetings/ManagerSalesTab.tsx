@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -40,17 +42,21 @@ interface ManagerSalesTabProps {
 }
 
 export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<ManagerSalesData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchManagerSalesData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchManagerSalesData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/b2c-meetings?tab=manager-sales${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/b2c-meetings?tab=manager-sales${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       console.log('Manager sales API response:', result);
@@ -267,83 +273,84 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
     exportToExcel(exportData, filename);
   };
 
+  const fleetCurrent = summaryByCategory('Fleet', currentYear);
+  const fleetLast = summaryByCategory('Fleet', lastYear);
+  const fleetChange = calculateChange(fleetCurrent.total_weight, fleetLast.total_weight);
+
+  const lccCurrent = summaryByCategory('LCC', currentYear);
+  const lccLast = summaryByCategory('LCC', lastYear);
+  const lccChange = calculateChange(lccCurrent.total_weight, lccLast.total_weight);
+
+  const totalCurrentWeight = fleetCurrent.total_weight + lccCurrent.total_weight;
+
   return (
     <div className="space-y-6">
-      {/* Summary Table - Fleet and LCC */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Fleet / LCC 중량 써머리</h4>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Fleet Performance Card */}
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/20 dark:to-indigo-950/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Fleet 실적</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{targetMonth} 기준</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">당월 중량</p>
+              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">{formatNumber(fleetCurrent.total_weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatNumber(totalCurrentWeight)} L 중 {((fleetCurrent.total_weight / (totalCurrentWeight || 1)) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전년 대비</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${fleetChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {fleetChange.isPositive ? '+' : ''}{fleetChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전년 동월: {formatNumber(fleetLast.total_weight)} L
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50 dark:bg-zinc-800/50">
-              <tr>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">구분</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">{currentYear}년 중량(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear}년 중량(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">변화율</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Fleet Total */}
-              {(() => {
-                const currentData = summaryByCategory('Fleet', currentYear);
-                const lastData = summaryByCategory('Fleet', lastYear);
-                const change = calculateChange(currentData.total_weight, lastData.total_weight);
 
-                return (
-                  <tr className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors bg-purple-50/30 dark:bg-purple-950/20">
-                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100">
-                      Fleet 합계
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold">
-                      {formatNumber(currentData.total_weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 font-semibold">
-                      {formatNumber(lastData.total_weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium ${
-                        change.isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {change.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(change.percent).toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })()}
-
-              {/* LCC Total */}
-              {(() => {
-                const currentData = summaryByCategory('LCC', currentYear);
-                const lastData = summaryByCategory('LCC', lastYear);
-                const change = calculateChange(currentData.total_weight, lastData.total_weight);
-
-                return (
-                  <tr className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors bg-orange-50/30 dark:bg-orange-950/20">
-                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100">
-                      LCC 합계
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold">
-                      {formatNumber(currentData.total_weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 font-semibold">
-                      {formatNumber(lastData.total_weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium ${
-                        change.isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {change.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(change.percent).toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })()}
-            </tbody>
-          </table>
+        {/* LCC Performance Card */}
+        <div className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-950/20 dark:to-amber-950/20 border border-orange-200 dark:border-orange-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-orange-100 dark:bg-orange-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">LCC 실적</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{targetMonth} 기준</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">당월 중량</p>
+              <p className="text-2xl font-bold text-orange-600 dark:text-orange-400 mt-1">{formatNumber(lccCurrent.total_weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatNumber(totalCurrentWeight)} L 중 {((lccCurrent.total_weight / (totalCurrentWeight || 1)) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전년 대비</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${lccChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {lccChange.isPositive ? '+' : ''}{lccChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전년 동월: {formatNumber(lccLast.total_weight)} L
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

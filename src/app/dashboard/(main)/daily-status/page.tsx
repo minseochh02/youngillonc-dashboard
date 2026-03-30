@@ -10,6 +10,8 @@ import InOutTable from "@/components/InOutTable";
 import MobilPaymentsTable from "@/components/MobilPaymentsTable";
 import StatusTable from "@/components/StatusTable";
 import { Calendar, Loader2, TrendingUp, Wallet, Landmark, Coins, ArrowLeftRight, CreditCard, ShoppingCart, BarChart3, Building2, Warehouse } from "lucide-react";
+import { useVatInclude } from "@/contexts/VatIncludeContext";
+import VatToggle from "@/components/VatToggle";
 import { apiFetch } from "@/lib/api";
 import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
 import { exportIslandTables, type IslandTable } from "@/lib/excel-export";
@@ -23,6 +25,9 @@ const tabs = [
   { id: "in-out", label: "입출금현황" },
 ];
 
+/** Bank/ledger tabs: amounts are actual cash positions, not 공급가↔부가세 구분 */
+const TABS_HIDE_VAT_TOGGLE = new Set(["funds", "in-out"]);
+
 export default function DailyStatusPage() {
   const [activeTab, setActiveTab] = useState(tabs[0].id);
   const [salesView, setSalesView] = useState<'office' | 'warehouse'>('office');
@@ -30,7 +35,7 @@ export default function DailyStatusPage() {
   const [monthlySalesView, setMonthlySalesView] = useState<'office' | 'warehouse'>('office');
   const [monthlyPurchaseView, setMonthlyPurchaseView] = useState<'office' | 'warehouse'>('warehouse');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [includeVat, setIncludeVat] = useState(false);
+  const { includeVat } = useVatInclude();
   
   const [salesData, setSalesData] = useState<any[]>([]);
   const [salesByWarehouse, setSalesByWarehouse] = useState<any[]>([]);
@@ -215,7 +220,7 @@ export default function DailyStatusPage() {
   const fetchMobilPaymentsData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/daily-status/mobil-payments?date=${selectedDate}`);
+      const response = await apiFetch(`/api/dashboard/daily-status/mobil-payments?date=${selectedDate}&includeVat=${includeVat}`);
       const result = await response.json();
       if (result.success) {
         setMobilPaymentsData(result.data || []);
@@ -447,14 +452,7 @@ export default function DailyStatusPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
-            <input
-              type="checkbox" id="includeVat" checked={includeVat}
-              onChange={(e) => setIncludeVat(e.target.checked)}
-              className="w-4 h-4 text-blue-600 bg-zinc-100 border-zinc-300 rounded focus:ring-blue-500"
-            />
-            <label htmlFor="includeVat" className="text-sm font-medium text-zinc-600 dark:text-zinc-300 cursor-pointer">VAT 포함</label>
-          </div>
+          {!TABS_HIDE_VAT_TOGGLE.has(activeTab) && <VatToggle id="vat-daily-status" />}
 
           <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
             {isLoading ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Calendar className="w-4 h-4 text-zinc-400" />}

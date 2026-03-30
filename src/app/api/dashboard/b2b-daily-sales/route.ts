@@ -11,6 +11,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const branch = searchParams.get('branch') || 'all'; // 'all', 'MB', '화성', '창원', etc.
+    const includeVat = searchParams.get('includeVat') === 'true';
+    const divisor = includeVat ? '1.0' : '1.1';
 
     // Build branch filter
     let branchFilter = '';
@@ -43,7 +45,7 @@ export async function GET(request: Request) {
         COALESCE(i.품목명, '미지정') as item_name,
         p.품목코드 as item_code,
         SUM(CAST(REPLACE(p.수량, ',', '') AS NUMERIC)) as quantity,
-        SUM(CAST(REPLACE(p.공급가액, ',', '') AS NUMERIC)) as supply_amount,
+        SUM(CAST(REPLACE(p.공급가액, ',', '') AS NUMERIC) / ${divisor}) as supply_amount,
         CASE
           WHEN SUM(CAST(REPLACE(p.수량, ',', '') AS NUMERIC)) > 0
           THEN SUM(CAST(REPLACE(p.공급가액, ',', '') AS NUMERIC)) / SUM(CAST(REPLACE(p.수량, ',', '') AS NUMERIC))

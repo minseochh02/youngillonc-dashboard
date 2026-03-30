@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2, Package, TrendingUp, TrendingDown } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -32,17 +34,21 @@ interface BusinessTabProps {
 }
 
 export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<BusinessData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchBusinessData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchBusinessData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/b2c-meetings?tab=business${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/b2c-meetings?tab=business${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -204,58 +210,84 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
     exportToExcel(exportData, filename, { referenceDate: selectedMonth });
   };
 
+  const totalCurrentWeight = totalsByYear[currentYear]?.total_weight || 0;
+  const totalLastWeight = totalsByYear[lastYear]?.total_weight || 0;
+  const totalWeightChange = calculateChange(totalCurrentWeight, totalLastWeight);
+
+  const totalCurrentAmount = totalsByYear[currentYear]?.total_amount || 0;
+  const totalLastAmount = totalsByYear[lastYear]?.total_amount || 0;
+  const totalAmountChange = calculateChange(totalCurrentAmount, totalLastAmount);
+
   return (
     <div className="space-y-6">
-      {/* Year Comparison Summary */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Current Year */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-              {currentYear}년 (AUTO)
-            </h3>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Performance Summary Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 실적 요약</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">전체 사업소 합계</p>
+            </div>
           </div>
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 중량</p>
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
-                {formatNumber(totalsByYear[currentYear]?.total_weight || 0)} L
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(totalCurrentWeight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 중량 대비 100%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 금액</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(totalCurrentAmount)} 원</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 금액 대비 100%
               </p>
             </div>
           </div>
         </div>
 
-        {/* Last Year */}
-        <div className="bg-gradient-to-r from-zinc-50 to-zinc-100 dark:from-zinc-900/20 dark:to-zinc-800/20 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Package className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-              {lastYear}년 (비교)
-            </h3>
-          </div>
-          <div className="space-y-3">
+        {/* Year-over-Year Change Card */}
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
+              {totalWeightChange.isPositive ? (
+                <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              ) : (
+                <TrendingDown className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              )}
+            </div>
             <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 중량</p>
-              <div className="flex items-baseline gap-2">
-                <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mt-1">
-                  {formatNumber(totalsByYear[lastYear]?.total_weight || 0)} L
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">전년 대비 증감</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear} vs {lastYear}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">중량 변화</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${totalWeightChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {totalWeightChange.isPositive ? '+' : ''}{(totalWeightChange.percent ?? 0).toFixed(1)}%
                 </p>
-                {(() => {
-                  const change = calculateChange(
-                    totalsByYear[currentYear]?.total_weight || 0,
-                    totalsByYear[lastYear]?.total_weight || 0
-                  );
-                  return (
-                    <span className={`text-sm font-medium flex items-center gap-1 ${
-                      change.isPositive ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {change.isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                      {Math.abs(change.percent).toFixed(1)}%
-                    </span>
-                  );
-                })()}
               </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {totalWeightChange.isPositive ? '+' : ''}{formatNumber(totalCurrentWeight - totalLastWeight)} L
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">금액 변화</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${totalAmountChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {totalAmountChange.isPositive ? '+' : ''}{(totalAmountChange.percent ?? 0).toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {totalAmountChange.isPositive ? '+' : ''}{formatNumber(totalCurrentAmount - totalLastAmount)} 원
+              </p>
             </div>
           </div>
         </div>

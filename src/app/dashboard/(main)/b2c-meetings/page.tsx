@@ -13,7 +13,10 @@ import TeamStrategyTab from '@/components/b2c-meetings/TeamStrategyTab';
 import TeamVolumeTab from '@/components/b2c-meetings/TeamVolumeTab';
 import TeamSalesTab from '@/components/b2c-meetings/TeamSalesTab';
 import ComingSoonTab from '@/components/b2c-meetings/ComingSoonTab';
+import VatToggle from '@/components/VatToggle';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { Calendar, Loader2 } from 'lucide-react';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { generateFilename, type IslandTable, type IslandSheetData } from '@/lib/excel-export';
@@ -33,6 +36,7 @@ const tabs = [
 ];
 
 export default function B2CMeetingsPage() {
+  const { includeVat } = useVatInclude();
   const [activeTab, setActiveTab] = useState(tabs[0].id);
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>('');
@@ -42,7 +46,7 @@ export default function B2CMeetingsPage() {
     // Initial fetch to get available months
     const fetchInitialData = async () => {
       try {
-        const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=business`);
+        const response = await apiFetch(withIncludeVat(`/api/dashboard/b2c-meetings?tab=business`, includeVat));
         const result = await response.json();
         if (result.success && result.data.availableMonths) {
           setAvailableMonths(result.data.availableMonths);
@@ -54,7 +58,7 @@ export default function B2CMeetingsPage() {
       }
     };
     fetchInitialData();
-  }, []);
+  }, [includeVat]);
 
   const handleExcelDownload = async () => {
     if (!selectedMonth) return;
@@ -81,7 +85,9 @@ export default function B2CMeetingsPage() {
       // Fetch all data
       const results = await Promise.all([
         ...exportTabs.map(async (tab) => {
-          const response = await apiFetch(`/api/dashboard/b2c-meetings?tab=${tab.id}&month=${selectedMonth}`);
+          const response = await apiFetch(
+            withIncludeVat(`/api/dashboard/b2c-meetings?tab=${tab.id}&month=${selectedMonth}`, includeVat)
+          );
           const result = await response.json();
           return { id: tab.id, name: tab.name, data: result.success ? result.data : null };
         }),
@@ -344,6 +350,7 @@ export default function B2CMeetingsPage() {
 
         {/* Month Selector */}
         <div className="flex items-center gap-3">
+          <VatToggle id="vat-b2c-meetings" />
           {isExporting && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
           <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
             <Calendar className="w-4 h-4 text-zinc-500" />

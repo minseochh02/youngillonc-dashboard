@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Calendar, Users, Building, Package, Filter, Loader2, TrendingUp, DollarSign, ShoppingCart, BarChart3, ChevronRight, ChevronDown, GripVertical, Target } from 'lucide-react';
+import VatToggle from '@/components/VatToggle';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
@@ -72,6 +74,7 @@ type ProductGrouping = 'group1' | 'group2' | 'group3';
 type CategoryType = 'employee' | 'client' | 'product';
 
 export default function SalesAnalysisPage() {
+  const { includeVat } = useVatInclude();
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -108,7 +111,7 @@ export default function SalesAnalysisPage() {
 
   useEffect(() => {
     fetchData();
-  }, [startDate, endDate, employeeGroupings, clientGroupings, productGroupings, employeeValues, clientValues, productValues, compareWithLastYear]);
+  }, [startDate, endDate, employeeGroupings, clientGroupings, productGroupings, employeeValues, clientValues, productValues, compareWithLastYear, includeVat]);
 
   useEffect(() => {
     // Convert flat data to hierarchical structure
@@ -162,6 +165,7 @@ export default function SalesAnalysisPage() {
         clientValues: clientValues.join(','),
         productValues: productValues.join(',')
       });
+      params.set('includeVat', String(includeVat));
 
       const response = await apiFetch(`/api/dashboard/sales-analysis?${params}`);
       const result = await response.json();
@@ -190,6 +194,7 @@ export default function SalesAnalysisPage() {
           clientValues: clientValues.join(','),
           productValues: productValues.join(',')
         });
+        lastYearParams.set('includeVat', String(includeVat));
 
         const lastYearResponse = await apiFetch(`/api/dashboard/sales-analysis?${lastYearParams}`);
         const lastYearResult = await lastYearResponse.json();
@@ -920,6 +925,7 @@ export default function SalesAnalysisPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <VatToggle id="vat-sales-analysis" />
           <label className="flex items-center gap-2 px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer">
             <input
               type="checkbox"

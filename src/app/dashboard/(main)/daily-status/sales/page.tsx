@@ -4,12 +4,14 @@ import { useState, useEffect } from "react";
 import { Calendar, Building2, TrendingUp, Wallet, ArrowUpRight, ArrowDownRight, Users, Loader2, FileText, LayoutDashboard } from "lucide-react";
 import DailySalesCollectionsTable from "@/components/DailySalesCollectionsTable";
 import DailyClosingStatus from "@/components/DailyClosingStatus";
+import { useVatInclude } from "@/contexts/VatIncludeContext";
+import VatToggle from "@/components/VatToggle";
 import { apiFetch } from "@/lib/api";
 import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
 import { exportToExcel, exportIslandTables, type IslandTable } from "@/lib/excel-export";
 
 const divisions = [
-  { id: "all", label: "전체", icon: Building2 },
+  { id: "all", label: "합계", icon: Building2 },
   { id: "changwon", label: "창원", icon: Building2 },
   { id: "hwaseong", label: "화성", icon: Building2 },
   { id: "seoul", label: "서울", icon: Building2 }, // Note: Seoul might be replaced by specific branch names later if requested
@@ -23,15 +25,18 @@ const divisions = [
 ];
 
 export default function DailySalesPage() {
-  const [activeTab, setActiveTab] = useState(divisions[1].id); // Default to 'changwon'
+  const [activeTab, setActiveTab] = useState(divisions[0].id); // Default: 합계 (API: 전체)
   const [viewMode, setViewMode] = useState<"table" | "report">("report");
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // Default to current date
-  const [includeVat, setIncludeVat] = useState(false);
+  const { includeVat } = useVatInclude();
   const [isLoading, setIsLoading] = useState(false);
   const [closingData, setClosingData] = useState<any>(null);
   const [tableData, setTableData] = useState<any[]>([]);
 
   const activeDivision = divisions.find(d => d.id === activeTab) || divisions[0];
+  /** Backend filters use `전체` for all branches; tab label is `합계`. */
+  const divisionApiParam =
+    activeDivision.id === "all" ? "전체" : activeDivision.label;
 
   useEffect(() => {
     fetchData();
@@ -40,7 +45,7 @@ export default function DailySalesPage() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const divisionLabel = activeDivision.label;
+      const divisionLabel = divisionApiParam;
       
       if (viewMode === "report") {
         const response = await apiFetch(`/api/dashboard/daily-status/sales-collections/closing?date=${selectedDate}&division=${divisionLabel}&includeVat=${includeVat}`);
@@ -83,10 +88,11 @@ export default function DailySalesPage() {
       // Fetch data for all divisions
       const results = await Promise.all(
         divisions.map(async (division) => {
+          const apiDivision = division.id === "all" ? "전체" : division.label;
           // Fetch both report and table data for each division
           const [reportRes, tableRes] = await Promise.all([
-            apiFetch(`/api/dashboard/daily-status/sales-collections/closing?date=${selectedDate}&division=${division.label}&includeVat=${includeVat}`).then(r => r.json()),
-            apiFetch(`/api/dashboard/daily-status/sales-collections/customer-detail?date=${selectedDate}&division=${division.label}&includeVat=${includeVat}`).then(r => r.json())
+            apiFetch(`/api/dashboard/daily-status/sales-collections/closing?date=${selectedDate}&division=${apiDivision}&includeVat=${includeVat}`).then(r => r.json()),
+            apiFetch(`/api/dashboard/daily-status/sales-collections/customer-detail?date=${selectedDate}&division=${apiDivision}&includeVat=${includeVat}`).then(r => r.json())
           ]);
 
           return { 
@@ -206,18 +212,7 @@ export default function DailySalesPage() {
             </button>
           </div>
 
-          <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
-            <input
-              type="checkbox"
-              id="includeVat"
-              checked={includeVat}
-              onChange={(e) => setIncludeVat(e.target.checked)}
-              className="w-4 h-4 text-blue-600 bg-zinc-100 border-zinc-300 rounded focus:ring-blue-500"
-            />
-            <label htmlFor="includeVat" className="text-sm font-medium text-zinc-600 dark:text-zinc-300 cursor-pointer">
-              VAT 포함
-            </label>
-          </div>
+          <VatToggle id="vat-daily-status-sales" />
 
           <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
             {isLoading ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Calendar className="w-4 h-4 text-zinc-400" />}
@@ -232,7 +227,7 @@ export default function DailySalesPage() {
 
           <ExcelDownloadButton
             onClick={handleExcelDownload}
-            disabled={isLoading || (viewMode === "table" ? tableData.length === 0 : !closingData)}
+            disabled={isLoading}
           />
         </div>
       </div>

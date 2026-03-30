@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -43,17 +45,21 @@ interface SalesAmountTabProps {
 }
 
 export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<SalesAmountData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchSalesAmountData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchSalesAmountData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/b2c-meetings?tab=sales-amount${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/b2c-meetings?tab=sales-amount${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -236,97 +242,84 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
     exportToExcel(exportData, filename);
   };
 
+  const b2cCurrent = getComparisonData('B2C', currentYear);
+  const b2cLast = getComparisonData('B2C', lastYear);
+  const b2cChange = calculateChange(b2cCurrent.total_amount, b2cLast.total_amount);
+
+  const b2bCurrent = getComparisonData('B2B', currentYear);
+  const b2bLast = getComparisonData('B2B', lastYear);
+  const b2bChange = calculateChange(b2bCurrent.total_amount, b2bLast.total_amount);
+
+  const totalCurrentAmount = b2cCurrent.total_amount + b2bCurrent.total_amount;
+
   return (
     <div className="space-y-6">
-      {/* B2C vs B2B Comparison */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">B2C vs B2B 매출 비교</h4>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* B2C (AUTO) Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">B2C (AUTO) 매출</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 합계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">매출액</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatAmount(b2cCurrent.total_amount)} 원</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatAmount(totalCurrentAmount)} 원 중 {((b2cCurrent.total_amount / (totalCurrentAmount || 1)) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전년 대비</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${b2cChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {b2cChange.isPositive ? '+' : ''}{b2cChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {lastYear}년: {formatAmount(b2cLast.total_amount)} 원
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50 dark:bg-zinc-800/50">
-              <tr>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">구분</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">{currentYear}년 매출액</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear}년 매출액</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">변화율</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{currentYear}년 중량(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear}년 중량(L)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* B2C Row */}
-              {(() => {
-                const b2cCurrent = getComparisonData('B2C', currentYear);
-                const b2cLast = getComparisonData('B2C', lastYear);
-                const b2cChange = calculateChange(b2cCurrent.total_amount, b2cLast.total_amount);
 
-                return (
-                  <tr className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors bg-blue-50/30 dark:bg-blue-950/20">
-                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100">
-                      B2C (AUTO 채널)
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold">
-                      {formatAmount(b2cCurrent.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 font-semibold">
-                      {formatAmount(b2cLast.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium ${
-                        b2cChange.isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {b2cChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(b2cChange.percent).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs font-semibold">
-                      {formatNumber(b2cCurrent.total_weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs font-semibold">
-                      {formatNumber(b2cLast.total_weight)}
-                    </td>
-                  </tr>
-                );
-              })()}
-
-              {/* B2B Row */}
-              {(() => {
-                const b2bCurrent = getComparisonData('B2B', currentYear);
-                const b2bLast = getComparisonData('B2B', lastYear);
-                const b2bChange = calculateChange(b2bCurrent.total_amount, b2bLast.total_amount);
-
-                return (
-                  <tr className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors bg-amber-50/30 dark:bg-amber-950/20">
-                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100">
-                      B2B (비AUTO)
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold">
-                      {formatAmount(b2bCurrent.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 font-semibold">
-                      {formatAmount(b2bLast.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium ${
-                        b2bChange.isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {b2bChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(b2bChange.percent).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs font-semibold">
-                      {formatNumber(b2bCurrent.total_weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs font-semibold">
-                      {formatNumber(b2bLast.total_weight)}
-                    </td>
-                  </tr>
-                );
-              })()}
-            </tbody>
-          </table>
+        {/* B2B (Non-AUTO) Card */}
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">B2B (비AUTO) 매출</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 합계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">매출액</p>
+              <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">{formatAmount(b2bCurrent.total_amount)} 원</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatAmount(totalCurrentAmount)} 원 중 {((b2bCurrent.total_amount / (totalCurrentAmount || 1)) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전년 대비</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${b2bChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {b2bChange.isPositive ? '+' : ''}{b2bChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {lastYear}년: {formatAmount(b2bLast.total_amount)} 원
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

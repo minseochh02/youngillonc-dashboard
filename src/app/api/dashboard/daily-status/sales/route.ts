@@ -12,7 +12,6 @@ export async function GET(request: Request) {
     const includeVat = searchParams.get('includeVat') === 'true';
 
     const divisor = includeVat ? '1.0' : '1.1';
-
     const officeMapping = `
       CASE 
         WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%MB%' THEN 'MB'

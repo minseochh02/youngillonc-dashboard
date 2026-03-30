@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -31,17 +33,21 @@ interface ShoppingMallTabProps {
 }
 
 export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<ShoppingMallData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchShoppingMallData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchShoppingMallData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/b2c-meetings?tab=shopping-mall${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/b2c-meetings?tab=shopping-mall${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -140,10 +146,119 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
     exportToExcel(exportData, filename);
   };
 
+  // Calculate totals for summary cards
+  const grandTotal = salesData.reduce((acc, d) => ({
+    total_amount: acc.total_amount + d.total_amount,
+    total_points: acc.total_points + d.total_points,
+    net_amount: acc.net_amount + d.net_amount,
+    total_weight: acc.total_weight + d.total_weight,
+    transaction_count: acc.transaction_count + d.transaction_count,
+  }), { total_amount: 0, total_points: 0, net_amount: 0, total_weight: 0, transaction_count: 0 });
+
+  // Get data for latest month with sales
+  const monthsWithData = months.filter(m => getMonthTotals(m).total_amount > 0);
+  const latestMonth = monthsWithData[monthsWithData.length - 1];
+  const previousMonth = monthsWithData[monthsWithData.length - 2];
+  
+  const latestMonthTotals = latestMonth ? getMonthTotals(latestMonth) : null;
+  const previousMonthTotals = previousMonth ? getMonthTotals(previousMonth) : null;
+
+  const calculateChangeInternal = (current: number, previous: number) => {
+    if (previous === 0) return { percent: 0, isPositive: current > 0 };
+    const change = ((current - previous) / previous) * 100;
+    return { percent: change, isPositive: change >= 0 };
+  };
+
+  const monthChange = latestMonthTotals && previousMonthTotals 
+    ? calculateChangeInternal(latestMonthTotals.net_amount, previousMonthTotals.net_amount)
+    : { percent: 0, isPositive: false };
+
   return (
     <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Annual Performance Card */}
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">쇼핑몰 연간 누적 실적</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 전체 누계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">실 결제금액</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">₩{formatNumber(grandTotal.net_amount)}</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                총 주문금액 {formatNumber(grandTotal.total_amount)} 대비 {((grandTotal.net_amount / (grandTotal.total_amount || 1)) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">거래 규모</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(grandTotal.transaction_count)} 건</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                총 중량: {formatNumber(grandTotal.total_weight)} kg
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Latest Month Trend Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              {monthChange.isPositive ? (
+                <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              ) : (
+                <TrendingDown className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              )}
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">최근 월별 트렌드</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{latestMonth ? `${parseInt(latestMonth)}월` : '-'} vs {previousMonth ? `${parseInt(previousMonth)}월` : '-'}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">결제액 변화</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${monthChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {monthChange.isPositive ? '+' : ''}{monthChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {latestMonthTotals ? `₩${formatNumber(latestMonthTotals.net_amount)}` : '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">주문수 변화</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                {latestMonthTotals && previousMonthTotals ? (
+                  (() => {
+                    const countChange = calculateChangeInternal(latestMonthTotals.transaction_count, previousMonthTotals.transaction_count);
+                    return (
+                      <p className={`text-2xl font-bold ${countChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                        {countChange.isPositive ? '+' : ''}{countChange.percent.toFixed(1)}%
+                      </p>
+                    );
+                  })()
+                ) : (
+                  <p className="text-2xl font-bold text-zinc-400">-</p>
+                )}
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {latestMonthTotals ? `${latestMonthTotals.transaction_count} 건` : '-'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Monthly Sales Breakdown Table */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">

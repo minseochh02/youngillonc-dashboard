@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2, Save, Calendar, CheckCircle2, AlertCircle, Download } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { ExcelUploadButton } from '@/components/ExcelUploadButton';
 import { generateFilename } from '@/lib/excel-export';
@@ -34,6 +36,7 @@ const GOAL_TYPES = [
 const CATEGORIES = ['MB', 'AVI + MAR', 'AUTO', 'IL'];
 
 export default function GoalSettingTab() {
+  const { includeVat } = useVatInclude();
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [activeGoalType, setActiveGoalType] = useState('category');
   const [activeTarget, setActiveTarget] = useState(CATEGORIES[0]);
@@ -46,12 +49,14 @@ export default function GoalSettingTab() {
 
   useEffect(() => {
     fetchInitialData();
-  }, [year]);
+  }, [year, includeVat]);
 
   const fetchInitialData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/closing-meeting?tab=goal-setting&year=${year}`);
+      const response = await apiFetch(
+        withIncludeVat(`/api/dashboard/closing-meeting?tab=goal-setting&year=${year}`, includeVat)
+      );
       const result = await response.json();
       
       if (result.success) {
@@ -88,13 +93,13 @@ export default function GoalSettingTab() {
         const sortedB2BTeams = Array.from(b2bTeams).sort();
         const sortedBranches = Array.from(branches).sort();
 
+        const allCategoryTargets = Array.from(new Set([...CATEGORIES, ...sortedBranches]));
+
         setTeams({
-          'category': [...CATEGORIES, ...sortedBranches],
+          'category': allCategoryTargets,
           'b2c-auto': CATEGORIES,
           'b2b-il': sortedB2BTeams,
         });
-
-        const allCategoryTargets = [...CATEGORIES, ...sortedBranches];
 
         // Set default target if not already set or invalid for new type
         if (activeGoalType === 'category' && !allCategoryTargets.includes(activeTarget)) {

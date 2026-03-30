@@ -4,15 +4,17 @@ import { executeSQL } from '@/egdesk-helpers';
 /**
  * API Endpoint for Daily Inventory Status Sheet (일일재고파악시트)
  * Consolidates data from inventory, sales, and purchases.
- * 
+ *
  * Logic:
  * Ending Inventory = (Feb 1st Snapshot) + (Purchases Feb 2nd to Date) - (Sales Feb 2nd to Date)
+ * 재고폐기(disposed_inventory) is shown as 이동(transfer) and reduces ending stock like outbound.
  */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const isFebruary = date.startsWith('2026-02');
+    const isFeb1st = date === '2026-02-01';
     
     // Helpers
     const branchCase = (column: string) => `
@@ -58,8 +60,6 @@ export async function GET(request: Request) {
     // 1. Calculate Baseline (Inventory at start of 'date')
     let baselineSubquery = "";
     if (isFebruary) {
-      const isFeb1st = date === '2026-02-01';
-      
       baselineSubquery = `
         SELECT branch, category, tier, SUM(qty) as inv_qty, SUM(weight) as inv_weight
         FROM (
@@ -179,44 +179,126 @@ export async function GET(request: Request) {
     const result = await executeSQL(query);
     const rows = result?.rows || [];
 
+    const rollWhenDisposed = isFebruary
+      ? isFeb1st
+        ? `d.일자 = '2026-02-01'`
+        : `d.일자 >= '2026-02-02' AND d.일자 < '${date}'`
+      : `1 = 0`;
+
+    const disposedSql = `
+      SELECT
+        ${branchCase('d.창고명')} AS branch,
+        ${categoryCase('i')} AS category,
+        ${tierCase('i')} AS tier,
+        SUM(CASE WHEN d.일자 = '${date}' THEN CAST(REPLACE(d.수량, ',', '') AS NUMERIC) ELSE 0 END) AS transfer_qty,
+        SUM(CASE WHEN d.일자 = '${date}' THEN ${weightCalc('d.수량', 'i.규격정보')} ELSE 0 END) AS transfer_w,
+        SUM(CASE WHEN ${rollWhenDisposed} THEN CAST(REPLACE(d.수량, ',', '') AS NUMERIC) ELSE 0 END) AS roll_qty,
+        SUM(CASE WHEN ${rollWhenDisposed} THEN ${weightCalc('d.수량', 'i.규격정보')} ELSE 0 END) AS roll_w
+      FROM disposed_inventory d
+      LEFT JOIN items i ON d.품목코드 = i.품목코드
+      WHERE ${warehouseFilter('d.창고명')}
+      GROUP BY 1, 2, 3
+    `;
+
+    let disposedRows: any[] = [];
+    try {
+      const disposedResult = await executeSQL(disposedSql);
+      disposedRows = disposedResult?.rows || [];
+    } catch (e) {
+      console.warn('disposed_inventory query failed; transfer defaults to 0:', e);
+    }
+
+    const disposedMap = new Map<
+      string,
+      { transfer_qty: number; transfer_w: number; roll_qty: number; roll_w: number }
+    >();
+    for (const r of disposedRows) {
+      const b = r.branch;
+      const c = r.category || 'Others';
+      const t = r.tier || 'Others';
+      if (!b) continue;
+      const k = `${b}|${c}|${t}`;
+      disposedMap.set(k, {
+        transfer_qty: Number(r.transfer_qty) || 0,
+        transfer_w: Number(r.transfer_w) || 0,
+        roll_qty: Number(r.roll_qty) || 0,
+        roll_w: Number(r.roll_w) || 0,
+      });
+    }
+
+    const rowKey = (row: { branch: string; category?: string; tier?: string }) =>
+      `${row.branch}|${row.category || 'Others'}|${row.tier || 'Others'}`;
+
+    const mergedRows = new Map<string, any>();
+    for (const row of rows) {
+      mergedRows.set(rowKey(row), row);
+    }
+    for (const r of disposedRows) {
+      const k = rowKey(r);
+      if (!mergedRows.has(k)) {
+        mergedRows.set(k, {
+          branch: r.branch,
+          category: r.category,
+          tier: r.tier,
+          inventory_baseline: 0,
+          inventory_baseline_weight: 0,
+          purchase: 0,
+          purchase_weight: 0,
+          sales: 0,
+          sales_weight: 0,
+        });
+      }
+    }
+
     const stats: Record<string, any> = {};
     const branches = new Set<string>();
 
-    rows.forEach((row: any) => {
+    for (const row of mergedRows.values()) {
       const branch = row.branch;
-      if (!branch) return;
-      
+      if (!branch) continue;
+
       branches.add(branch);
       if (!stats[branch]) stats[branch] = {};
 
       const category = row.category || 'Others';
       const tier = row.tier || 'Others';
       const catKey = `${category}_${tier}`;
-      
-      const beginning = Number(row.inventory_baseline) || 0;
-      const beginning_weight = Number(row.inventory_baseline_weight) || 0;
+      const k = rowKey(row);
+      const disp = disposedMap.get(k) || {
+        transfer_qty: 0,
+        transfer_w: 0,
+        roll_qty: 0,
+        roll_w: 0,
+      };
+
+      const beginning =
+        (Number(row.inventory_baseline) || 0) - disp.roll_qty;
+      const beginning_weight =
+        (Number(row.inventory_baseline_weight) || 0) - disp.roll_w;
       const purchase = Number(row.purchase) || 0;
       const purchase_weight = Number(row.purchase_weight) || 0;
       const sales = Number(row.sales) || 0;
       const sales_weight = Number(row.sales_weight) || 0;
+      const transfer = disp.transfer_qty;
+      const transfer_weight = disp.transfer_w;
 
-      // Current Ending Inventory: Baseline + Purchase - Sales (Internal uses are mixed into sales column in SQL for simplicity)
-      const ending = beginning + purchase - sales;
-      const ending_weight = beginning_weight + purchase_weight - sales_weight;
+      const ending = beginning + purchase - sales - transfer;
+      const ending_weight =
+        beginning_weight + purchase_weight - sales_weight - transfer_weight;
 
       stats[branch][catKey] = {
-        beginning: beginning,
-        beginning_weight: beginning_weight,
-        purchase: purchase,
-        purchase_weight: purchase_weight,
-        sales: sales,
-        sales_weight: sales_weight,
-        transfer: 0,
-        transfer_weight: 0,
+        beginning,
+        beginning_weight,
+        purchase,
+        purchase_weight,
+        sales,
+        sales_weight,
+        transfer,
+        transfer_weight,
         inventory: ending,
         inventory_weight: ending_weight,
       };
-    });
+    }
 
     return NextResponse.json({
       success: true,

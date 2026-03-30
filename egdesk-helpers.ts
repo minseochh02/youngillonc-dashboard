@@ -137,7 +137,6 @@ export async function listTables() {
   return callUserDataTool('user_data_list_tables', {});
 }
 
-
 /**
  * Get table schema
  */

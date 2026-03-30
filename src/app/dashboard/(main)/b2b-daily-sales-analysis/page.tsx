@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Filter, Loader2, TrendingUp, Building2, ChevronDown, ChevronRight } from 'lucide-react';
+import VatToggle from '@/components/VatToggle';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
@@ -64,6 +66,7 @@ function fmtCurrency(val: number): string {
 // ── Page ──
 
 export default function B2BDailySalesAnalysisPage() {
+  const { includeVat } = useVatInclude();
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [branch, setBranch] = useState('all');
   const [data, setData] = useState<PurchaseItem[]>([]);
@@ -107,12 +110,13 @@ export default function B2BDailySalesAnalysisPage() {
     } else {
       fetchProfitData();
     }
-  }, [date, branch, activeView]);
+  }, [date, branch, activeView, includeVat]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams({ date, branch });
+      params.set('includeVat', String(includeVat));
       const response = await apiFetch(`/api/dashboard/b2b-daily-sales?${params}`);
       const result = await response.json();
 
@@ -148,6 +152,7 @@ export default function B2BDailySalesAnalysisPage() {
     setIsLoadingLoadingProfit(true);
     try {
       const params = new URLSearchParams({ date });
+      params.set('includeVat', String(includeVat));
       const response = await apiFetch(`/api/dashboard/b2b-daily-sales/profit?${params}`);
       const result = await response.json();
 
@@ -322,6 +327,7 @@ export default function B2BDailySalesAnalysisPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <VatToggle id="vat-b2b-daily-sales" />
           <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl mr-2">
             <button
               onClick={() => setActiveTab('profit')}

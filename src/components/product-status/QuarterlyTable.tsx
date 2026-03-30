@@ -1,5 +1,7 @@
 "use client";
 
+import { Fragment } from 'react';
+
 interface QuarterData {
   quarter: string;
   actual: number;
@@ -50,7 +52,7 @@ export default function QuarterlyTable({ breakdown, targets, onTargetChange }: Q
           </tr>
           <tr>
             {['Q1', 'Q2', 'Q3', 'Q4'].map(q => (
-              <>
+              <Fragment key={q}>
                 <th className="py-2 px-3 text-center text-xs font-bold text-yellow-600 dark:text-yellow-400 uppercase tracking-wider">
                   목표
                 </th>
@@ -66,7 +68,7 @@ export default function QuarterlyTable({ breakdown, targets, onTargetChange }: Q
                 <th className="py-2 px-3 text-right text-xs font-bold text-zinc-500 uppercase tracking-wider">
                   전년대비
                 </th>
-              </>
+              </Fragment>
             ))}
           </tr>
         </thead>
@@ -87,7 +89,7 @@ export default function QuarterlyTable({ breakdown, targets, onTargetChange }: Q
                   : 0;
 
                 return (
-                  <>
+                  <Fragment key={q.quarter}>
                     {/* Target (Editable) */}
                     <td className="py-3 px-3">
                       <input
@@ -118,7 +120,7 @@ export default function QuarterlyTable({ breakdown, targets, onTargetChange }: Q
                         {q.previousYear > 0 ? `${yoy > 0 ? '+' : ''}${yoy.toFixed(1)}%` : '-'}
                       </span>
                     </td>
-                  </>
+                  </Fragment>
                 );
               })}
             </tr>

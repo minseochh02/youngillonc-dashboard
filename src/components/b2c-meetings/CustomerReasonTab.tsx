@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, TrendingDown, Search } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -34,6 +36,7 @@ interface CustomerReasonTabProps {
 }
 
 export default function CustomerReasonTab({ selectedMonth }: CustomerReasonTabProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<CustomerReasonData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,12 +53,15 @@ export default function CustomerReasonTab({ selectedMonth }: CustomerReasonTabPr
         console.error('Failed to load notes:', e);
       }
     }
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchCustomerReasonData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/b2c-meetings?tab=customer-reason${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/b2c-meetings?tab=customer-reason${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -145,25 +151,79 @@ export default function CustomerReasonTab({ selectedMonth }: CustomerReasonTabPr
     exportToExcel(exportData, filename);
   };
 
+  const totalCustomers = filteredData.length;
+  const increasedCustomers = filteredData.filter(r => r.change_weight > 0).length;
+  const decreasedCustomers = filteredData.filter(r => r.change_weight < 0).length;
+  const newCustomers = filteredData.filter(r => r.last_year_weight === 0).length;
+
   return (
     <div className="space-y-6">
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">전체 거래처</p>
-          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{formatNumber(filteredData.length)}</p>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Customer Base Summary Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <Search className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">거래처 현황 요약</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">전체 및 신규 거래처</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전체 거래처</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(totalCustomers)} 개</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                데이터 검색 결과 기준
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">신규 거래처</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(newCustomers)} 개</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전년 무실적 거래처
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">증가 거래처</p>
-          <p className="text-2xl font-bold text-green-600">{formatNumber(filteredData.filter(r => r.change_weight > 0).length)}</p>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">감소 거래처</p>
-          <p className="text-2xl font-bold text-red-600">{formatNumber(filteredData.filter(r => r.change_weight < 0).length)}</p>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">신규 거래처</p>
-          <p className="text-2xl font-bold text-blue-600">{formatNumber(filteredData.filter(r => r.last_year_weight === 0).length)}</p>
+
+        {/* Growth Trends Card */}
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">판매 증감 트렌드</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">전년 대비 중량 기준</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">증가 거래처</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className="text-2xl font-bold text-green-600">
+                  {formatNumber(increasedCustomers)} 개
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체의 {((increasedCustomers / totalCustomers) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">감소 거래처</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className="text-2xl font-bold text-red-600">
+                  {formatNumber(decreasedCustomers)} 개
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체의 {((decreasedCustomers / totalCustomers) * 100).toFixed(1)}%
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -2,7 +2,9 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown, Database, ChevronDown, ChevronRight, Pencil, Save } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -51,10 +53,14 @@ interface B2CAnalysis {
   b2bTotal: {
     weight: number;
     amount: number;
+    ytd_weight: number;
+    ytd_amount: number;
   };
   total: {
     current_month_weight: number;
     current_month_amount: number;
+    ytd_weight: number;
+    ytd_amount: number;
     last_month_weight: number;
     last_month_amount: number;
     yoy_weight: number;
@@ -69,6 +75,7 @@ interface B2CAnalysisProps {
 }
 
 export default function B2CAutoAnalysisTab({ selectedMonth }: B2CAnalysisProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<B2CAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedBranches, setExpandedBranches] = useState<Set<string>>(new Set());
@@ -78,12 +85,15 @@ export default function B2CAutoAnalysisTab({ selectedMonth }: B2CAnalysisProps) 
 
   useEffect(() => {
     fetchData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/closing-meeting?tab=b2c-auto${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/closing-meeting?tab=b2c-auto${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -336,7 +346,7 @@ export default function B2CAutoAnalysisTab({ selectedMonth }: B2CAnalysisProps) 
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
@@ -351,11 +361,45 @@ export default function B2CAutoAnalysisTab({ selectedMonth }: B2CAnalysisProps) 
             <div>
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">당월 실적</p>
               <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(data.total.current_month_weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatNumber(data.total.current_month_weight + data.b2bTotal.weight)} L 중 {((data.total.current_month_weight / (data.total.current_month_weight + data.b2bTotal.weight)) * 100).toFixed(1)}%
+              </p>
             </div>
             <div>
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">목표 달성율</p>
               <p className={`text-2xl font-bold mt-1 ${data.total.achievement_rate >= 100 ? 'text-green-600' : 'text-yellow-600'}`}>
                 {(data.total.achievement_rate ?? 0).toFixed(1)}%
+              </p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                목표: {formatNumber(data.total.target_weight)} L
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">전체 실적 합계</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{data.currentMonth} 기준</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전체 당월 중량</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(data.total.current_month_weight + data.b2bTotal.weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(data.total.ytd_weight + data.b2bTotal.ytd_weight)} L 중 {((data.total.ytd_weight + data.b2bTotal.ytd_weight) > 0 ? ((data.total.current_month_weight + data.b2bTotal.weight) / (data.total.ytd_weight + data.b2bTotal.ytd_weight) * 100) : 0).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전체 당월 금액</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(data.total.current_month_amount + data.b2bTotal.amount)}</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(data.total.ytd_amount + data.b2bTotal.ytd_amount)} 원 중 {((data.total.ytd_amount + data.b2bTotal.ytd_amount) > 0 ? ((data.total.current_month_amount + data.b2bTotal.amount) / (data.total.ytd_amount + data.b2bTotal.ytd_amount) * 100) : 0).toFixed(1)}%
               </p>
             </div>
           </div>
@@ -375,10 +419,16 @@ export default function B2CAutoAnalysisTab({ selectedMonth }: B2CAnalysisProps) 
             <div>
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">B2B 당월 중량</p>
               <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-300 mt-1">{formatNumber(data.b2bTotal.weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatNumber(data.total.current_month_weight + data.b2bTotal.weight)} L 중 {((data.b2bTotal.weight / (data.total.current_month_weight + data.b2bTotal.weight)) * 100).toFixed(1)}%
+              </p>
             </div>
             <div>
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">B2B 당월 금액</p>
               <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-300 mt-1">{formatNumber(data.b2bTotal.amount)}</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 {formatNumber(data.total.current_month_amount + data.b2bTotal.amount)} 원 중 {((data.b2bTotal.amount / (data.total.current_month_amount + data.b2bTotal.amount)) * 100).toFixed(1)}%
+              </p>
             </div>
           </div>
         </div>
@@ -387,9 +437,6 @@ export default function B2CAutoAnalysisTab({ selectedMonth }: B2CAnalysisProps) 
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
           <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">품목그룹별 B2C 분석 요약</h4>
-          <div className="flex gap-2">
-            <ExcelDownloadButton onClick={handleExcelDownload} variant="secondary" />
-          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

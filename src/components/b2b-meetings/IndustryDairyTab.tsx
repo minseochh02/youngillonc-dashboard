@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect, Fragment } from 'react';
-import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Package } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -24,17 +26,20 @@ interface IndustryDairyResponse {
 }
 
 export default function IndustryDairyTab() {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<IndustryDairyResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchIndustryDairyData();
-  }, []);
+  }, [includeVat]);
 
   const fetchIndustryDairyData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch('/api/dashboard/b2b-meetings?tab=industry-dairy');
+      const response = await apiFetch(
+        withIncludeVat('/api/dashboard/b2b-meetings?tab=industry-dairy', includeVat)
+      );
       const result = await response.json();
       if (result.success) {
         setData(result.data);
@@ -48,6 +53,12 @@ export default function IndustryDairyTab() {
 
   const formatNumber = (num: number) => {
     return num.toLocaleString();
+  };
+
+  const calculateChange = (current: number, previous: number) => {
+    if (previous === 0) return { percent: 0, isPositive: current > 0 };
+    const change = ((current - previous) / previous) * 100;
+    return { percent: change, isPositive: change >= 0 };
   };
 
   if (isLoading) {
@@ -69,20 +80,6 @@ export default function IndustryDairyTab() {
 
   const { industryDairyData, currentYear, lastYear } = data;
 
-  // Get unique items
-  const itemKeys = Array.from(new Set(industryDairyData.map(d => `${d.품목코드}|${d.품목명}|${d.youngil_category}`))).sort();
-
-  // Group items by category
-  const categoriesMap = itemKeys.reduce((acc, itemKey) => {
-    const [,, category] = itemKey.split('|');
-    const categoryName = category || '미분류';
-    if (!acc[categoryName]) {
-      acc[categoryName] = [];
-    }
-    acc[categoryName].push(itemKey);
-    return acc;
-  }, {} as Record<string, string[]>);
-
   // Organize data by item, year, and month
   const getMonthData = (itemKey: string, year: string, month: string) => {
     const [code, name, category] = itemKey.split('|');
@@ -99,7 +96,7 @@ export default function IndustryDairyTab() {
       d => d.품목코드 === code && d.품목명 === name && d.youngil_category === category && d.year === year
     );
     
-    const totals = yearData.reduce(
+    return yearData.reduce(
       (acc, d) => ({
         total_weight: acc.total_weight + d.total_weight,
         total_amount: acc.total_amount + d.total_amount,
@@ -107,12 +104,41 @@ export default function IndustryDairyTab() {
       }),
       { total_weight: 0, total_amount: 0, total_quantity: 0 }
     );
-
-    return totals;
   };
 
+  // Calculate grand totals by year
+  const getGrandTotalsByYear = (year: string) => {
+    const yearData = industryDairyData.filter(d => d.year === year);
+    return yearData.reduce(
+      (acc, d) => ({
+        total_weight: acc.total_weight + d.total_weight,
+        total_amount: acc.total_amount + d.total_amount,
+        total_quantity: acc.total_quantity + d.total_quantity,
+      }),
+      { total_weight: 0, total_amount: 0, total_quantity: 0 }
+    );
+  };
+
+  const currentYearGrandTotals = getGrandTotalsByYear(currentYear);
+  const lastYearGrandTotals = getGrandTotalsByYear(lastYear);
+  const totalAmountChange = calculateChange(currentYearGrandTotals.total_amount, lastYearGrandTotals.total_amount);
+  const totalWeightChange = calculateChange(currentYearGrandTotals.total_weight, lastYearGrandTotals.total_weight);
+
+  // Get unique items
+  const itemKeys = Array.from(new Set(industryDairyData.map(d => `${d.품목코드}|${d.품목명}|${d.youngil_category}`))).sort();
+
+  // Group items by category
+  const categoriesMap = itemKeys.reduce((acc, itemKey) => {
+    const [,, category] = itemKey.split('|');
+    const categoryName = category || '미분류';
+    if (!acc[categoryName]) {
+      acc[categoryName] = [];
+    }
+    acc[categoryName].push(itemKey);
+    return acc;
+  }, {} as Record<string, string[]>);
+
   const sortedCategories = Object.keys(categoriesMap).sort((a, b) => {
-    // Sort by total amount of current year for each category
     const aTotals = categoriesMap[a].reduce((sum, key) => sum + getTotalsByItemAndYear(key, currentYear).total_amount, 0);
     const bTotals = categoriesMap[b].reduce((sum, key) => sum + getTotalsByItemAndYear(key, currentYear).total_amount, 0);
     return bTotals - aTotals;
@@ -129,78 +155,110 @@ export default function IndustryDairyTab() {
     }, { total_weight: 0, total_amount: 0 });
   };
 
-  // Get all months from Jan to Dec
-  const months = Array.from({ length: 12 }, (_, i) => {
-    const month = String(i + 1).padStart(2, '0');
-    return month;
-  }).filter(m => {
-    const monthNum = parseInt(m);
+  const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')).filter(m => {
     const now = new Date();
     const currentYearNum = now.getFullYear();
     const currentMonthNum = now.getMonth() + 1;
     const yearNum = parseInt(currentYear);
-    
     if (yearNum < currentYearNum) return true;
-    if (yearNum === currentYearNum && monthNum <= currentMonthNum) return true;
+    if (yearNum === currentYearNum && parseInt(m) <= currentMonthNum) return true;
     return false;
   });
 
-  // Calculate grand totals by year
-  const getGrandTotalsByYear = (year: string) => {
-    const yearData = industryDairyData.filter(d => d.year === year);
-    const totals = yearData.reduce(
-      (acc, d) => ({
-        total_weight: acc.total_weight + d.total_weight,
-        total_amount: acc.total_amount + d.total_amount,
-        total_quantity: acc.total_quantity + d.total_quantity,
-      }),
-      { total_weight: 0, total_amount: 0, total_quantity: 0 }
-    );
-
-    return totals;
-  };
-
-  const currentYearGrandTotals = getGrandTotalsByYear(currentYear);
-  const lastYearGrandTotals = getGrandTotalsByYear(lastYear);
-
   const handleExcelDownload = () => {
-    if (!data) {
-      alert('다운로드할 데이터가 없습니다.');
-      return;
-    }
-
-    const exportData: any[] = [];
-
-    itemKeys.forEach(itemKey => {
+    if (!data) return;
+    const exportData = itemKeys.map(itemKey => {
       const [code, name, category] = itemKey.split('|');
-      const currentYearTotals = getTotalsByItemAndYear(itemKey, currentYear);
-      const lastYearTotals = getTotalsByItemAndYear(itemKey, lastYear);
-
-      const row: any = {
+      const currentTotals = getTotalsByItemAndYear(itemKey, currentYear);
+      const lastTotals = getTotalsByItemAndYear(itemKey, lastYear);
+      return {
         '품목코드': code,
         '품목명': name,
         '영일분류': category,
-        [`용량(${currentYear})`]: currentYearTotals.total_weight,
-        [`용량(${lastYear})`]: lastYearTotals.total_weight,
-        [`합계(${currentYear})`]: currentYearTotals.total_amount,
-        [`합계(${lastYear})`]: lastYearTotals.total_amount,
+        [`용량(${currentYear})`]: currentTotals.total_weight,
+        [`용량(${lastYear})`]: lastTotals.total_weight,
+        [`합계(${currentYear})`]: currentTotals.total_amount,
+        [`합계(${lastYear})`]: lastTotals.total_amount,
       };
-
-      // Add monthly data
-      months.forEach(month => {
-        const currentMonthData = getMonthData(itemKey, currentYear, month);
-        row[`${month}월(${currentYear})`] = currentMonthData?.total_amount || 0;
-      });
-
-      exportData.push(row);
     });
-
-    const filename = generateFilename('B2B산업유제품_품목별');
-    exportToExcel(exportData, filename);
+    exportToExcel(exportData, generateFilename('B2B산업유제품_품목별'));
   };
 
   return (
     <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Performance Summary Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 실적 요약</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">산업유제품 전체 합계</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 중량</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(currentYearGrandTotals.total_weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 중량 대비 100%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 금액</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(currentYearGrandTotals.total_amount)} 원</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전체 금액 대비 100%
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Year-over-Year Change Card */}
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
+              {totalAmountChange.isPositive ? (
+                <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              ) : (
+                <TrendingDown className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              )}
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">전년 대비 증감</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear} vs {lastYear}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">중량 변화</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${totalWeightChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {totalWeightChange.isPositive ? '+' : ''}{totalWeightChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {totalWeightChange.isPositive ? '+' : ''}{formatNumber(currentYearGrandTotals.total_weight - lastYearGrandTotals.total_weight)} L
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">금액 변화</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-2xl font-bold ${totalAmountChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {totalAmountChange.isPositive ? '+' : ''}{totalAmountChange.percent.toFixed(1)}%
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                {totalAmountChange.isPositive ? '+' : ''}{formatNumber(currentYearGrandTotals.total_amount - lastYearGrandTotals.total_amount)} 원
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Year-over-Year Comparison Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
@@ -223,10 +281,7 @@ export default function IndustryDairyTab() {
               {sortedCategories.map(category => {
                 const categoryCurrentTotals = getCategoryTotals(category, currentYear);
                 const categoryLastTotals = getCategoryTotals(category, lastYear);
-                const categoryAmountChange = categoryCurrentTotals.total_amount - categoryLastTotals.total_amount;
-                const categoryChangePercent = categoryLastTotals.total_amount > 0
-                  ? ((categoryAmountChange / categoryLastTotals.total_amount) * 100).toFixed(1)
-                  : '0.0';
+                const categoryAmountChange = calculateChange(categoryCurrentTotals.total_amount, categoryLastTotals.total_amount);
 
                 return (
                   <Fragment key={category}>
@@ -251,10 +306,10 @@ export default function IndustryDairyTab() {
                         ₩{formatNumber(categoryLastTotals.total_amount)}
                       </td>
                       <td className={`py-2 px-4 text-center font-mono ${
-                        categoryAmountChange >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'
+                        categoryAmountChange.isPositive ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'
                       }`}>
                         <div className="flex items-center justify-center gap-1 text-xs">
-                          {categoryAmountChange >= 0 ? '+' : ''}{categoryChangePercent}%
+                          {categoryAmountChange.isPositive ? '+' : ''}{categoryAmountChange.percent.toFixed(1)}%
                         </div>
                       </td>
                     </tr>
@@ -264,10 +319,7 @@ export default function IndustryDairyTab() {
                       const [code, name, cat] = itemKey.split('|');
                       const currentTotals = getTotalsByItemAndYear(itemKey, currentYear);
                       const lastTotals = getTotalsByItemAndYear(itemKey, lastYear);
-                      const amountChange = currentTotals.total_amount - lastTotals.total_amount;
-                      const changePercent = lastTotals.total_amount > 0
-                        ? ((amountChange / lastTotals.total_amount) * 100).toFixed(1)
-                        : '0.0';
+                      const itemAmountChange = calculateChange(currentTotals.total_amount, lastTotals.total_amount);
 
                       return (
                         <tr
@@ -294,15 +346,15 @@ export default function IndustryDairyTab() {
                             ₩{formatNumber(lastTotals.total_amount)}
                           </td>
                           <td className={`py-3 px-4 text-center font-mono text-xs ${
-                            amountChange >= 0 ? 'text-blue-500/80 dark:text-blue-400/80' : 'text-red-500/80 dark:text-red-400/80'
+                            itemAmountChange.isPositive ? 'text-blue-500/80 dark:text-blue-400/80' : 'text-red-500/80 dark:text-red-400/80'
                           }`}>
                             <div className="flex items-center justify-center gap-1">
-                              {amountChange >= 0 ? (
+                              {itemAmountChange.isPositive ? (
                                 <TrendingUp className="w-2.5 h-2.5" />
                               ) : (
                                 <TrendingDown className="w-2.5 h-2.5" />
                               )}
-                              {amountChange >= 0 ? '+' : ''}{changePercent}%
+                              {itemAmountChange.isPositive ? '+' : ''}{itemAmountChange.percent.toFixed(1)}%
                             </div>
                           </td>
                         </tr>
@@ -330,20 +382,17 @@ export default function IndustryDairyTab() {
                   ₩{formatNumber(lastYearGrandTotals.total_amount)}
                 </td>
                 <td className={`py-3 px-4 text-center font-mono ${
-                  (currentYearGrandTotals.total_amount - lastYearGrandTotals.total_amount) >= 0
+                  totalAmountChange.isPositive
                     ? 'text-blue-700 dark:text-blue-300'
                     : 'text-red-700 dark:text-red-300'
                 }`}>
                   <div className="flex items-center justify-center gap-1">
-                    {(currentYearGrandTotals.total_amount - lastYearGrandTotals.total_amount) >= 0 ? (
+                    {totalAmountChange.isPositive ? (
                       <TrendingUp className="w-3 h-3" />
                     ) : (
                       <TrendingDown className="w-3 h-3" />
                     )}
-                    {lastYearGrandTotals.total_amount > 0
-                      ? `${(currentYearGrandTotals.total_amount - lastYearGrandTotals.total_amount) >= 0 ? '+' : ''}${(((currentYearGrandTotals.total_amount - lastYearGrandTotals.total_amount) / lastYearGrandTotals.total_amount) * 100).toFixed(1)}%`
-                      : '-'
-                    }
+                    {totalAmountChange.isPositive ? '+' : ''}{totalAmountChange.percent.toFixed(1)}%
                   </div>
                 </td>
               </tr>

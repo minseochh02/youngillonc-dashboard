@@ -1,6 +1,10 @@
+"use client";
+
 import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react';
+import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
+import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -34,6 +38,10 @@ interface BranchPerformanceData {
   branches: BranchData[];
   currentMonth: string;
   lastMonth: string;
+  grandTotals: {
+    b2c: { weight: number; amount: number; ytd_weight: number; ytd_amount: number };
+    b2b: { weight: number; amount: number; ytd_weight: number; ytd_amount: number };
+  };
 }
 
 interface BranchPerformanceProps {
@@ -41,6 +49,7 @@ interface BranchPerformanceProps {
 }
 
 export default function BranchPerformanceTab({ selectedMonth }: BranchPerformanceProps) {
+  const { includeVat } = useVatInclude();
   const [data, setData] = useState<BranchPerformanceData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedBranches, setExpandedBranches] = useState<Set<string>>(new Set());
@@ -48,12 +57,15 @@ export default function BranchPerformanceTab({ selectedMonth }: BranchPerformanc
 
   useEffect(() => {
     fetchData();
-  }, [selectedMonth]);
+  }, [selectedMonth, includeVat]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/dashboard/closing-meeting?tab=branch-performance${selectedMonth ? `&month=${selectedMonth}` : ''}`;
+      const url = withIncludeVat(
+        `/api/dashboard/closing-meeting?tab=branch-performance${selectedMonth ? `&month=${selectedMonth}` : ''}`,
+        includeVat
+      );
       const response = await apiFetch(url);
       const result = await response.json();
       if (result.success) {
@@ -201,8 +213,78 @@ export default function BranchPerformanceTab({ selectedMonth }: BranchPerformanc
     );
   }
 
+  // Calculate total across all branches
+  const totalCurrentWeight = data.branches.reduce((sum, b) => sum + b.current_month_weight, 0);
+  const totalCurrentAmount = data.branches.reduce((sum, b) => sum + b.current_month_amount, 0);
+  const totalLastWeight = data.branches.reduce((sum, b) => sum + b.last_month_weight, 0);
+  const totalLastAmount = data.branches.reduce((sum, b) => sum + b.last_month_amount, 0);
+
+  const totalWeightChange = calculateChange(totalCurrentWeight, totalLastWeight);
+  const totalAmountChange = calculateChange(totalCurrentAmount, totalLastAmount);
+
   return (
     <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Current Month Performance Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">당월 실적</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{data.currentMonth} 기준</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">중량</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(totalCurrentWeight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전월: {formatNumber(totalLastWeight)} L
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">금액</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(totalCurrentAmount)} 원</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                전월: {formatNumber(totalLastAmount)} 원
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Grand Total Performance Card */}
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">전체 실적 합계</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{data.currentMonth} 기준</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전체 당월 중량</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(data.grandTotals.b2b.weight + data.grandTotals.b2c.weight)} L</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(data.grandTotals.b2b.ytd_weight + data.grandTotals.b2c.ytd_weight)} L 중 {((data.grandTotals.b2b.ytd_weight + data.grandTotals.b2c.ytd_weight) > 0 ? ((data.grandTotals.b2b.weight + data.grandTotals.b2c.weight) / (data.grandTotals.b2b.ytd_weight + data.grandTotals.b2c.ytd_weight) * 100) : 0).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">전체 당월 금액</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(data.grandTotals.b2b.amount + data.grandTotals.b2c.amount)}</p>
+              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
+                연누계 {formatNumber(data.grandTotals.b2b.ytd_amount + data.grandTotals.b2c.ytd_amount)} 원 중 {((data.grandTotals.b2b.ytd_amount + data.grandTotals.b2c.ytd_amount) > 0 ? ((data.grandTotals.b2b.amount + data.grandTotals.b2c.amount) / (data.grandTotals.b2b.ytd_amount + data.grandTotals.b2c.ytd_amount) * 100) : 0).toFixed(1)}%
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Branch Performance Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-800/50 flex items-center justify-between">
@@ -261,8 +343,15 @@ export default function BranchPerformanceTab({ selectedMonth }: BranchPerformanc
                           <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm tracking-tight">{branch.branch}</span>
                         </div>
                       </td>
-                      <td className="py-4 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold text-sm">
-                        {formatNumber(branch.current_month_weight)}
+                      <td className="py-4 px-4 text-right">
+                        <div className="flex flex-col items-end">
+                          <span className="font-mono text-blue-700 dark:text-blue-300 font-bold text-sm">
+                            {formatNumber(branch.current_month_weight)}
+                          </span>
+                          <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+                            전체의 {((branch.current_month_weight / totalCurrentWeight) * 100).toFixed(1)}%
+                          </span>
+                        </div>
                       </td>
                       <td className="py-4 px-4 text-right font-mono text-zinc-500 dark:text-zinc-400 text-sm">
                         {formatNumber(branch.last_month_weight)}
@@ -316,8 +405,15 @@ export default function BranchPerformanceTab({ selectedMonth }: BranchPerformanc
                                 <span className="font-semibold text-zinc-700 dark:text-zinc-300 text-xs">{team.team_name}</span>
                               </div>
                             </td>
-                            <td className="py-3 px-4 text-right font-mono text-blue-600/90 dark:text-blue-400/90 font-semibold text-xs">
-                              {formatNumber(team.current_month_weight)}
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex flex-col items-end">
+                                <span className="font-mono text-blue-600/90 dark:text-blue-400/90 font-semibold text-xs">
+                                  {formatNumber(team.current_month_weight)}
+                                </span>
+                                <span className="text-[9px] font-medium text-zinc-400 dark:text-zinc-500">
+                                  사업소의 {((team.current_month_weight / branch.current_month_weight) * 100).toFixed(1)}%
+                                </span>
+                              </div>
                             </td>
                             <td className="py-3 px-4 text-right font-mono text-zinc-400 dark:text-zinc-500 text-xs">
                               {formatNumber(team.last_month_weight)}
@@ -353,8 +449,15 @@ export default function BranchPerformanceTab({ selectedMonth }: BranchPerformanc
                                 <td className="py-2.5 px-4 pl-16 border-l-2 border-zinc-200 dark:border-zinc-800">
                                   <span className="text-zinc-500 dark:text-zinc-400 text-[11px] font-medium">{emp.employee}</span>
                                 </td>
-                                <td className="py-2.5 px-4 text-right font-mono text-blue-500/80 dark:text-blue-400/70 text-[11px]">
-                                  {formatNumber(emp.current_month_weight)}
+                                <td className="py-2.5 px-4 text-right">
+                                  <div className="flex flex-col items-end">
+                                    <span className="font-mono text-blue-500/80 dark:text-blue-400/70 text-[11px]">
+                                      {formatNumber(emp.current_month_weight)}
+                                    </span>
+                                    <span className="text-[8px] font-medium text-zinc-400 dark:text-zinc-500">
+                                      팀의 {((emp.current_month_weight / team.current_month_weight) * 100).toFixed(1)}%
+                                    </span>
+                                  </div>
                                 </td>
                                 <td className="py-2.5 px-4 text-right font-mono text-zinc-400 dark:text-zinc-600 text-[11px]">
                                   {formatNumber(emp.last_month_weight)}

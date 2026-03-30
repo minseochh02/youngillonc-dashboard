@@ -8,6 +8,8 @@ import { executeSQL } from '@/egdesk-helpers';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const includeVat = searchParams.get('includeVat') === 'true';
+    const divisor = includeVat ? '1.0' : '1.1';
 
     // Base table for sales
     const baseSalesTable = 'sales';
@@ -178,8 +180,8 @@ export async function GET(request: Request) {
       'COUNT(DISTINCT s.거래처코드) as client_count',
       'SUM(CAST(REPLACE(s.수량, \',\', \'\') AS NUMERIC)) as total_quantity',
       'SUM(CAST(REPLACE(s.중량, \',\', \'\') AS NUMERIC)) as total_weight',
-      'SUM(CAST(REPLACE(s.수량, \',\', \'\') AS NUMERIC) * CAST(REPLACE(s.단가, \',\', \'\') AS NUMERIC)) as total_supply_amount',
-      'SUM(CAST(REPLACE(s.합계, \',\', \'\') AS NUMERIC)) as total_amount'
+      `SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC) * CAST(REPLACE(s.단가, ',', '') AS NUMERIC)) / ${divisor} as total_supply_amount`,
+      `SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) / ${divisor} as total_amount`
     );
 
     const query = `
