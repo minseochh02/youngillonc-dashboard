@@ -98,6 +98,14 @@ interface EmployeeSummary {
   };
 }
 
+interface CompanyMessage {
+  id: number;
+  chat_date: string;
+  user_name: string;
+  message: string;
+  chat_room?: string;
+}
+
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<EmployeeStat[]>([]);
   const [searchTerm, setSearchTerm] = useState(''); // New search term state
@@ -141,6 +149,10 @@ export default function EmployeesPage() {
   const [sourceMessages, setSourceMessages] = useState<any[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<any>(null);
   const [loadingSource, setLoadingSource] = useState(false);
+  const [showCompanyMessagesModal, setShowCompanyMessagesModal] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  const [companyMessages, setCompanyMessages] = useState<CompanyMessage[]>([]);
+  const [loadingCompanyMessages, setLoadingCompanyMessages] = useState(false);
 
   // Follow-up Cycle Thresholds
   const [thresholds, setThresholds] = useState({ good: 1, warning: 7 });
@@ -260,6 +272,32 @@ export default function EmployeesPage() {
     }
   };
 
+  const loadCompanyMessages = async (companyName: string) => {
+    if (!selectedEmployee) return;
+
+    setLoadingCompanyMessages(true);
+    setSelectedCompany(companyName);
+    setCompanyMessages([]);
+    setShowCompanyMessagesModal(true);
+
+    try {
+      const params = new URLSearchParams({
+        employee: selectedEmployee,
+        company: companyName
+      });
+      const response = await apiFetch(`/api/employees/company-messages?${params}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setCompanyMessages(data.data.messages || []);
+      }
+    } catch (error) {
+      console.error('Error loading company messages:', error);
+    } finally {
+      setLoadingCompanyMessages(false);
+    }
+  };
+
   const filteredMatches = trackerData.filter(match => {
     if (statusFilter === 'all') return true;
     return match.status === statusFilter;
@@ -267,15 +305,6 @@ export default function EmployeesPage() {
 
   return (
     <div className="flex bg-gray-50 overflow-hidden h-screen">
-      <style>{`
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        .no-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-      `}</style>
       {/* Sidebar - Employee List */}
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-xl z-10">
         <div className="p-4 border-b border-gray-200">
@@ -295,7 +324,7 @@ export default function EmployeesPage() {
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+        <div className="flex-1 overflow-y-scroll p-3 space-y-1.5">
           {loadingEmployees ? (
             <div className="text-center py-8 text-gray-500">직원 목록을 불러오는 중...</div>
           ) : (
@@ -340,7 +369,7 @@ export default function EmployeesPage() {
         {selectedEmployee && summaryData ? (
           <>
             {/* Header */}
-            <div className="bg-white p-8 border-b border-gray-200">
+            <div className="sticky top-0 z-10 bg-white p-8 border-b border-gray-200">
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-3 mb-2">
@@ -408,7 +437,7 @@ export default function EmployeesPage() {
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-8">
+            <div className="flex-1 overflow-y-scroll p-8">
               {activeTab === 'calendar' && (
                 <div className="max-w-6xl mx-auto space-y-6">
                   {/* Calendar Header */}
@@ -841,7 +870,12 @@ export default function EmployeesPage() {
                 <div className="max-w-5xl">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {summaryData.companies.map((company, idx) => (
-                      <div key={idx} className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm hover:border-blue-300 hover:shadow-md transition-all group">
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => loadCompanyMessages(company.customer_name)}
+                        className="w-full text-left bg-white p-6 rounded-2xl border border-gray-200 shadow-sm hover:border-blue-300 hover:shadow-md transition-all group"
+                      >
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-4">
                             <div className="p-3 bg-blue-50 rounded-xl group-hover:bg-blue-100 transition-colors">
@@ -857,7 +891,7 @@ export default function EmployeesPage() {
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">방문 횟수</p>
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -1000,6 +1034,93 @@ export default function EmployeesPage() {
                     setShowSourceModal(false);
                     setSourceMessages([]);
                     setSelectedActivity(null);
+                  }}
+                  className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-bold transition-colors"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Company Messages Modal */}
+      {showCompanyMessagesModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-gray-900 mb-1">업체 관련 메시지</h2>
+                <p className="text-sm text-gray-600">
+                  {selectedEmployee} - {selectedCompany}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowCompanyMessagesModal(false);
+                  setSelectedCompany(null);
+                  setCompanyMessages([]);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {loadingCompanyMessages ? (
+                <div className="text-center py-12 text-gray-500">로딩 중...</div>
+              ) : companyMessages.length > 0 ? (
+                companyMessages.map((msg, idx) => (
+                  <div key={idx} className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                          {msg.user_name?.[0] || '?'}
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900 text-sm">{msg.user_name}</p>
+                          <p className="text-[10px] text-gray-500">
+                            {new Date(msg.chat_date).toLocaleString('ko-KR', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      {msg.chat_room && (
+                        <span className="text-[10px] bg-zinc-100 text-zinc-600 px-2 py-1 rounded font-bold">
+                          {msg.chat_room}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
+                      {msg.message}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <MessageSquare className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                  <p className="font-bold">관련 메시지를 찾을 수 없습니다.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-500">
+                  총 <span className="font-bold text-gray-900">{companyMessages.length}</span>개의 메시지
+                </p>
+                <button
+                  onClick={() => {
+                    setShowCompanyMessagesModal(false);
+                    setSelectedCompany(null);
+                    setCompanyMessages([]);
                   }}
                   className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-bold transition-colors"
                 >

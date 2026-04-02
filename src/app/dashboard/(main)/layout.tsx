@@ -7,7 +7,7 @@ export default function MainDashboardLayout({
 }) {
   return (
     <VatIncludeProvider>
-      <div className="p-8">{children}</div>
+      <div className="p-8 min-w-0">{children}</div>
     </VatIncludeProvider>
   );
 }

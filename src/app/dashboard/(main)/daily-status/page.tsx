@@ -35,6 +35,7 @@ export default function DailyStatusPage() {
   const [monthlySalesView, setMonthlySalesView] = useState<'office' | 'warehouse'>('office');
   const [monthlyPurchaseView, setMonthlyPurchaseView] = useState<'office' | 'warehouse'>('warehouse');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showEditedOnly, setShowEditedOnly] = useState(false);
   const { includeVat } = useVatInclude();
   
   const [salesData, setSalesData] = useState<any[]>([]);
@@ -73,12 +74,12 @@ export default function DailyStatusPage() {
     } else if (activeTab === "mobil-payments") {
       fetchMobilPaymentsData();
     }
-  }, [selectedDate, activeTab, includeVat]);
+  }, [selectedDate, activeTab, includeVat, showEditedOnly]);
 
   const fetchSalesAndPurchaseData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/daily-status/sales?date=${selectedDate}&includeVat=${includeVat}`);
+      const response = await apiFetch(`/api/dashboard/daily-status/sales?date=${selectedDate}&includeVat=${includeVat}&editedOnly=${showEditedOnly}`);
       const result = await response.json();
       if (result.success) {
         setMiscMobil(result.miscMobil);
@@ -93,7 +94,9 @@ export default function DailyStatusPage() {
             mobileWeight: acc.mobileWeight + (Number(type === 'sales' ? curr.mobileSalesWeight : curr.mobilePurchaseWeight) || 0),
             flagshipAmount: acc.flagshipAmount + (Number(type === 'sales' ? curr.flagshipSalesAmount : curr.flagshipPurchaseAmount) || 0),
             flagshipWeight: acc.flagshipWeight + (Number(type === 'sales' ? curr.flagshipSalesWeight : curr.flagshipPurchaseWeight) || 0),
-          }), { amount: 0, weight: 0, mobileAmount: 0, mobileWeight: 0, flagshipAmount: 0, flagshipWeight: 0 });
+            editedAmountImpact: acc.editedAmountImpact + (Number(curr.editedAmountImpact) || 0),
+            lateEntryCount: acc.lateEntryCount + (Number(curr.lateEntryCount) || 0),
+          }), { amount: 0, weight: 0, mobileAmount: 0, mobileWeight: 0, flagshipAmount: 0, flagshipWeight: 0, editedAmountImpact: 0, lateEntryCount: 0 });
 
           const totalRow = { 
             id: 'total', branch: '합계', isTotal: true,
@@ -102,7 +105,9 @@ export default function DailyStatusPage() {
             [type === 'sales' ? 'mobileSalesAmount' : 'mobilePurchaseAmount']: total.mobileAmount,
             [type === 'sales' ? 'mobileSalesWeight' : 'mobilePurchaseWeight']: total.mobileWeight,
             [type === 'sales' ? 'flagshipSalesAmount' : 'flagshipPurchaseAmount']: total.flagshipAmount,
-            [type === 'sales' ? 'flagshipSalesWeight' : 'flagshipPurchaseWeight']: total.flagshipWeight
+            [type === 'sales' ? 'flagshipSalesWeight' : 'flagshipPurchaseWeight']: total.flagshipWeight,
+            editedAmountImpact: total.editedAmountImpact,
+            lateEntryCount: total.lateEntryCount
           };
           return [...raw, totalRow];
         };
@@ -237,13 +242,19 @@ export default function DailyStatusPage() {
   const sTotals = salesData.find(d => d.id === 'total') || { 
     totalSales: 0, totalSalesWeight: 0, 
     mobileSalesAmount: 0, mobileSalesWeight: 0, 
-    flagshipSalesAmount: 0, flagshipSalesWeight: 0 
+    flagshipSalesAmount: 0, flagshipSalesWeight: 0,
+    editedAmountImpact: 0, lateEntryCount: 0
   };
   const pTotals = purchaseData.find(d => d.id === 'total') || { 
     totalPurchases: 0, totalPurchaseWeight: 0, 
     mobilePurchaseAmount: 0, mobilePurchaseWeight: 0, 
-    flagshipPurchaseAmount: 0, flagshipPurchaseWeight: 0 
+    flagshipPurchaseAmount: 0, flagshipPurchaseWeight: 0,
+    editedAmountImpact: 0, lateEntryCount: 0
   };
+  const sLateCount = Number((sTotals as any).lateEntryCount) || 0;
+  const pLateCount = Number((pTotals as any).lateEntryCount) || 0;
+  const sEditedImpact = Number((sTotals as any).editedAmountImpact) || 0;
+  const pEditedImpact = Number((pTotals as any).editedAmountImpact) || 0;
 
   const msTotals = monthlySalesData.reduce((acc, curr) => ({
     totalSales: acc.totalSales + (Number(curr.totalSales) || 0),
@@ -453,6 +464,19 @@ export default function DailyStatusPage() {
 
         <div className="flex items-center gap-3">
           {!TABS_HIDE_VAT_TOGGLE.has(activeTab) && <VatToggle id="vat-daily-status" />}
+          {activeTab === "sales" && (
+            <button
+              type="button"
+              onClick={() => setShowEditedOnly((prev) => !prev)}
+              className={`text-xs font-medium px-3 py-2 rounded-lg border transition-colors ${
+                showEditedOnly
+                  ? "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/20 dark:text-violet-300 dark:border-violet-700/60"
+                  : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-300 dark:border-zinc-800"
+              }`}
+            >
+              {showEditedOnly ? "후행 입력만 보기 ON" : "후행 입력만 보기"}
+            </button>
+          )}
 
           <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
             {isLoading ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Calendar className="w-4 h-4 text-zinc-400" />}
@@ -503,6 +527,18 @@ export default function DailyStatusPage() {
                 <p className={`text-2xl font-bold mt-2 ${(sTotals.totalSales - pTotals.totalPurchases) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                   ₩{(sTotals.totalSales - pTotals.totalPurchases).toLocaleString()}
                 </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-4 bg-violet-50/60 dark:bg-violet-900/10 border border-violet-200/60 dark:border-violet-700/40 rounded-xl">
+                <p className="text-xs font-bold tracking-wider text-violet-700 dark:text-violet-300">매출 후행 입력</p>
+                <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">건수: <span className="font-bold text-violet-700 dark:text-violet-300">{sLateCount.toLocaleString()}건</span></p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">영향금액: <span className="font-bold text-violet-700 dark:text-violet-300">₩{Math.round(sEditedImpact).toLocaleString()}</span></p>
+              </div>
+              <div className="p-4 bg-violet-50/60 dark:bg-violet-900/10 border border-violet-200/60 dark:border-violet-700/40 rounded-xl">
+                <p className="text-xs font-bold tracking-wider text-violet-700 dark:text-violet-300">매입 후행 입력</p>
+                <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">건수: <span className="font-bold text-violet-700 dark:text-violet-300">{pLateCount.toLocaleString()}건</span></p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">영향금액: <span className="font-bold text-violet-700 dark:text-violet-300">₩{Math.round(pEditedImpact).toLocaleString()}</span></p>
               </div>
             </div>
 

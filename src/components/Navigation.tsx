@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from "next/link";
-import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart, AlertTriangle, Star, ChevronDown, ChevronRight, X, Clock, Calendar, Users, FileText, BarChart3, DollarSign, UserX, TrendingUp, Database } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Receipt, Package, Calculator, ShoppingCart, AlertTriangle, Star, ChevronDown, ChevronRight, X, Clock, Calendar, Users, FileText, BarChart3, DollarSign, UserX, TrendingUp, Database, Settings, Cloud } from "lucide-react";
 import { useStarredQueries } from '@/hooks/useStarredQueries';
 import { regenerateSQLDates } from '@/lib/date-regenerator';
 import { extractDatesFromSQL, formatDateRangeDisplay } from '@/lib/date-extractor';
@@ -145,10 +145,21 @@ const Navigation = () => {
         },
       ],
     },
+    {
+      name: "설정",
+      icon: <Settings className="w-5 h-5" />,
+      items: [
+        {
+          name: "Google Drive 연동",
+          href: "/dashboard/employees/drive-settings",
+          icon: <Cloud className="w-5 h-5" />,
+        },
+      ],
+    },
   ];
 
   return (
-    <nav className="w-64 bg-zinc-900 text-white min-h-screen p-4 flex flex-col gap-2">
+    <nav className="w-64 shrink-0 bg-zinc-900 text-white h-screen sticky top-0 overflow-y-auto p-4 flex flex-col gap-2">
       <div className="mb-8 px-2 py-4 border-b border-zinc-800">
         <h1 className="text-xl font-bold tracking-tight">Youngil ONC</h1>
         <p className="text-xs text-zinc-400 mt-1">Management Dashboard</p>
@@ -244,7 +255,7 @@ const Navigation = () => {
         </button>
 
         {isStarredExpanded && (
-          <div className="mt-2 space-y-1 max-h-96 overflow-y-auto">
+          <div className="mt-2 space-y-1 max-h-96 overflow-y-scroll">
             <Link
               href="/dashboard"
               className="flex items-center gap-2 px-3 py-2 text-sm text-blue-400 hover:text-blue-300 hover:bg-zinc-800 rounded-lg transition-colors font-medium"

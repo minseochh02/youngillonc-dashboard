@@ -12,7 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { executeSQL } from '../../../../../egdesk-helpers';
+import { executeSQL, insertRows, updateRows } from '../../../../../egdesk-helpers';
 import { createDriveClient, getStartPageToken } from '../../../../lib/google-drive-client';
 
 export async function GET(req: NextRequest) {
@@ -69,30 +69,26 @@ export async function GET(req: NextRequest) {
 
     if (existingState.rows && existingState.rows.length > 0) {
       // Update existing
-      await executeSQL(`
-        UPDATE drive_sync_state
-        SET page_token = '${pageToken.replace(/'/g, "''")}',
-            target_folder_ids = '${targetFolderIdsJson.replace(/'/g, "''")}',
-            last_updated = '${now}'
-        WHERE id = 1
-      `);
+      await updateRows(
+        'drive_sync_state',
+        {
+          page_token: pageToken,
+          target_folder_ids: targetFolderIdsJson,
+          last_updated: now
+        },
+        { filters: { id: '1' } }
+      );
     } else {
       // Insert new
-      await executeSQL(`
-        INSERT INTO drive_sync_state (
-          id,
-          page_token,
-          target_folder_ids,
-          last_updated,
-          created_at
-        ) VALUES (
-          1,
-          '${pageToken.replace(/'/g, "''")}',
-          '${targetFolderIdsJson.replace(/'/g, "''")}',
-          '${now}',
-          '${now}'
-        )
-      `);
+      await insertRows('drive_sync_state', [
+        {
+          id: 1,
+          page_token: pageToken,
+          target_folder_ids: targetFolderIdsJson,
+          last_updated: now,
+          created_at: now
+        }
+      ]);
     }
 
     console.log(`✅ Sync state initialized with ${targetFolderIds.length} target folder(s)`);

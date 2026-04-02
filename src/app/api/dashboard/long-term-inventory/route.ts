@@ -52,12 +52,16 @@ export async function GET(request: Request) {
       ORDER BY 창고명
     `);
 
-    // Fetch units for selection from East and West division tables
-    const units = await executeSQL(`
-      SELECT DISTINCT 단위 as unit FROM east_division_purchases WHERE 단위 IS NOT NULL AND 단위 != ''
-      UNION
-      SELECT DISTINCT 단위 as unit FROM west_division_purchases WHERE 단위 IS NOT NULL AND 단위 != ''
-    `);
+    // Fetch units for selection from saved planning records.
+    // East/West purchase tables no longer contain a `단위` column.
+    const unitsFromSaved = Array.from(
+      new Set(
+        savedItems
+          .map((si: any) => si.unit)
+          .filter((unit: any) => typeof unit === 'string' && unit.trim() !== '')
+          .map((unit: string) => unit.trim())
+      )
+    );
 
     // Map saved items with their current categories
     const itemMap = new Map();
@@ -168,7 +172,7 @@ export async function GET(request: Request) {
         savedItems: savedItemsWithCategory,
         items: items?.rows || [],
         warehouses: (warehouses?.rows || []).map((r: any) => r.warehouse),
-        units: (units?.rows || []).map((r: any) => r.unit),
+        units: unitsFromSaved,
         recommendations: recommendedItems?.rows || [],
         pagination: {
           totalCount,

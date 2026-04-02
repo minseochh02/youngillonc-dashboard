@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { executeSQL } from '../../../../../egdesk-helpers';
+import { executeSQL, updateRows } from '../../../../../egdesk-helpers';
 import { createDriveClient } from '../../../../lib/google-drive-client';
 import { getSyncState } from '../../../../lib/drive-webhook-processor';
 
@@ -54,14 +54,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Clear channel info from database
-    await executeSQL(`
-      UPDATE drive_sync_state
-      SET channel_id = NULL,
-          channel_resource_id = NULL,
-          channel_expiration = NULL,
-          last_updated = '${new Date().toISOString()}'
-      WHERE id = 1
-    `);
+    await updateRows(
+      'drive_sync_state',
+      {
+        channel_id: null,
+        channel_resource_id: null,
+        channel_expiration: null,
+        last_updated: new Date().toISOString()
+      },
+      { filters: { id: '1' } }
+    );
 
     console.log('✅ Channel info cleared from database');
 

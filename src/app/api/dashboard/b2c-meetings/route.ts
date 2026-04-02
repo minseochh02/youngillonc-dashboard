@@ -686,9 +686,9 @@ export async function GET(request: Request) {
         FROM (
           SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 FROM purchases
           UNION ALL
-          SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 FROM east_division_purchases
+          SELECT 일자, 거래처코드, 품목코드, 중량, 합계 FROM east_division_purchases
           UNION ALL
-          SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 FROM west_division_purchases
+          SELECT 일자, 거래처코드, 품목코드, 중량, 합계 FROM west_division_purchases
         ) p
         LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
         LEFT JOIN items i ON p.품목코드 = i.품목코드

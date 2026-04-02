@@ -9,7 +9,7 @@ import { generateFilename } from '@/lib/excel-export';
 import * as XLSX from 'xlsx';
 
 interface StagedDiff {
-  type: 'new' | 'modified' | 'unchanged';
+  type: 'new' | 'modified' | 'unchanged' | 'deleted';
   data: Record<string, any>;
   originalData?: Record<string, any>;
   changes?: string[];
@@ -46,7 +46,7 @@ const baselineTables = [
     icon: Users,
     description: '사원 카테고리 - B2B/B2C팀, 사업소 배정',
     rowCount: '~47',
-    keyColumns: ['담당자', 'b2b팀', 'b2b사업소', 'b2c_팀', '전체사업소'],
+    keyColumns: ['사원코드', '담당자', 'b2b팀', 'b2b사업소', 'b2c_팀', '전체사업소'],
   },
   {
     id: 'warehouses',
@@ -153,8 +153,9 @@ export default function DataManagementPage() {
       // Calculate differences
       const diffs: StagedDiff[] = [];
       const pk = activeTableInfo?.keyColumns[0] || Object.keys(tableData[0] || {})[0];
-      
+
       const currentDataMap = new Map(tableData.map(r => [String(r[pk]), r]));
+      const uploadedDataMap = new Map(uploadedRows.map(r => [String(r[pk]), r]));
 
       uploadedRows.forEach(uRow => {
         const uPkValue = String(uRow[pk]);
@@ -178,6 +179,14 @@ export default function DataManagementPage() {
         }
       });
 
+      // Find rows in current table that are not in uploaded file (deleted)
+      tableData.forEach(cRow => {
+        const cPkValue = String(cRow[pk]);
+        if (!uploadedDataMap.has(cPkValue)) {
+          diffs.push({ type: 'deleted' as any, data: cRow });
+        }
+      });
+
       setStagedDiffs(diffs);
     }
   };
@@ -189,7 +198,11 @@ export default function DataManagementPage() {
       .filter(d => d.type === 'new' || d.type === 'modified')
       .map(d => d.data);
 
-    if (rowsToSave.length === 0) {
+    const rowsToDelete = stagedDiffs
+      .filter(d => d.type === 'deleted')
+      .map(d => d.data);
+
+    if (rowsToSave.length === 0 && rowsToDelete.length === 0) {
       setMessage({ type: 'error', text: '저장할 변경 사항이 없습니다.' });
       return;
     }
@@ -197,20 +210,56 @@ export default function DataManagementPage() {
     setIsSaving(true);
     setMessage(null);
     try {
-      const response = await apiFetch('/api/dashboard/data-management', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tableName: activeTable, rows: rowsToSave }),
-      });
-      const result = await response.json();
-      
-      if (result.success) {
-        setMessage({ type: 'success', text: `${rowsToSave.length}개의 데이터가 성공적으로 반영되었습니다.` });
-        setStagedDiffs(null);
-        fetchTableData(); // Refresh data
-      } else {
-        setMessage({ type: 'error', text: '저장 중 오류가 발생했습니다.' });
+      // Save new/modified rows if any
+      if (rowsToSave.length > 0) {
+        const response = await apiFetch('/api/dashboard/data-management', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tableName: activeTable, rows: rowsToSave }),
+        });
+        const result = await response.json();
+
+        if (!result.success) {
+          setMessage({ type: 'error', text: '저장 중 오류가 발생했습니다.' });
+          setIsSaving(false);
+          setTimeout(() => setMessage(null), 3000);
+          return;
+        }
       }
+
+      // Delete removed rows if any
+      if (rowsToDelete.length > 0) {
+        const pk = activeTableInfo?.keyColumns[0] || Object.keys(tableData[0] || {})[0];
+        const deleteKey = activeTable === 'employee_category' && pk === '사원코드' ? '담당자' : pk;
+
+        // Build deletion filters for each row using the primary key
+        for (const row of rowsToDelete) {
+          const pkValue = row[deleteKey];
+          if (pkValue !== undefined && pkValue !== null) {
+            const deleteResponse = await apiFetch('/api/dashboard/data-management', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                tableName: activeTable,
+                deletionFilter: { filters: { [deleteKey]: String(pkValue) } }
+              }),
+            });
+            const deleteResult = await deleteResponse.json();
+
+            if (!deleteResult.success) {
+              setMessage({ type: 'error', text: '삭제 중 오류가 발생했습니다.' });
+              setIsSaving(false);
+              setTimeout(() => setMessage(null), 3000);
+              return;
+            }
+          }
+        }
+      }
+
+      const totalChanges = rowsToSave.length + rowsToDelete.length;
+      setMessage({ type: 'success', text: `${totalChanges}개의 데이터가 성공적으로 반영되었습니다.` });
+      setStagedDiffs(null);
+      fetchTableData(); // Refresh data
     } catch (error) {
       setMessage({ type: 'error', text: '저장 중 오류가 발생했습니다.' });
     } finally {
@@ -220,7 +269,7 @@ export default function DataManagementPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0 w-full max-w-full">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -310,7 +359,7 @@ export default function DataManagementPage() {
 
       {/* Active Table Details */}
       {activeTableInfo && (
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm w-full min-w-0 max-w-full">
           <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/50">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
@@ -353,7 +402,7 @@ export default function DataManagementPage() {
           </div>
 
           {/* Table Content */}
-          <div className="overflow-x-auto min-h-[400px]">
+          <div className="overflow-x-auto min-h-[400px] w-full max-w-full">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-24 gap-3 text-zinc-400">
                 <Loader2 className="w-8 h-8 animate-spin" />
@@ -366,8 +415,9 @@ export default function DataManagementPage() {
                     <Info className="w-4 h-4" />
                     <span className="text-sm font-bold">변경 사항 확인</span>
                     <span className="text-xs ml-2">
-                      신규: {stagedDiffs.filter(d => d.type === 'new').length} | 
-                      수정: {stagedDiffs.filter(d => d.type === 'modified').length} | 
+                      신규: {stagedDiffs.filter(d => d.type === 'new').length} |
+                      수정: {stagedDiffs.filter(d => d.type === 'modified').length} |
+                      삭제: {stagedDiffs.filter(d => d.type === 'deleted').length} |
                       동일: {stagedDiffs.filter(d => d.type === 'unchanged').length}
                     </span>
                   </div>
@@ -381,7 +431,7 @@ export default function DataManagementPage() {
                     </button>
                     <button
                       onClick={saveStagedData}
-                      disabled={isSaving || stagedDiffs.filter(d => d.type === 'new' || d.type === 'modified').length === 0}
+                      disabled={isSaving || (stagedDiffs.filter(d => d.type === 'new' || d.type === 'modified' || d.type === 'deleted').length === 0)}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
                     >
                       {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
@@ -405,12 +455,14 @@ export default function DataManagementPage() {
                       <tr key={idx} className={`
                         ${diff.type === 'new' ? 'bg-green-50/50 dark:bg-green-900/10' : ''}
                         ${diff.type === 'modified' ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}
+                        ${diff.type === 'deleted' ? 'bg-red-50/50 dark:bg-red-900/10 opacity-75' : ''}
                         ${diff.type === 'unchanged' ? 'opacity-60' : ''}
                         hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors
                       `}>
                         <td className="px-4 py-2.5 font-bold">
                           {diff.type === 'new' && <span className="text-green-600 dark:text-green-400">신규</span>}
                           {diff.type === 'modified' && <span className="text-blue-600 dark:text-blue-400">수정</span>}
+                          {diff.type === 'deleted' && <span className="text-red-600 dark:text-red-400">삭제</span>}
                           {diff.type === 'unchanged' && <span className="text-zinc-400">-</span>}
                         </td>
                         {Object.entries(diff.data).map(([key, val], i) => {

@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       { name: '중량', type: 'REAL' },
       { name: '단가', type: 'REAL' },
       { name: '공급가액', type: 'REAL' },
-      { name: '합_계', type: 'REAL' },
+      { name: '합계', type: 'REAL' },
       { name: '적요', type: 'TEXT' },
       { name: '적요1', type: 'TEXT' },
       { name: '적요2', type: 'TEXT' },
@@ -87,10 +87,10 @@ export async function POST(request: NextRequest) {
     const seobuCount = await executeSQL('SELECT COUNT(*) as count FROM west_division_purchases');
 
     const dongbuTotal = await executeSQL(
-      'SELECT SUM(중량) as total_weight, SUM(합_계) as total_amount FROM east_division_purchases'
+      'SELECT SUM(중량) as total_weight, SUM(합계) as total_amount FROM east_division_purchases'
     );
     const seobuTotal = await executeSQL(
-      'SELECT SUM(중량) as total_weight, SUM(합_계) as total_amount FROM west_division_purchases'
+      'SELECT SUM(중량) as total_weight, SUM(합계) as total_amount FROM west_division_purchases'
     );
 
     const dongbuDateRange = await executeSQL(

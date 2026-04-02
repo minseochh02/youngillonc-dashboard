@@ -23,7 +23,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@egdesk/next-api-plugin": "file:../Taesung/EGDesk-scratch/egdesk-scratch/packages/next-api-plugin",
+    "@egdesk/next-api-plugin": "^1.2.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/node-cron": "^3.0.11",

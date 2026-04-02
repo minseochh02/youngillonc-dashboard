@@ -34,11 +34,11 @@ export async function GET(request: Request) {
         FROM purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
         UNION ALL
-        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합_계 as 합계, p.창고명 as 창고코드, i.품목그룹1코드
+        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합계 as 합계, p.창고코드, i.품목그룹1코드
         FROM east_division_purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
         UNION ALL
-        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합_계 as 합계, p.창고명 as 창고코드, i.품목그룹1코드
+        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합계 as 합계, p.창고코드, i.품목그룹1코드
         FROM west_division_purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
       )

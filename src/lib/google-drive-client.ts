@@ -32,8 +32,7 @@ export function createDriveClient(): drive_v3.Drive {
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: [
-      'https://www.googleapis.com/auth/drive.readonly',
-      'https://www.googleapis.com/auth/drive.metadata.readonly'
+      'https://www.googleapis.com/auth/drive'
     ]
   });
 
@@ -212,5 +211,23 @@ export async function listChanges(
     };
   } catch (error: any) {
     throw new Error(`Failed to list changes: ${error.message}`);
+  }
+}
+
+/**
+ * Delete a file from Google Drive
+ *
+ * @param drive - Authenticated Drive client
+ * @param fileId - Google Drive file ID to delete
+ */
+export async function deleteFileFromDrive(
+  drive: drive_v3.Drive,
+  fileId: string
+): Promise<void> {
+  try {
+    await drive.files.delete({ fileId });
+    console.log(`🗑️  Deleted from Drive: ${fileId}`);
+  } catch (error: any) {
+    throw new Error(`Failed to delete file ${fileId}: ${error.message}`);
   }
 }

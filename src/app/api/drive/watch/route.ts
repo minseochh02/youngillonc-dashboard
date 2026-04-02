@@ -12,7 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { executeSQL } from '../../../../../egdesk-helpers';
+import { executeSQL, updateRows } from '../../../../../egdesk-helpers';
 import { createDriveClient } from '../../../../lib/google-drive-client';
 import { getSyncState } from '../../../../lib/drive-webhook-processor';
 import crypto from 'crypto';
@@ -79,14 +79,16 @@ export async function POST(req: NextRequest) {
     console.log(`   Expires: ${expirationIso}`);
 
     // Update database with channel info
-    await executeSQL(`
-      UPDATE drive_sync_state
-      SET channel_id = '${channelId.replace(/'/g, "''")}',
-          channel_resource_id = '${resourceId.replace(/'/g, "''")}',
-          channel_expiration = '${expirationIso}',
-          last_updated = '${new Date().toISOString()}'
-      WHERE id = 1
-    `);
+    await updateRows(
+      'drive_sync_state',
+      {
+        channel_id: channelId,
+        channel_resource_id: resourceId,
+        channel_expiration: expirationIso,
+        last_updated: new Date().toISOString()
+      },
+      { filters: { id: '1' } }
+    );
 
     return NextResponse.json({
       status: 'watching',

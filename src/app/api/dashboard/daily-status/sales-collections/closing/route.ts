@@ -27,8 +27,8 @@ export async function GET(request: Request) {
 
     const getPurchBranchFilter = () => {
       if (division === '전체') return "1=1";
-      if (division === '창원') return "창고명 LIKE '%창원%'";
-      return `창고명 LIKE '%${division}%'`;
+      if (division === '창원') return "(창고코드 LIKE '%창원%' OR EXISTS (SELECT 1 FROM warehouses w2 WHERE w2.창고코드 = 창고코드 AND w2.창고명 LIKE '%창원%'))";
+      return `(창고코드 LIKE '%${division}%' OR EXISTS (SELECT 1 FROM warehouses w2 WHERE w2.창고코드 = 창고코드 AND w2.창고명 LIKE '%${division}%'))`;
     };
 
     const getDepBranchFilter = (alias: string = '', isLedger: boolean = false) => {
@@ -58,9 +58,9 @@ export async function GET(request: Request) {
       (
         SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 as 합계, 창고코드 FROM purchases
         UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 as 합계, 창고명 as 창고코드 FROM east_division_purchases
+        SELECT 일자, 거래처코드, 품목코드, 중량, 합계, 창고코드 FROM east_division_purchases
         UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 as 합계, 창고명 as 창고코드 FROM west_division_purchases
+        SELECT 일자, 거래처코드, 품목코드, 중량, 합계, 창고코드 FROM west_division_purchases
       )
     `;
 

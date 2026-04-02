@@ -9,11 +9,13 @@ interface StatusRowData {
   mobileWeight: number;
   flagshipAmount: number;
   flagshipWeight: number;
+  editedAmountImpact: number;
+  lateEntryCount: number;
   isTotal?: boolean;
 }
 
 type SortDirection = 'asc' | 'desc' | null;
-type SortColumn = 'branch' | 'amount' | 'weight' | 'mobileAmount' | 'mobileWeight' | 'flagshipAmount' | 'flagshipWeight';
+type SortColumn = 'branch' | 'amount' | 'weight' | 'mobileAmount' | 'mobileWeight' | 'flagshipAmount' | 'flagshipWeight' | 'editedAmountImpact' | 'lateEntryCount';
 
 interface SortState {
   column: SortColumn | null;
@@ -61,6 +63,8 @@ export default function StatusTable({
       mobileWeight: Number(d[mobileWeightKey]) || 0,
       flagshipAmount: Number(d[flagshipAmountKey]) || 0,
       flagshipWeight: Number(d[flagshipWeightKey]) || 0,
+      editedAmountImpact: Number(d.editedAmountImpact) || 0,
+      lateEntryCount: Number(d.lateEntryCount) || 0,
       isTotal: d.isTotal
     }));
   }, [data, amountKey, weightKey, mobileAmountKey, mobileWeightKey, flagshipAmountKey, flagshipWeightKey]);
@@ -130,11 +134,17 @@ export default function StatusTable({
                 <th onClick={() => handleSort('flagshipWeight')} className="cursor-pointer px-4 py-4 border-b border-zinc-200 dark:border-zinc-800 font-semibold text-red-600">
                   <div className="flex items-center justify-center gap-1">플래그십량 (L) <SortIcon col="flagshipWeight" /></div>
                 </th>
+                <th onClick={() => handleSort('lateEntryCount')} className="cursor-pointer px-4 py-4 border-l border-b border-zinc-200 dark:border-zinc-800 font-semibold text-violet-700 dark:text-violet-300">
+                  <div className="flex items-center justify-center gap-1">후행입력건 <SortIcon col="lateEntryCount" /></div>
+                </th>
+                <th onClick={() => handleSort('editedAmountImpact')} className="cursor-pointer px-4 py-4 border-b border-zinc-200 dark:border-zinc-800 font-semibold text-violet-700 dark:text-violet-300">
+                  <div className="flex items-center justify-center gap-1">영향금액 <SortIcon col="editedAmountImpact" /></div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {displayData.map((row, idx) => (
-                <tr key={idx} className={`${row.isTotal ? `${bgColor} font-bold` : 'hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40'}`}>
+                <tr key={idx} className={`${row.isTotal ? `${bgColor} font-bold` : row.lateEntryCount > 0 ? 'bg-violet-50/40 dark:bg-violet-900/10 hover:bg-violet-50/70 dark:hover:bg-violet-900/20' : 'hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40'}`}>
                   <td className="sticky left-0 z-10 px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 bg-inherit font-bold text-left">{row.branch}</td>
                   <td className={`px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums ${accentColor}`}>{formatNumber(row.amount)}</td>
                   <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">{formatNumber(row.weight)}</td>
@@ -142,6 +152,8 @@ export default function StatusTable({
                   <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums">{formatNumber(row.mobileWeight)}</td>
                   <td className="px-4 py-4 border-r border-zinc-200 dark:border-zinc-800 text-right tabular-nums text-red-600">{formatNumber(row.flagshipAmount)}</td>
                   <td className="px-4 py-4 text-right tabular-nums text-red-600">{formatNumber(row.flagshipWeight)}</td>
+                  <td className="px-4 py-4 border-l border-zinc-200 dark:border-zinc-800 text-right tabular-nums text-violet-700 dark:text-violet-300 font-semibold">{row.lateEntryCount.toLocaleString()}</td>
+                  <td className="px-4 py-4 text-right tabular-nums text-violet-700 dark:text-violet-300 font-semibold">{formatNumber(row.editedAmountImpact)}</td>
                 </tr>
               ))}
             </tbody>

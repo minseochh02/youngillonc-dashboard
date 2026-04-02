@@ -10,8 +10,15 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const includeVat = searchParams.get('includeVat') === 'true';
+    const editedOnly = searchParams.get('editedOnly') === 'true';
 
     const divisor = includeVat ? '1.0' : '1.1';
+    const salesEditedExpr = `COALESCE(NULLIF(substr(COALESCE(s.최종수정일시, ''), 1, 10), ''), '')`;
+    const purchaseEditedExpr = `COALESCE(NULLIF(substr(COALESCE(p.최종수정일시, ''), 1, 10), ''), '')`;
+    const salesEditedCondition = `${salesEditedExpr} != '' AND ${salesEditedExpr} > s.일자`;
+    const purchaseEditedCondition = `${purchaseEditedExpr} != '' AND ${purchaseEditedExpr} > p.일자`;
+    const editedOnlySalesWhere = editedOnly ? ` AND ${salesEditedCondition}` : '';
+    const editedOnlyPurchaseWhere = editedOnly ? ` AND ${purchaseEditedCondition}` : '';
     const officeMapping = `
       CASE 
         WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%MB%' THEN 'MB'
@@ -38,7 +45,9 @@ export async function GET(request: Request) {
       SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as mobileSalesAmount,
       SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as mobileSalesWeight,
       SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as flagshipSalesAmount,
-      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipSalesWeight
+      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipSalesWeight,
+      SUM(CASE WHEN ${salesEditedCondition} THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as editedAmountImpact,
+      COUNT(CASE WHEN ${salesEditedCondition} THEN 1 ELSE NULL END) as lateEntryCount
     `;
 
     const purchaseMetrics = `
@@ -47,7 +56,9 @@ export async function GET(request: Request) {
       SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as mobilePurchaseAmount,
       SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(p.중량, ',', '') AS NUMERIC) ELSE 0 END) as mobilePurchaseWeight,
       SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as flagshipPurchaseAmount,
-      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(p.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipPurchaseWeight
+      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(p.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipPurchaseWeight,
+      SUM(CASE WHEN ${purchaseEditedCondition} THEN CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as editedAmountImpact,
+      COUNT(CASE WHEN ${purchaseEditedCondition} THEN 1 ELSE NULL END) as lateEntryCount
     `;
 
     // 1. Sales by Office
@@ -57,7 +68,7 @@ export async function GET(request: Request) {
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c1 ON s.거래처코드 = c1.거래처코드
       LEFT JOIN clients c2 ON (s.실납업체 IS NOT NULL AND s.실납업체 != '' AND s.실납업체 = c2.거래처코드)
-      WHERE s.일자 = '${date}'
+      WHERE s.일자 = '${date}'${editedOnlySalesWhere}
       GROUP BY 1
     `;
 
@@ -67,7 +78,7 @@ export async function GET(request: Request) {
       FROM sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
-      WHERE s.일자 = '${date}'
+      WHERE s.일자 = '${date}'${editedOnlySalesWhere}
       GROUP BY 1
     `;
 
@@ -95,7 +106,7 @@ export async function GET(request: Request) {
       FROM purchases p
       LEFT JOIN items i ON p.품목코드 = i.품목코드
       LEFT JOIN clients c1 ON p.거래처코드 = c1.거래처코드
-      WHERE p.일자 = '${date}'
+      WHERE p.일자 = '${date}'${editedOnlyPurchaseWhere}
       GROUP BY 1
     `;
 
@@ -105,7 +116,7 @@ export async function GET(request: Request) {
       FROM purchases p
       LEFT JOIN items i ON p.품목코드 = i.품목코드
       LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
-      WHERE p.일자 = '${date}'
+      WHERE p.일자 = '${date}'${editedOnlyPurchaseWhere}
       GROUP BY 1
     `;
 
@@ -122,7 +133,8 @@ export async function GET(request: Request) {
       salesByWarehouse: salesWarehouse?.rows || [],
       purchaseData: purchaseWarehouse?.rows || [],
       purchaseByOffice: purchaseOffice?.rows || [],
-      date
+      date,
+      editedOnly
     });
   } catch (error: any) {
     console.error('API Error:', error);

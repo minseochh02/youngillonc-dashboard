@@ -1,31 +1,93 @@
-# Google Drive Webhook System - Setup & Usage Guide
+# Google Drive Monitoring System - Setup & Usage Guide
 
 ## Overview
 
-This system monitors Google Drive folders for file changes using webhooks, automatically downloads files, and logs all events to a SQLite database.
+This system monitors Google Drive folders for file changes, automatically downloads files, and logs all events to a SQLite database.
+
+**Two Modes Available:**
+
+### 🔔 Webhook Mode (Real-time)
+- Real-time notifications from Google Drive
+- Requires public URL (ngrok/tunnel)
+- More efficient API usage
+- **Best for:** Production, real-time requirements
+
+### 📊 Polling Mode (No Tunnel Required) ⭐ RECOMMENDED FOR LOCAL DEV
+- Checks for changes every 30-60 seconds
+- No tunnel/ngrok needed
+- Simpler setup
+- **Best for:** Local development, simpler deployments
 
 **Key Features:**
-- Real-time file change detection (uploads, modifications, deletions)
+- File change detection (uploads, modifications, deletions)
 - Automatic file downloads for supported formats
 - SQLite database logging of all events
-- Auto-renewal of watch channels (7-day expiration)
 - REST API for status monitoring and control
+
+---
+
+## Which Mode Should I Use?
+
+| Scenario                    | Recommended Mode      |
+|-----------------------------|-----------------------|
+| Local development           | 📊 **Polling Mode**   |
+| Testing/prototyping         | 📊 **Polling Mode**   |
+| Simple deployment           | 📊 **Polling Mode**   |
+| Production (real-time)      | 🔔 **Webhook Mode**   |
+| Production (non-critical)   | 📊 **Polling Mode**   |
+
+**tl;dr:** Use **Polling Mode** unless you need real-time notifications (< 30 seconds).
+
+---
+
+## Quick Start (Polling Mode - No Tunnel) ⭐
+
+**Fastest way to get started:**
+
+```bash
+# 1. Start dev server
+npm run dev
+
+# 2. Create tables
+curl -X POST http://localhost:3000/api/drive/init-tables
+
+# 3. Configure .env.local
+GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+DRIVE_TARGET_FOLDER_IDS=folder_id_1,folder_id_2
+
+# 4. Initialize
+curl http://localhost:3000/api/drive/init
+
+# 5. Start polling
+npx tsx scripts/poll-drive-changes.ts
+```
+
+See [DRIVE_POLLING_SETUP.md](./DRIVE_POLLING_SETUP.md) or [DRIVE_QUICK_START.md](./DRIVE_QUICK_START.md) for detailed setup.
 
 ---
 
 ## Architecture
 
+### Webhook Mode:
 ```
 Google Drive → Change Notification → Webhook Endpoint → Process Changes → Download Files → Log to Database
                                           ↓
                                     Update Page Token
 ```
 
+### Polling Mode:
+```
+Polling Script → Check for Changes → Process Changes → Download Files → Log to Database
+      ↓
+Update Page Token
+```
+
 **Components:**
 - `drive_sync_state` table: Stores page token and channel info
 - `drive_file_events` table: Logs all detected file changes
-- API Routes: `/api/drive/init`, `/api/drive/watch`, `/api/drive/webhook`, `/api/drive/stop`, `/api/drive/status`
-- Cron Job: Auto-renews watch channel before expiration
+- API Routes: `/api/drive/init`, `/api/drive/watch`, `/api/drive/webhook`, `/api/drive/stop`, `/api/drive/status`, `/api/drive/poll`
+- Polling Script: `scripts/poll-drive-changes.ts`
+- Cron Job (webhook mode): Auto-renews watch channel before expiration
 
 ---
 
@@ -67,11 +129,13 @@ Google Drive → Change Notification → Webhook Endpoint → Process Changes �
 4. Grant "Viewer" or "Editor" permissions
 5. Copy the folder ID from the URL (e.g., `https://drive.google.com/drive/folders/[FOLDER_ID]`)
 
-### 3. Setup Tunnel
+### 3. Setup Tunnel (Webhook Mode Only)
 
-Since Google needs to send webhooks to your local server, you need a public URL:
+**Skip this step if using Polling Mode!**
 
-**Option A: ngrok (Recommended for development)**
+For webhook mode, Google needs to send notifications to your local server, so you need a public URL:
+
+**Option A: ngrok**
 ```bash
 # Install ngrok
 brew install ngrok  # macOS
@@ -83,9 +147,15 @@ ngrok http 3000
 # Copy the HTTPS URL (e.g., https://abc123.ngrok.io)
 ```
 
-**Option B: Cloudflare Tunnel**
+**Option B: Cloudflare Tunnel (Lightweight)**
 ```bash
-cloudflared tunnel --url http://localhost:3000
+# No installation needed
+npx cloudflared tunnel --url http://localhost:3000
+```
+
+**Option C: Skip Tunnel - Use Polling Mode Instead**
+```bash
+# See DRIVE_POLLING_SETUP.md for polling setup (no tunnel required)
 ```
 
 ---
@@ -103,6 +173,10 @@ npm install -D @types/node-cron
 ### Step 2: Initialize Database Tables
 
 ```bash
+# Via API (recommended - works while dev server is running)
+curl -X POST http://localhost:3000/api/drive/init-tables
+
+# Or via script (requires stopping dev server first)
 npx tsx scripts/init-drive-tables.ts
 ```
 
@@ -113,20 +187,26 @@ This creates:
 
 ### Step 3: Configure Environment Variables
 
-Add to `.env.local` (see `.env.example` for reference):
+Add to `.env.local`:
 
+**For Polling Mode (No Tunnel):**
 ```bash
 # Service Account JSON (entire JSON as single-line string)
 GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
-
-# Your tunnel URL
-DRIVE_WEBHOOK_BASE_URL=https://your-tunnel-url.ngrok.io
 
 # Folder IDs to monitor (comma-separated)
 DRIVE_TARGET_FOLDER_IDS=folder_id_1,folder_id_2
 
 # Optional: Download path
 DRIVE_DOWNLOAD_PATH=./drive-downloads
+```
+
+**For Webhook Mode (Requires Tunnel):**
+```bash
+# All above variables, PLUS:
+
+# Your tunnel URL
+DRIVE_WEBHOOK_BASE_URL=https://your-tunnel-url.ngrok.io
 ```
 
 **Getting the Service Account JSON:**
@@ -142,85 +222,77 @@ cat /path/to/service-account.json | jq -c '.' | sed 's/"/\\"/g'
 npm run dev
 ```
 
-Make sure your tunnel is forwarding to `localhost:3000`.
-
-### Step 5: Run Setup Script
+### Step 5: Initialize Sync System
 
 ```bash
-npx tsx scripts/setup-drive-watch.ts
+# Initialize page token
+curl http://localhost:3000/api/drive/init
 ```
 
-This will:
-1. Verify environment variables
-2. Check database tables
-3. Initialize page token
-4. Register watch channel with Google
-5. Verify webhook connectivity
+### Step 6a: Start Polling (No Tunnel) ⭐
+
+```bash
+# Poll manually once
+curl -X POST http://localhost:3000/api/drive/poll
+
+# Or run continuous polling daemon
+npx tsx scripts/poll-drive-changes.ts
+```
+
+### Step 6b: Register Webhook (Requires Tunnel)
+
+```bash
+# Make sure tunnel is running first
+npx tsx scripts/setup-drive-watch.ts
+
+# Or manually
+curl -X POST http://localhost:3000/api/drive/watch
+```
 
 ---
 
 ## Usage
 
-### Check Status
+### Polling Mode Usage
 
+**Manual Poll:**
 ```bash
-curl http://localhost:3000/api/drive/status | jq
+curl -X POST http://localhost:3000/api/drive/poll
 ```
 
-Or via tunnel:
+**Continuous Polling:**
 ```bash
-curl https://your-tunnel-url.ngrok.io/api/drive/status | jq
+# Run polling daemon (checks every 30 seconds)
+npx tsx scripts/poll-drive-changes.ts
+
+# Or run in background
+npx tsx scripts/poll-drive-changes.ts &
 ```
 
-**Response:**
-```json
-{
-  "status": "initialized",
-  "sync": {
-    "initialized": true,
-    "targetFolders": 2
-  },
-  "channel": {
-    "status": "active",
-    "channelId": "drive-watch-abc123",
-    "expiration": "2024-03-26T12:00:00.000Z",
-    "expiresIn": "6d 23h"
-  },
-  "events": {
-    "total": 15,
-    "last24Hours": 3,
-    "downloaded": 10
-  }
-}
+**Adjust Poll Interval:**
+Edit `scripts/poll-drive-changes.ts`:
+```typescript
+const POLL_INTERVAL_SECONDS = 30; // Change to 60, 120, etc.
 ```
 
-### View Logged Events
+### Webhook Mode Usage
 
-Query the database:
-```bash
-sqlite3 user_database.db "SELECT * FROM drive_file_events ORDER BY detected_at DESC LIMIT 10"
-```
-
-Or use a script:
-```bash
-npx tsx -e "import { executeSQL } from './egdesk-helpers'; executeSQL('SELECT * FROM drive_file_events LIMIT 10').then(r => console.log(r.rows))"
-```
-
-### Stop Monitoring
-
-```bash
-curl -X POST http://localhost:3000/api/drive/stop
-```
-
-This stops the watch channel and clears channel info from the database.
-
-### Restart Monitoring
-
+**Register Watch Channel:**
 ```bash
 curl -X POST http://localhost:3000/api/drive/watch
 ```
 
-### Auto-Renewal Daemon (Optional)
+**Stop Monitoring:**
+```bash
+curl -X POST http://localhost:3000/api/drive/stop
+```
+
+**Restart Monitoring:**
+```bash
+curl -X POST http://localhost:3000/api/drive/watch
+```
+
+**Auto-Renewal Daemon (Webhook only):**
 
 Run the cron daemon to automatically renew channels before expiration:
 
@@ -234,9 +306,59 @@ npx tsx scripts/run-drive-cron.ts &
 
 The daemon checks daily at 2 AM and renews if expiring within 24 hours.
 
+### Check Status (Both Modes)
+
+```bash
+curl http://localhost:3000/api/drive/status | jq
+```
+
+**Response:**
+```json
+{
+  "status": "initialized",
+  "sync": {
+    "initialized": true,
+    "targetFolders": 2
+  },
+  "channel": {
+    "status": "active",  // "none" for polling mode
+    "channelId": "drive-watch-abc123",
+    "expiration": "2024-03-26T12:00:00.000Z",
+    "expiresIn": "6d 23h"
+  },
+  "events": {
+    "total": 15,
+    "last24Hours": 3,
+    "downloaded": 10
+  }
+}
+```
+
+### View Logged Events (Both Modes)
+
+Check via status endpoint:
+```bash
+curl http://localhost:3000/api/drive/status | jq '.events'
+```
+
 ---
 
 ## API Reference
+
+### POST /api/drive/init-tables
+
+Create database tables for Drive monitoring.
+
+**Response:**
+```json
+{
+  "status": "success",
+  "tables": {
+    "drive_sync_state": "created",
+    "drive_file_events": "created"
+  }
+}
+```
 
 ### GET /api/drive/init
 
@@ -252,6 +374,21 @@ Initialize sync system with page token.
   "status": "initialized",
   "pageToken": "CAESBAgCIAEaA...",
   "targetFolderIds": ["folder1", "folder2"]
+}
+```
+
+### POST /api/drive/poll
+
+Poll for Drive changes manually (polling mode).
+
+**Response:**
+```json
+{
+  "status": "success",
+  "changesProcessed": 5,
+  "filesLogged": 3,
+  "filesDownloaded": 2,
+  "timestamp": "2024-03-19T10:30:00.000Z"
 }
 ```
 
@@ -357,56 +494,89 @@ Get system status (see "Check Status" section above).
 
 ## Troubleshooting
 
-### Issue: "Sync state not initialized"
+### Common Issues (Both Modes)
 
-**Solution:** Run initialization:
+**Issue: "Sync state not initialized"**
+
+Solution:
 ```bash
 curl http://localhost:3000/api/drive/init
 ```
 
-### Issue: "No active watch channel"
+**Issue: "database is locked"**
 
-**Solution:** Register a channel:
-```bash
-curl -X POST http://localhost:3000/api/drive/watch
-```
+Solution:
+1. Stop dev server
+2. Close EGDesk app if running
+3. Try API endpoint instead: `curl -X POST http://localhost:3000/api/drive/init-tables`
 
-### Issue: Webhook not receiving notifications
+**Issue: No changes detected**
 
-**Checks:**
-1. Tunnel is running and forwarding to localhost:3000
-2. `DRIVE_WEBHOOK_BASE_URL` matches your tunnel URL
-3. Service account has access to folders
-4. Upload a file to test - Google may take 10-60 seconds to send notification
+Checks:
+1. Verify folders are shared with service account email
+2. Check folder IDs are correct in `.env.local`
+3. Upload a test file
+4. For polling: Wait 30 seconds or manually poll: `curl -X POST http://localhost:3000/api/drive/poll`
+5. For webhook: Google may take 10-60 seconds to send notification
 
-**Test webhook:**
-```bash
-curl https://your-tunnel-url.ngrok.io/api/drive/webhook
-```
+**Issue: "Failed to download file"**
 
-### Issue: Channel expired
-
-**Solution:** Channels expire after 7 days. Renew:
-```bash
-curl -X POST http://localhost:3000/api/drive/watch
-```
-
-Or run the cron daemon to auto-renew.
-
-### Issue: "Failed to download file"
-
-**Possible causes:**
+Possible causes:
 - File too large (>100MB default limit)
 - Unsupported file type
 - Permission denied (check service account access)
 
-**Check logs in Next.js console for details.**
+Check logs in Next.js console for details.
 
-### Issue: Database errors
+### Polling Mode Issues
 
-**Solution:** Reinitialize tables:
+**Issue: Polling not detecting changes**
+
+Solution:
+1. Manually trigger poll: `curl -X POST http://localhost:3000/api/drive/poll`
+2. Check response for errors
+3. Verify service account has folder access
+4. Check Next.js console for logs
+
+**Issue: Polling too slow/fast**
+
+Solution: Edit `scripts/poll-drive-changes.ts`:
+```typescript
+const POLL_INTERVAL_SECONDS = 60; // Adjust as needed
+```
+
+### Webhook Mode Issues
+
+**Issue: "No active watch channel"**
+
+Solution: Register a channel:
 ```bash
-npx tsx scripts/init-drive-tables.ts
+curl -X POST http://localhost:3000/api/drive/watch
+```
+
+**Issue: Webhook not receiving notifications**
+
+Checks:
+1. Tunnel is running and forwarding to localhost:3000
+2. `DRIVE_WEBHOOK_BASE_URL` matches your tunnel URL
+3. Service account has access to folders
+4. Upload a file to test - Google may take 10-60 seconds
+
+Test webhook:
+```bash
+curl https://your-tunnel-url.ngrok.io/api/drive/webhook
+```
+
+**Issue: Channel expired**
+
+Solution: Channels expire after 7 days. Renew:
+```bash
+curl -X POST http://localhost:3000/api/drive/watch
+```
+
+Or run the cron daemon to auto-renew:
+```bash
+npx tsx scripts/run-drive-cron.ts &
 ```
 
 ---
@@ -484,32 +654,63 @@ For heavy processing, decouple webhook receipt from processing:
 
 ## Limitations
 
+### Polling Mode
+- Detection delay: 30-60 seconds (configurable)
+- Higher API quota usage (1 request per poll)
+- Google Drive API quota: 20,000 queries / 100 seconds (plenty for polling)
+
+### Webhook Mode
 - Watch channels expire after 7 days (auto-renewable)
-- Google Drive API quota: 20,000 queries / 100 seconds
-- Webhook notifications may take 10-60 seconds
-- Local tunnel required for development (not needed in production)
+- Notification delay: 10-60 seconds
+- Tunnel required for local development
+- Need to manage channel lifecycle
+
+### Both Modes
+- Files > 100MB not downloaded by default (configurable)
+- Google Docs native formats not downloaded (need export API)
+- Service account must have folder access
 
 ---
 
 ## Production Deployment
 
-For production:
+### Polling Mode Production
+
+1. **Deploy Next.js to any platform:**
+   - Vercel, Railway, Fly.io, etc.
+
+2. **Set up polling cron job:**
+   ```bash
+   # Use platform cron (Vercel Cron, etc.)
+   # Or run daemon: npx tsx scripts/poll-drive-changes.ts
+   ```
+
+3. **Adjust poll interval for production:**
+   - Edit `scripts/poll-drive-changes.ts`
+   - Recommended: 60-300 seconds for lower API usage
+
+### Webhook Mode Production
 
 1. **Deploy Next.js to a platform with public URL:**
    - Vercel, Railway, Fly.io, etc.
 
 2. **Update environment variables:**
    - Set `DRIVE_WEBHOOK_BASE_URL` to production URL
+   - No tunnel needed in production
 
-3. **Use persistent database:**
-   - SQLite works for local, consider PostgreSQL for scale
-
-4. **Run cron daemon:**
+3. **Run auto-renewal cron daemon:**
    - Use platform's cron features or separate service
+   - Or manually renew every 6 days
 
-5. **Monitor webhook health:**
+4. **Monitor webhook health:**
    - Set up alerting for channel expiration
    - Log webhook failures
+
+### Both Modes
+
+- **Database:** EGDesk handles SQLite, scales with your data
+- **File storage:** Configure `DRIVE_DOWNLOAD_PATH` appropriately
+- **Monitoring:** Check `/api/drive/status` regularly
 
 ---
 
@@ -530,20 +731,48 @@ src/
 ├── lib/
 │   ├── google-drive-client.ts       # Drive API client
 │   ├── drive-webhook-processor.ts   # Change processing logic
-│   └── drive-cron-setup.ts          # Auto-renewal cron
+│   └── drive-cron-setup.ts          # Auto-renewal cron (webhook mode)
 ├── app/api/drive/
+│   ├── init-tables/route.ts         # Create database tables
 │   ├── init/route.ts                # Initialize system
-│   ├── watch/route.ts               # Register channel
-│   ├── webhook/route.ts             # Handle notifications
-│   ├── stop/route.ts                # Stop channel
-│   └── status/route.ts              # Check status
+│   ├── poll/route.ts                # Manual polling endpoint
+│   ├── watch/route.ts               # Register webhook channel
+│   ├── webhook/route.ts             # Handle webhook notifications
+│   ├── stop/route.ts                # Stop webhook channel
+│   └── status/route.ts              # Check system status
 scripts/
 ├── init-drive-tables.ts             # Create database tables
-├── setup-drive-watch.ts             # Interactive setup
-└── run-drive-cron.ts                # Cron daemon
+├── poll-drive-changes.ts            # Polling daemon (no tunnel)
+├── setup-drive-watch.ts             # Interactive webhook setup
+└── run-drive-cron.ts                # Auto-renewal daemon (webhook)
 ```
 
 ---
 
+## Summary & Recommendations
+
+**For Local Development:**
+- ✅ Use **Polling Mode**
+- ✅ No tunnel setup required
+- ✅ Simple configuration
+- ✅ 30-second delay is acceptable
+
+**For Production (Real-time Critical):**
+- Use **Webhook Mode**
+- More efficient API usage
+- Lower latency (10-60s vs 30-60s)
+- Requires public URL (easy in production)
+
+**For Production (Real-time Not Critical):**
+- Consider **Polling Mode**
+- Simpler deployment
+- No webhook channel management
+- Works on any platform
+
+**Best Practice:**
+Start with Polling Mode for development, switch to Webhooks in production only if you need the lower latency.
+
+---
+
 **Last Updated:** 2024-03-19
-**System Version:** 1.0.0
+**System Version:** 2.0.0 (Added Polling Mode)

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { executeSQL, insertRows, queryTable } from '@/egdesk-helpers';
+import { executeSQL, insertRows, queryTable, deleteRows } from '@/egdesk-helpers';
 import { TABLES } from '../../../../../egdesk.config';
 
 export async function GET(request: Request) {
@@ -18,6 +18,22 @@ export async function GET(request: Request) {
         FROM employees e
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         ORDER BY e.사원_담당_명 ASC
+      `;
+      result = await executeSQL(query);
+    } else if (tableName === 'employee_category') {
+      const query = `
+        SELECT
+          COALESCE(e.사원_담당_코드, ec.담당자) AS 사원코드,
+          ec.담당자,
+          ec.b2b팀,
+          ec.b2b사업소,
+          ec.b2b팀별담당,
+          ec.b2c_팀,
+          ec.b2c사업소,
+          ec.전체사업소
+        FROM employee_category ec
+        LEFT JOIN employees e ON e.사원_담당_명 = ec.담당자
+        ORDER BY ec.담당자 ASC
       `;
       result = await executeSQL(query);
     } else if (tableName === 'clients') {
@@ -69,11 +85,23 @@ export async function POST(request: Request) {
     }
 
     const tableColumns = new Set(tableDef.columns);
+
+    // employee_category updates are keyed by 사원코드 on the UI,
+    // but the actual table stores 담당자. Resolve codes to names here.
+    let employeeCodeToName = new Map<string, string>();
+    if (tableName === 'employee_category') {
+      const employeeRows = await queryTable('employees', { limit: 10000 });
+      for (const row of employeeRows?.rows || []) {
+        const code = String(row?.사원_담당_코드 ?? '').trim();
+        const name = String(row?.사원_담당_명 ?? '').trim();
+        if (code && name) employeeCodeToName.set(code, name);
+      }
+    }
     
     // Some columns like 'id' or 'imported_at' might be handled by the DB
     // but we should keep columns that ARE in the table definition.
     // However, columns like '사업소' (aliased) or joined columns should be removed.
-    const filteredRows = rows.map(row => {
+    const filteredRows = rows.map((row, index) => {
       const newRow: Record<string, any> = {};
       Object.keys(row).forEach(key => {
         // Special case for '사업소' which we aliased in GET but is '거래처그룹1명' in table
@@ -82,19 +110,110 @@ export async function POST(request: Request) {
           targetKey = '거래처그룹1명';
         }
 
+        if (tableName === 'employee_category' && key === '사원코드') {
+          targetKey = '담당자';
+        }
+
         if (tableColumns.has(targetKey)) {
-          newRow[targetKey] = row[key];
+          if (tableName === 'employee_category' && targetKey === '담당자' && key === '사원코드') {
+            const code = String(row[key] ?? '').trim();
+            const mappedName = employeeCodeToName.get(code);
+            const existingName = String(row?.담당자 ?? '').trim();
+            newRow[targetKey] = mappedName || existingName || null;
+          } else {
+            newRow[targetKey] = row[key];
+          }
         }
       });
+
+      if (tableName === 'employee_category' && !String(newRow.담당자 ?? '').trim()) {
+        const code = String(row?.사원코드 ?? '').trim();
+        throw new Error(`employee_category row ${index + 1}: 담당자 매핑 실패 (사원코드: ${code || 'N/A'})`);
+      }
+
       return newRow;
     });
 
     // Insert rows into the table (insertRows handles upsert if unique keys are defined)
     await insertRows(tableName, filteredRows);
-    
+
+    // Keep employees table in sync so employee_category's 사원코드
+    // can be resolved by JOIN on subsequent reads.
+    if (tableName === 'employee_category') {
+      const employeeRowsToUpsert = rows
+        .map((row) => {
+          const code = String(row?.사원코드 ?? '').trim();
+          const name = String(row?.담당자 ?? '').trim();
+          if (!code || !name) return null;
+          return {
+            사원_담당_코드: code,
+            사원_담당_명: name,
+          };
+        })
+        .filter((row): row is { 사원_담당_코드: string; 사원_담당_명: string } => row !== null);
+
+      if (employeeRowsToUpsert.length > 0) {
+        await insertRows('employees', employeeRowsToUpsert);
+      }
+    }
+
     return NextResponse.json({ success: true, count: rows.length });
   } catch (error: any) {
     console.error('Data Management POST Error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json();
+    const { tableName, deletionFilter } = body;
+
+    if (!tableName || !deletionFilter) {
+      return NextResponse.json({ success: false, error: 'Table name and deletion filter are required' }, { status: 400 });
+    }
+
+    let normalizedDeletionFilter = deletionFilter;
+
+    // Accept employee_category deletions by 사원코드 as well.
+    if (
+      tableName === 'employee_category' &&
+      deletionFilter?.filters &&
+      deletionFilter.filters.사원코드 !== undefined
+    ) {
+      const employeeRows = await queryTable('employees', { limit: 10000 });
+      const codeToName = new Map<string, string>();
+      for (const row of employeeRows?.rows || []) {
+        const code = String(row?.사원_담당_코드 ?? '').trim();
+        const name = String(row?.사원_담당_명 ?? '').trim();
+        if (code && name) codeToName.set(code, name);
+      }
+
+      const code = String(deletionFilter.filters.사원코드 ?? '').trim();
+      const mappedName = codeToName.get(code);
+      if (!mappedName) {
+        return NextResponse.json(
+          { success: false, error: `Unknown 사원코드: ${code}` },
+          { status: 400 }
+        );
+      }
+
+      const { 사원코드, ...restFilters } = deletionFilter.filters;
+      normalizedDeletionFilter = {
+        ...deletionFilter,
+        filters: {
+          ...restFilters,
+          담당자: mappedName,
+        },
+      };
+    }
+
+    // Delete rows matching the filter
+    await deleteRows(tableName, normalizedDeletionFilter);
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Data Management DELETE Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
