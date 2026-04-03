@@ -35,12 +35,6 @@ const GOAL_TYPES = [
 
 const CATEGORIES = ['MB', 'AVI + MAR', 'AUTO', 'IL'];
 
-// Helper function to detect special employees (no fleet/lcc breakdown)
-function isSpecialEmployee(employeeName: string): boolean {
-  const specialPatterns = ['사무실 동부', '사무실 서부', '사무실 중부', '남부지사'];
-  return specialPatterns.some(pattern => employeeName.includes(pattern));
-}
-
 export default function GoalSettingTab() {
   const { includeVat } = useVatInclude();
   const [year, setYear] = useState(new Date().getFullYear().toString());
@@ -96,15 +90,7 @@ export default function GoalSettingTab() {
           });
         }
 
-        // Extract B2C targets including fleet/lcc breakdown from goals
-        const b2cTargets = new Set<string>();
-        result.data.goals.forEach((g: Goal) => {
-          if (g.goal_type === 'b2c-auto' && g.year === year) {
-            b2cTargets.add(g.target_name);
-          }
-        });
-
-        const sortedB2CTargets = Array.from(b2cTargets).sort();
+        const sortedB2CTeams = Array.from(b2cTeams).sort();
         const sortedB2BTeams = Array.from(b2bTeams).sort();
         const sortedBranches = Array.from(branches).sort();
 
@@ -112,16 +98,16 @@ export default function GoalSettingTab() {
 
         setTeams({
           'category': allCategoryTargets,
-          'b2c-auto': sortedB2CTargets.length > 0 ? sortedB2CTargets : CATEGORIES,
+          'b2c-auto': sortedB2CTeams,
           'b2b-il': sortedB2BTeams,
         });
 
         // Set default target if not already set or invalid for new type
         if (activeGoalType === 'category' && !allCategoryTargets.includes(activeTarget)) {
           setActiveTarget(allCategoryTargets[0]);
-        } else if (activeGoalType === 'b2c-auto' && sortedB2CTargets.length > 0 && !sortedB2CTargets.includes(activeTarget)) {
-          setActiveTarget(sortedB2CTargets[0]);
-        } else if (activeGoalType === 'b2b-il' && sortedB2BTeams.length > 0 && !sortedB2BTeams.includes(activeTarget)) {
+        } else if (activeGoalType === 'b2c-auto' && sortedB2CTeams.length > 0 && !b2cTeams.has(activeTarget)) {
+          setActiveTarget(sortedB2CTeams[0]);
+        } else if (activeGoalType === 'b2b-il' && sortedB2BTeams.length > 0 && !b2bTeams.has(activeTarget)) {
           setActiveTarget(sortedB2BTeams[0]);
         }
       }
@@ -288,56 +274,30 @@ export default function GoalSettingTab() {
       XLSX.utils.book_append_sheet(wb, ws1, 'B2B사업계획');
 
       // Create B2C사업계획(중량) Sheet
-      const b2cWeightHeaders = ['b2c_팀', '담당자', '구분',
+      const b2cWeightHeaders = ['b2c_팀', '담당자',
                                  '1월', '2월', '3월', '4월', '5월', '6월',
                                  '7월', '8월', '9월', '10월', '11월', '12월'];
 
-      const b2cWeightRows: any[] = [];
-      b2cEmployees.forEach((emp: any) => {
-        const employeeName = emp.담당자 || '';
+      const b2cWeightRows = b2cEmployees.map((emp: any) => {
+        const row = [
+          emp.b2c_팀 || '',  // Column 0: Team
+          emp.담당자 || ''   // Column 1: Employee
+        ];
 
-        if (isSpecialEmployee(employeeName)) {
-          // Special employee: single row with blank 구분
-          const row = [
-            emp.b2c_팀 || '',
-            employeeName,
-            ''  // Blank 구분 for special employees
-          ];
-
-          // Add 12 months of weight goals (columns 3-14)
-          for (let m = 1; m <= 12; m++) {
-            const month = m.toString().padStart(2, '0');
-            const goal = goals[`b2c-auto_${emp.b2c_팀}_${month}`];
-            row.push(goal?.target_weight || 0);
-          }
-
-          b2cWeightRows.push(row);
-        } else {
-          // Regular employee: 2 rows (fleet, lcc)
-          ['fleet', 'lcc'].forEach(category => {
-            const row = [
-              emp.b2c_팀 || '',
-              employeeName,
-              category
-            ];
-
-            // Add 12 months of weight goals (columns 3-14)
-            for (let m = 1; m <= 12; m++) {
-              const month = m.toString().padStart(2, '0');
-              const goalKey = `b2c-auto_${emp.b2c_팀}-${category}_${month}`;
-              const goal = goals[goalKey];
-              row.push(goal?.target_weight || 0);
-            }
-
-            b2cWeightRows.push(row);
-          });
+        // Add 12 months of weight goals (columns 2-13)
+        for (let m = 1; m <= 12; m++) {
+          const month = m.toString().padStart(2, '0');
+          const goal = goals[`b2c-auto_${emp.b2c_팀}_${month}`];
+          row.push(goal?.target_weight || 0);
         }
+
+        return row;
       });
 
       const ws2 = XLSX.utils.aoa_to_sheet([b2cWeightHeaders, ...b2cWeightRows]);
       XLSX.utils.book_append_sheet(wb, ws2, 'B2C사업계획(중량)');
 
-      // Create B2C사업계획(금액) Sheet (no 구분 column - team level only)
+      // Create B2C사업계획(금액) Sheet
       const b2cAmountHeaders = ['b2c_팀', '담당자',
                                  '1월', '2월', '3월', '4월', '5월', '6월',
                                  '7월', '8월', '9월', '10월', '11월', '12월'];
@@ -349,23 +309,10 @@ export default function GoalSettingTab() {
         ];
 
         // Add 12 months of amount goals (columns 2-13)
-        // Amounts are stored at team level (not split by fleet/lcc)
         for (let m = 1; m <= 12; m++) {
           const month = m.toString().padStart(2, '0');
-
-          // Try to find team-level goal first, or sum fleet/lcc if available
-          let amount = 0;
-          const teamGoal = goals[`b2c-auto_${emp.b2c_팀}_${month}`];
-          if (teamGoal) {
-            amount = teamGoal.target_amount;
-          } else {
-            // Sum fleet and lcc amounts if they exist
-            const fleetGoal = goals[`b2c-auto_${emp.b2c_팀}-fleet_${month}`];
-            const lccGoal = goals[`b2c-auto_${emp.b2c_팀}-lcc_${month}`];
-            amount = (fleetGoal?.target_amount || 0) + (lccGoal?.target_amount || 0);
-          }
-
-          row.push(amount);
+          const goal = goals[`b2c-auto_${emp.b2c_팀}_${month}`];
+          row.push(goal?.target_amount || 0);
         }
 
         return row;
@@ -452,35 +399,22 @@ export default function GoalSettingTab() {
       // Skip header row (row 0), process data rows (row 1+)
       for (let i = 1; i < b2cWeightSheet.data.length; i++) {
         const row = b2cWeightSheet.data[i];
-        if (!row || row.length < 15) continue;
+        if (!row || row.length < 14) continue;
 
-        const teamName = row[0];      // Column 0: b2c_팀
-        const employeeName = row[1];  // Column 1: 담당자
-        const category = row[2];      // Column 2: 구분 (fleet, lcc, or blank)
-
+        const employeeName = row[1]; // Column 1: 담당자
         if (!employeeName) continue;
 
-        const empTeam = b2cTeamMap.get(employeeName);
-        if (!empTeam) {
+        const teamName = b2cTeamMap.get(employeeName);
+        if (!teamName) {
           console.warn(`B2C employee not found in employee_category: ${employeeName}`);
           continue;
         }
 
-        // Aggregate monthly weights (columns 3-14)
+        // Aggregate monthly weights (columns 2-13) by team
         for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
           const month = (monthIdx + 1).toString().padStart(2, '0');
-
-          // Create key based on whether category is specified
-          let key: string;
-          if (category && category.trim() !== '') {
-            // Regular employee with fleet/lcc
-            key = `${empTeam}-${category}_${month}`;
-          } else {
-            // Special employee (no category)
-            key = `${empTeam}_${month}`;
-          }
-
-          const value = parseFloat(row[3 + monthIdx]) || 0;
+          const key = `${teamName}_${month}`;
+          const value = parseFloat(row[2 + monthIdx]) || 0;
 
           if (!b2cWeights.has(key)) {
             b2cWeights.set(key, 0);
@@ -536,31 +470,17 @@ export default function GoalSettingTab() {
       }
 
       // Add B2C goals
-      // Handle weights (which may have fleet/lcc breakdown) and amounts (team level only)
       const allB2CKeys = new Set([...b2cWeights.keys(), ...b2cAmounts.keys()]);
       for (const key of allB2CKeys) {
-        const parts = key.split('_');
-        const month = parts[parts.length - 1];
-        const teamWithCategory = parts.slice(0, -1).join('_');
-
-        // For amounts, try to match team-level amount to fleet/lcc goals
-        let amount = b2cAmounts.get(key) || 0;
-        if (amount === 0 && teamWithCategory.includes('-')) {
-          // This is a fleet/lcc goal, try to get team-level amount
-          const baseTeam = teamWithCategory.split('-')[0];
-          const teamKey = `${baseTeam}_${month}`;
-          amount = b2cAmounts.get(teamKey) || 0;
-        }
-
-        const goalKey = `b2c-auto_${teamWithCategory}_${month}`;
-
+        const [teamName, month] = key.split('_');
+        const goalKey = `b2c-auto_${teamName}_${month}`;
         newGoals[goalKey] = {
           year,
           month,
           goal_type: 'b2c-auto',
-          target_name: teamWithCategory,  // e.g., "TeamA-fleet", "TeamA-lcc", or "TeamB"
+          target_name: teamName,
           target_weight: Math.round(b2cWeights.get(key) || 0),
-          target_amount: Math.round(amount)
+          target_amount: Math.round(b2cAmounts.get(key) || 0)
         };
         updateCount++;
       }

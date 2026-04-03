@@ -161,53 +161,30 @@ function parseB2BSheet(data: any[][], year: string): ParsedGoal[] {
 
 /**
  * Parse B2C사업계획(중량) sheet
- * Columns: b2c_팀, 담당자, 구분, 1월...12월
- * Aggregate by team name with category (column[0] + column[2])
- * Returns Map<teamWithCategory, monthlyWeights[]>
- * Key format: "TeamName-fleet", "TeamName-lcc", or "TeamName" (no category for special employees)
+ * Columns: 구분, name, 1월...12월
+ * Aggregate by team name (column[0])
+ * Returns Map<teamName, monthlyWeights[]>
  */
 function parseB2CWeightSheet(data: any[][]): Map<string, number[]> {
   const teamMonthlyWeights = new Map<string, number[]>();
 
-  // Determine starting row: skip header row
-  // If row 0 is header, start from row 1. If there's a title row, row 1 is header, start from row 2
-  let startRow = 1;
-  if (data.length > 1 && data[0] && data[1]) {
-    // Check if row 0 looks like a title (single cell or very different from row 1)
-    if (data[0].length < 3 || (typeof data[0][0] === 'string' && !data[0][2])) {
-      startRow = 2; // Skip title (0) and header (1)
-    }
-  }
-
-  for (let i = startRow; i < data.length; i++) {
+  // Skip title (0) and header (1), start from row 2
+  for (let i = 2; i < data.length; i++) {
     const row = data[i];
-    if (!row || row.length < 15) continue; // Need at least columns 0-14
+    if (!row || row.length < 14) continue; // Need at least columns 0-13
 
-    const teamName = row[0];     // Column 0: b2c_팀
-    const employeeName = row[1]; // Column 1: 담당자 (not used for aggregation)
-    const category = row[2];     // Column 2: 구분 (fleet, lcc, or blank)
-
+    const teamName = row[0]; // 구분 (team name)
     if (!teamName || teamName === '') continue;
 
-    // Create key based on whether category is specified
-    let key: string;
-    if (category && category.trim() !== '') {
-      // Regular employee with fleet/lcc
-      key = `${teamName}-${category}`;
-    } else {
-      // Special employee (no category)
-      key = teamName;
+    if (!teamMonthlyWeights.has(teamName)) {
+      teamMonthlyWeights.set(teamName, new Array(12).fill(0));
     }
 
-    if (!teamMonthlyWeights.has(key)) {
-      teamMonthlyWeights.set(key, new Array(12).fill(0));
-    }
+    const monthlyWeights = teamMonthlyWeights.get(teamName)!;
 
-    const monthlyWeights = teamMonthlyWeights.get(key)!;
-
-    // Columns 3-14 are monthly weights (Jan-Dec)
+    // Columns 2-13 are monthly weights (Jan-Dec)
     for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
-      const value = row[3 + monthIdx];
+      const value = row[2 + monthIdx];
       const numValue = parseNumeric(value);
       monthlyWeights[monthIdx] += numValue;
     }
@@ -253,10 +230,6 @@ function parseB2CAmountSheet(data: any[][]): Map<string, number[]> {
 /**
  * Combine B2C weight and amount data
  * Merge by team name to create b2c-auto goals
- * Team names may include fleet/lcc category suffix (e.g., "TeamA-fleet", "TeamA-lcc")
- * or be plain team names for special employees (e.g., "TeamB")
- * Amounts are stored at team level (no fleet/lcc split), so we match team-level amounts
- * to fleet/lcc weight goals.
  */
 function combineB2CData(
   weights: Map<string, number[]>,
@@ -265,22 +238,12 @@ function combineB2CData(
 ): ParsedGoal[] {
   const goals: ParsedGoal[] = [];
 
-  // Get all unique team names (with category suffixes) from both maps
+  // Get all unique team names from both maps
   const allTeams = new Set([...weights.keys(), ...amounts.keys()]);
 
   for (const teamName of allTeams) {
     const teamWeights = weights.get(teamName) || new Array(12).fill(0);
-
-    // For amounts, try to match team-level amount to fleet/lcc goals
-    let teamAmounts = amounts.get(teamName);
-    if (!teamAmounts && teamName.includes('-')) {
-      // This is a fleet/lcc goal, try to get team-level amount
-      const baseTeam = teamName.split('-')[0];
-      teamAmounts = amounts.get(baseTeam);
-    }
-    if (!teamAmounts) {
-      teamAmounts = new Array(12).fill(0);
-    }
+    const teamAmounts = amounts.get(teamName) || new Array(12).fill(0);
 
     for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
       const monthStr = String(monthIdx + 1).padStart(2, '0');
@@ -288,7 +251,7 @@ function combineB2CData(
         year,
         month: monthStr,
         goal_type: 'b2c-auto',
-        target_name: teamName, // e.g., "TeamA-fleet", "TeamA-lcc", or "TeamB"
+        target_name: teamName,
         target_weight: Math.round(teamWeights[monthIdx]),
         target_amount: Math.round(teamAmounts[monthIdx])
       });
