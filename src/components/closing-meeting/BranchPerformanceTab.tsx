@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
@@ -46,14 +46,16 @@ interface BranchPerformanceData {
 
 interface BranchPerformanceProps {
   selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
 }
 
-export default function BranchPerformanceTab({ selectedMonth }: BranchPerformanceProps) {
+export default function BranchPerformanceTab({ selectedMonth, onMonthsAvailable }: BranchPerformanceProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<BranchPerformanceData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedBranches, setExpandedBranches] = useState<Set<string>>(new Set());
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+  const hasReportedMonths = useRef(false);
 
   useEffect(() => {
     fetchData();
@@ -70,6 +72,11 @@ export default function BranchPerformanceTab({ selectedMonth }: BranchPerformanc
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        // Report available months to parent only once
+        if (onMonthsAvailable && result.data.availableMonths && !hasReportedMonths.current) {
+          hasReportedMonths.current = true;
+          onMonthsAvailable(result.data.availableMonths, result.data.currentMonth);
+        }
         // Expand all branches by default
         if (result.data.branches) {
           setExpandedBranches(new Set(result.data.branches.map((b: BranchData) => b.branch)));

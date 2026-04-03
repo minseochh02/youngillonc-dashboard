@@ -124,6 +124,24 @@ Many numeric columns stored as TEXT with commas: `"1,234,567"`
 
 ---
 
+## 7. Sales terminology: 판매량 · 매출 (VAT)
+
+### 판매량 = 중량
+- In business language, reports, and dashboards, **판매량** means **중량** (weight, typically liters), **not** piece count.
+- For aggregates labeled 판매량 / 판매량(L) / 용량, use the **`중량`** column (e.g. `SUM` of `sales.중량`, `purchases.중량`), not **`수량`**.
+
+### 매출 = 공급가 (부가세 제외); 환산 규칙
+- For analysis and cross-report consistency, **매출** is treated as **공급가 — excluding 10% VAT**.
+- When the source amount is **VAT-inclusive** (공급가+부가세), convert to 공급가 매출 by **dividing by 1.1** and **rounding** to a whole currency unit (원):
+
+```sql
+ROUND(CAST(REPLACE(합계, ',', '') AS NUMERIC) / 1.1)
+```
+
+Use the same pattern for any other VAT-inclusive sales total column after comma cleaning. **Do not** divide if the column is already 공급가-only (e.g. some exports use separate `공급가액`).
+
+---
+
 ## 8. Ledger (원장) - Funds Status
 
 ### Key Accounts (계정코드)
@@ -157,7 +175,9 @@ Beginning Inventory = Ending Inventory - Purchases + Sales - Net Transfers
 | Product categories | `items` table | `품목코드` | Exact match |
 | Daily transactions | All tables | `일자` | 'YYYY-MM-DD' |
 | Ledger entries | `ledger` | `일자` | 'YYYY-MM-DD' |
+| 판매량 (volume) | `sales`, `purchases`, division sales | **`중량`** | Sum `중량`, not `수량` |
+| 매출 (ex-VAT) | `sales` etc. | `합계` (if VAT-inclusive) | `ROUND(clean/1.1)` → 공급가 |
 
 ---
 
-**Last Updated**: 2026-03-24 (Migrated from deposits to unified ledger)
+**Last Updated**: 2026-04-03 (§7: 판매량=중량, 매출 공급가 환산)

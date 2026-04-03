@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
@@ -12,6 +12,7 @@ interface SalesDataRow {
   team: string;
   employee_name: string;
   product_group: 'PVL' | 'CVL' | 'OTHERS';
+  year: string;
   year_month: string;
   total_amount: number;
 }
@@ -19,6 +20,7 @@ interface SalesDataRow {
 interface TeamSalesData {
   salesData: SalesDataRow[];
   currentYear: string;
+  lastYear: string;
 }
 
 interface TeamSalesTabProps {
@@ -81,10 +83,14 @@ export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
     );
   }
 
-  const { currentYear, salesData } = data;
+  const { currentYear, lastYear, salesData } = data;
 
-  // Create a structure for the table: team -> employee -> product_group -> monthly data
-  const tableData = new Map<string, Map<string, Map<string, Map<string, number>>>>();
+  // Calculate cumulative period labels
+  const currentMonthStr = selectedMonth || `${currentYear}-12`;
+  const [__, currentMonthNum] = currentMonthStr.split('-');
+
+  // Create a structure for the table: team -> employee -> product_group -> month -> {current, last}
+  const tableData = new Map<string, Map<string, Map<string, Map<string, { current: number; last: number }>>>>();
 
   // Define product group order
   const productGroupOrder = ['PVL', 'CVL', 'OTHERS'];
@@ -105,28 +111,38 @@ export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
     }
     const productMap = employeeMap.get(row.product_group)!;
 
-    productMap.set(row.year_month, row.total_amount);
+    const month = row.year_month;
+    if (!productMap.has(month)) {
+      productMap.set(month, { current: 0, last: 0 });
+    }
+
+    if (row.year === currentYear) {
+      productMap.get(month)!.current = row.total_amount;
+    } else if (row.year === lastYear) {
+      productMap.get(month)!.last = row.total_amount;
+    }
   });
 
-  // Calculate monthly totals
+  // Calculate monthly totals for current year only (for summary cards)
   const monthlyTotals = new Map<string, number>();
   salesData.forEach(row => {
-    const current = monthlyTotals.get(row.year_month) || 0;
-    monthlyTotals.set(row.year_month, current + row.total_amount);
+    if (row.year === currentYear) {
+      const current = monthlyTotals.get(row.year_month) || 0;
+      monthlyTotals.set(row.year_month, current + row.total_amount);
+    }
   });
 
-  // Generate month labels
+  // Generate month labels - filter by selected month
   const months = Array.from({ length: 12 }, (_, i) => {
     const month = String(i + 1).padStart(2, '0');
     return `${currentYear}-${month}`;
   }).filter(m => {
     const [year, month] = m.split('-').map(Number);
-    const now = new Date();
-    const currentYearNum = now.getFullYear();
-    const currentMonthNum = now.getMonth() + 1;
-    
-    if (year < currentYearNum) return true;
-    if (year === currentYearNum && month <= currentMonthNum) return true;
+    const selectedYear = parseInt(currentYear);
+    const selectedMonth = parseInt(currentMonthNum);
+
+    if (year < selectedYear) return true;
+    if (year === selectedYear && month <= selectedMonth) return true;
     return false;
   });
 
@@ -195,20 +211,23 @@ export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
     exportToExcel(exportData, filename, { referenceDate: selectedMonth });
   };
 
-  // Calculate totals for summary cards
-  const latestMonth = months[months.length - 1];
-  const previousMonth = months[months.length - 2];
-  
+  // Calculate totals for summary cards - use selected month
+  const latestMonth = currentMonthStr; // Use selected month instead of current date
+  const monthNum = parseInt(currentMonthNum);
+  const previousMonthNum = monthNum > 1 ? monthNum - 1 : 12;
+  const previousMonthYear = monthNum > 1 ? currentYear : String(parseInt(currentYear) - 1);
+  const previousMonth = `${previousMonthYear}-${String(previousMonthNum).padStart(2, '0')}`;
+
   const latestSales = monthlyTotals.get(latestMonth) || 0;
   const previousSales = monthlyTotals.get(previousMonth) || 0;
   
-  const calculateChangeInternal = (current: number, previous: number) => {
+  const calculateChange = (current: number, previous: number) => {
     if (previous === 0) return { percent: 0, isPositive: current > 0 };
     const change = ((current - previous) / previous) * 100;
     return { percent: change, isPositive: change >= 0 };
   };
 
-  const monthChange = calculateChangeInternal(latestSales, previousSales);
+  const monthChange = calculateChange(latestSales, previousSales);
   const annualTotal = Array.from(monthlyTotals.values()).reduce((sum, v) => sum + v, 0);
 
   return (
@@ -222,7 +241,7 @@ export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
               <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">최근 월별 매출</h3>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">최근 월별 매출 (1월~{parseInt(currentMonthNum)}월)</h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">{getMonthName(latestMonth)} 기준 실적</p>
             </div>
           </div>
@@ -261,7 +280,7 @@ export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">연간 누적 매출액</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 전체 누계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">1월~{parseInt(currentMonthNum)}월 누계</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -287,106 +306,121 @@ export default function TeamSalesTab({ selectedMonth }: TeamSalesTabProps) {
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
           <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-            {currentYear}년 팀별 담당자별 매출액 (공급가)
+            {currentYear}년 팀별 담당자별 매출액 (공급가) - 1월~{parseInt(currentMonthNum)}월
           </h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider sticky left-0 bg-zinc-50 dark:bg-zinc-800/50 z-10">
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider w-20">
                   팀명
                 </th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider sticky left-[120px] bg-zinc-50 dark:bg-zinc-800/50 z-10">
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider w-24">
                   담당자명
                 </th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider w-20">
                   그룹
                 </th>
-                {months.map((month, index) => (
-                  <th
-                    key={month}
-                    className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider whitespace-nowrap"
-                  >
-                    {index + 1}월
-                  </th>
-                ))}
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider whitespace-nowrap bg-zinc-100 dark:bg-zinc-800">
-                  합계
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider w-16">
+                  월
+                </th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                  {lastYear}년(원)
+                </th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">
+                  {currentYear}년(원)
+                </th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                  변화율
                 </th>
               </tr>
             </thead>
             <tbody>
               {Array.from(tableData.entries()).map(([team, teamMap]) => {
-                return Array.from(teamMap.entries()).map(([employeeName, employeeMap], empIndex) => {
+                return Array.from(teamMap.entries()).map(([employeeName, employeeMap]) => {
                   // Sort product groups: PVL, CVL, OTHERS
                   const sortedGroups = Array.from(employeeMap.keys()).sort((a, b) => {
                     return productGroupOrder.indexOf(a) - productGroupOrder.indexOf(b);
                   });
 
-                  return sortedGroups.map((productGroup, prodIndex) => {
+                  return sortedGroups.map((productGroup) => {
                     const productMap = employeeMap.get(productGroup)!;
                     const rowKey = `${team}-${employeeName}-${productGroup}`;
-                    let rowTotal = 0;
+
+                    // Calculate cumulative totals
+                    const cumulativeCurrent = months.reduce((sum, month) => {
+                      const data = productMap.get(month);
+                      return sum + (data?.current || 0);
+                    }, 0);
+                    const cumulativeLast = months.reduce((sum, month) => {
+                      const monthLast = `${lastYear}${month.substring(4)}`;
+                      const data = productMap.get(monthLast);
+                      return sum + (data?.last || 0);
+                    }, 0);
+                    const cumulativeChange = calculateChange(cumulativeCurrent, cumulativeLast);
 
                     return (
-                      <tr
-                        key={rowKey}
-                        className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
-                      >
-                        {prodIndex === 0 && empIndex === 0 ? (
-                          <td
-                            rowSpan={Array.from(teamMap.values()).reduce((sum, empMap) => sum + empMap.size, 0)}
-                            className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100 border-r border-zinc-200 dark:border-zinc-700 sticky left-0 bg-white dark:bg-zinc-900"
-                          >
-                            {team}
+                      <React.Fragment key={rowKey}>
+                        {/* Cumulative Row */}
+                        <tr className="bg-blue-50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-800 font-semibold">
+                          <td className="py-3 px-2 text-zinc-700 dark:text-zinc-300 text-xs">{team}</td>
+                          <td className="py-3 px-2 font-medium text-zinc-900 dark:text-zinc-100 text-sm">{employeeName}</td>
+                          <td className="py-3 px-2 text-zinc-600 dark:text-zinc-400 text-xs">{productGroup}</td>
+                          <td className="py-3 px-2 text-zinc-900 dark:text-zinc-100 text-sm">누계</td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                            {formatNumber(cumulativeLast)}
                           </td>
-                        ) : prodIndex === 0 ? null : null}
-                        {prodIndex === 0 ? (
-                          <td
-                            rowSpan={employeeMap.size}
-                            className="py-3 px-4 text-zinc-700 dark:text-zinc-300 border-r border-zinc-200 dark:border-zinc-700 sticky left-[120px] bg-white dark:bg-zinc-900"
-                          >
-                            {employeeName}
+                          <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold">
+                            {formatNumber(cumulativeCurrent)}
                           </td>
-                        ) : null}
-                        <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300 font-medium">
-                          {productGroup}
-                        </td>
-                        {months.map(month => {
-                          const value = productMap.get(month) || 0;
-                          rowTotal += value;
+                          <td className="py-3 px-4 text-right">
+                            <span className={`inline-flex items-center gap-1 font-medium text-xs ${cumulativeChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                              {cumulativeChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(cumulativeChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
+
+                        {/* Monthly Rows */}
+                        {months.map((month) => {
+                          const monthLast = `${lastYear}${month.substring(4)}`;
+                          const data = productMap.get(month) || { current: 0, last: 0 };
+                          const dataLast = productMap.get(monthLast) || { current: 0, last: 0 };
+                          const valueCurrent = data.current;
+                          const valueLast = dataLast.last;
+                          const monthChange = calculateChange(valueCurrent, valueLast);
+                          const monthNum = parseInt(month.split('-')[1]);
+
                           return (
-                            <td key={month} className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">
-                              {value > 0 ? formatNumber(value) : '-'}
-                            </td>
+                            <tr
+                              key={`${rowKey}-${month}`}
+                              className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
+                            >
+                              <td className="py-2 px-2"></td>
+                              <td className="py-2 px-2"></td>
+                              <td className="py-2 px-2"></td>
+                              <td className="py-2 px-2 text-zinc-700 dark:text-zinc-300 text-sm">{monthNum}월</td>
+                              <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                                {valueLast > 0 ? formatNumber(valueLast) : '-'}
+                              </td>
+                              <td className="py-2 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">
+                                {valueCurrent > 0 ? formatNumber(valueCurrent) : '-'}
+                              </td>
+                              <td className="py-2 px-4 text-right">
+                                <span className={`inline-flex items-center gap-1 font-medium text-xs ${monthChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                                  {monthChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                  {Math.abs(monthChange.percent).toFixed(1)}%
+                                </span>
+                              </td>
+                            </tr>
                           );
                         })}
-                        <td className="py-3 px-4 text-right font-mono font-bold text-zinc-900 dark:text-zinc-100 bg-zinc-50 dark:bg-zinc-800/50">
-                          {formatNumber(rowTotal)}
-                        </td>
-                      </tr>
+                      </React.Fragment>
                     );
                   });
                 });
               })}
-              {/* Totals Row */}
-              <tr className="bg-zinc-100 dark:bg-zinc-800/70 font-bold">
-                <td colSpan={3} className="py-3 px-4 text-zinc-900 dark:text-zinc-100 sticky left-0 bg-zinc-100 dark:bg-zinc-800/70">
-                  총합계
-                </td>
-                {months.map(month => {
-                  const value = monthlyTotals.get(month) || 0;
-                  return (
-                    <td key={month} className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300">
-                      {formatNumber(value)}
-                    </td>
-                  );
-                })}
-                <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 bg-zinc-200 dark:bg-zinc-700">
-                  {formatNumber(Array.from(monthlyTotals.values()).reduce((sum, v) => sum + v, 0))}
-                </td>
-              </tr>
             </tbody>
           </table>
         </div>

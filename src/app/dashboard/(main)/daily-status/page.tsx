@@ -487,11 +487,11 @@ export default function DailyStatusPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">총 매출액</p>
-                <p className="text-2xl font-bold mt-2 text-blue-600">₩{sTotals.totalSales.toLocaleString()}</p>
+                <p className="text-2xl font-bold mt-2 text-blue-600">{sTotals.totalSales.toLocaleString()}</p>
               </div>
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">총 매입액</p>
-                <p className="text-2xl font-bold mt-2 text-amber-600">₩{pTotals.totalPurchases.toLocaleString()}</p>
+                <p className="text-2xl font-bold mt-2 text-amber-600">{pTotals.totalPurchases.toLocaleString()}</p>
               </div>
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">모빌 판매 비중</p>
@@ -500,7 +500,7 @@ export default function DailyStatusPage() {
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">당일 수지 (매출-매입)</p>
                 <p className={`text-2xl font-bold mt-2 ${(sTotals.totalSales - pTotals.totalPurchases) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  ₩{(sTotals.totalSales - pTotals.totalPurchases).toLocaleString()}
+                  {(sTotals.totalSales - pTotals.totalPurchases).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -583,7 +583,7 @@ export default function DailyStatusPage() {
 
             {miscMobil && miscMobil.count > 0 && (
               <div className="p-4 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-500">
-                <span className="font-bold">💡 데이터 알림:</span> 분류 외 Mobil 제품 {miscMobil.count}건 발견. 매출 ₩{Number(miscMobil.amount).toLocaleString()}, 용량 {Number(miscMobil.weight).toLocaleString()} L.
+                <span className="font-bold">💡 데이터 알림:</span> 분류 외 Mobil 제품 {miscMobil.count}건 발견. 매출 {Number(miscMobil.amount).toLocaleString()}, 용량 {Number(miscMobil.weight).toLocaleString()} L.
               </div>
             )}
           </div>
@@ -593,11 +593,11 @@ export default function DailyStatusPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">올해 총 매출액</p>
-                <p className="text-2xl font-bold mt-2 text-blue-600">₩{msTotals.totalSales.toLocaleString()}</p>
+                <p className="text-2xl font-bold mt-2 text-blue-600">{msTotals.totalSales.toLocaleString()}</p>
               </div>
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">올해 총 매입액</p>
-                <p className="text-2xl font-bold mt-2 text-amber-600">₩{mpTotals.totalPurchases.toLocaleString()}</p>
+                <p className="text-2xl font-bold mt-2 text-amber-600">{mpTotals.totalPurchases.toLocaleString()}</p>
               </div>
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">YTD 모빌 비중</p>
@@ -606,7 +606,7 @@ export default function DailyStatusPage() {
               <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">연간 수지 (매출-매입)</p>
                 <p className={`text-2xl font-bold mt-2 ${(msTotals.totalSales - mpTotals.totalPurchases) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  ₩{(msTotals.totalSales - mpTotals.totalPurchases).toLocaleString()}
+                  {(msTotals.totalSales - mpTotals.totalPurchases).toLocaleString()}
                 </p>
               </div>
             </div>

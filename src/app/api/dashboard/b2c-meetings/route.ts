@@ -49,11 +49,11 @@ export async function GET(request: Request) {
       const query = `
         SELECT
           CASE
-            WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-            WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-            WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-            WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-            WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
+            WHEN ec.b2c사업소 LIKE '%동부%' THEN '동부'
+            WHEN ec.b2c사업소 LIKE '%서부%' THEN '서부'
+            WHEN ec.b2c사업소 LIKE '%중부%' THEN '중부'
+            WHEN ec.b2c사업소 LIKE '%남부%' THEN '남부'
+            WHEN ec.b2c사업소 LIKE '%제주%' THEN '제주'
             ELSE '본부'
           END as branch,
           CASE
@@ -75,7 +75,7 @@ export async function GET(request: Request) {
           AND s.일자 <= '${currentYear}-12-31'
           AND e.사원_담당_명 != '김도량'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND ec.전체사업소 IS NOT NULL
+          AND ec.b2c사업소 IS NOT NULL
         GROUP BY branch, business_type, year, year_month
         ORDER BY year_month, branch
       `;
@@ -83,16 +83,29 @@ export async function GET(request: Request) {
       const businessDataRaw = await executeSQL(query);
       const businessData = Array.isArray(businessDataRaw) ? businessDataRaw : (businessDataRaw?.rows || []);
 
-      // Calculate totals by year
+      // Calculate cumulative totals by year (up to selected month)
+      const [currentYearNum, currentMonthNum] = currentMonthStr.split('-');
+      const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
+
       const totalsByYear = businessData.reduce(
         (acc: any, row: any) => {
           const year = row.year;
+          const yearMonth = row.year_month;
+
+          // Only include data up to the selected month for comparison
+          // Current year: up to currentMonthStr, Last year: up to same month in lastYear
+          const shouldInclude =
+            (year === String(currentYear) && yearMonth <= currentMonthStr) ||
+            (year === String(lastYear) && yearMonth <= lastYearMonthStr);
+
+          if (!shouldInclude) return acc;
+
           if (!acc[year]) {
             acc[year] = { total_weight: 0, total_amount: 0, total_quantity: 0 };
           }
-          acc[year].total_weight += Number(row.total_weight || 0);
-          acc[year].total_amount += Number(row.total_amount || 0);
-          acc[year].total_quantity += Number(row.total_quantity || 0);
+          acc[year].total_weight = Math.round(acc[year].total_weight + Number(row.total_weight || 0));
+          acc[year].total_amount = Math.round(acc[year].total_amount + Number(row.total_amount || 0));
+          acc[year].total_quantity = Math.round(acc[year].total_quantity + Number(row.total_quantity || 0));
           return acc;
         },
         {}
@@ -231,63 +244,18 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'sales-amount') {
-      // Query sales amount by AUTO channel (B2C) across all three tables
-      const channelQuery = `
-        SELECT
-          CASE
-            WHEN ca.업종분류코드 = '28110' THEN 'Mobil 1 CCO'
-            WHEN ca.업종분류코드 = '28120' THEN 'Mobil Brand Shop'
-            WHEN ca.업종분류코드 >= '28230' AND ca.업종분류코드 <= '28330' THEN 'IWS'
-            WHEN ca.업종분류코드 IN ('28600', '28610', '28710') THEN 'Fleet'
-            WHEN ca.업종분류코드 >= '28500' AND ca.업종분류코드 <= '28510' THEN 'Reseller'
-            ELSE 'Other AUTO'
-          END as channel,
-          strftime('%Y', s.일자) as year,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
-          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
-        FROM ${baseSalesTable} s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
-          AND ca.업종분류코드 IS NOT NULL
-          AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND (s.거래처코드 NOT IN (SELECT 거래처코드 FROM clients WHERE 담당자코드 IN (SELECT 사원_담당_코드 FROM employees WHERE 사원_담당_명 = '김도량')) OR s.거래처코드 IS NULL)
-        GROUP BY 1, 2
-        ORDER BY 1, 2
-      `;
+      // Calculate cumulative month strings for filtering
+      const [currentYearNum, currentMonthNum] = currentMonthStr.split('-');
+      const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
 
-      // Query B2C vs B2B comparison across all three tables
-      const comparisonQuery = `
-        SELECT
-          CASE
-            WHEN ca.업종분류코드 IS NOT NULL THEN 'B2C'
-            ELSE 'B2B'
-          END as business_type,
-          strftime('%Y', s.일자) as year,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
-          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
-        FROM ${baseSalesTable} s
-        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
-          AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
-        GROUP BY 1, 2
-        ORDER BY 1, 2
-      `;
-
-      // Query B2C sales by team across all three tables
-      const teamQuery = `
+      // Query sales by employee and month for AUTO channels
+      const employeeMonthQuery = `
         SELECT
           ec.b2c_팀 as team,
+          e.사원_담당_명 as employee_name,
+          ec.전체사업소 as branch_raw,
           strftime('%Y', s.일자) as year,
+          strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
@@ -304,50 +272,205 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 != 'B2B'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND e.사원_담당_명 != '김도량'
+          AND (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
+        GROUP BY 1, 2, 3, 4, 5
+        ORDER BY 1, 2, 4, 5
+      `;
+
+      // Query B2C vs B2B comparison across all three tables (cumulative up to selected month)
+      const comparisonQuery = `
+        SELECT
+          CASE
+            WHEN ca.업종분류코드 IS NOT NULL THEN 'B2C'
+            ELSE 'B2B'
+          END as business_type,
+          strftime('%Y', s.일자) as year,
+          strftime('%Y-%m', s.일자) as year_month,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+        FROM ${baseSalesTable} s
+        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        WHERE s.일자 >= '${lastYear}-01-01'
+          AND s.일자 <= '${currentYear}-12-31'
+          AND i.품목그룹1코드 IN ('PVL', 'CVL')
+          AND e.사원_담당_명 != '김도량'
+          AND (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
+        GROUP BY 1, 2, 3
+        ORDER BY 1, 2, 3
+      `;
+
+      // Query B2C sales by team and employee across all three tables (cumulative up to selected month)
+      const teamEmployeeQuery = `
+        SELECT
+          ec.b2c_팀 as team,
+          e.사원_담당_명 as employee_name,
+          ec.전체사업소 as branch_raw,
+          strftime('%Y', s.일자) as year,
+          strftime('%Y-%m', s.일자) as year_month,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+        FROM ${baseSalesTable} s
+        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        WHERE s.일자 >= '${lastYear}-01-01'
+          AND s.일자 <= '${currentYear}-12-31'
+          AND ca.업종분류코드 IS NOT NULL
+          AND ec.b2c_팀 IS NOT NULL
+          AND ec.b2c_팀 != 'B2B'
+          AND i.품목그룹1코드 IN ('PVL', 'CVL')
+          AND e.사원_담당_명 != '김도량'
+          AND (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
+        GROUP BY 1, 2, 3, 4, 5
+        ORDER BY 1, 2, 4, 5
+      `;
+
+      // Query B2B sales (for B2B subtotal)
+      const b2bQuery = `
+        SELECT
+          strftime('%Y', s.일자) as year,
+          strftime('%Y-%m', s.일자) as year_month,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+        FROM ${baseSalesTable} s
+        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        WHERE s.일자 >= '${lastYear}-01-01'
+          AND s.일자 <= '${currentYear}-12-31'
+          AND ca.업종분류코드 IS NULL
+          AND i.품목그룹1코드 IN ('PVL', 'CVL')
+          AND e.사원_담당_명 != '김도량'
+          AND (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
         GROUP BY 1, 2
         ORDER BY 1, 2
       `;
 
-      const [channelDataRaw, comparisonDataRaw, teamDataRaw] = await Promise.all([
-        executeSQL(channelQuery),
+      const [employeeMonthDataRaw, comparisonDataRaw, teamEmployeeDataRaw, b2bDataRaw] = await Promise.all([
+        executeSQL(employeeMonthQuery),
         executeSQL(comparisonQuery),
-        executeSQL(teamQuery)
+        executeSQL(teamEmployeeQuery),
+        executeSQL(b2bQuery)
       ]);
 
-      const channelDataArray = Array.isArray(channelDataRaw) ? channelDataRaw : (channelDataRaw?.rows || []);
+      const employeeMonthDataArray = Array.isArray(employeeMonthDataRaw) ? employeeMonthDataRaw : (employeeMonthDataRaw?.rows || []);
       const comparisonDataArray = Array.isArray(comparisonDataRaw) ? comparisonDataRaw : (comparisonDataRaw?.rows || []);
-      const teamDataArray = Array.isArray(teamDataRaw) ? teamDataRaw : (teamDataRaw?.rows || []);
+      const teamEmployeeDataArray = Array.isArray(teamEmployeeDataRaw) ? teamEmployeeDataRaw : (teamEmployeeDataRaw?.rows || []);
+      const b2bDataArray = Array.isArray(b2bDataRaw) ? b2bDataRaw : (b2bDataRaw?.rows || []);
 
-      const channelData = channelDataArray.map((row: any) => ({
-        channel: row.channel,
-        year: row.year,
-        total_weight: Number(row.total_weight || 0),
-        total_amount: Number(row.total_amount || 0),
-        total_quantity: Number(row.total_quantity || 0),
-      }));
+      // Process employee monthly data with branch transformation
+      const employeeMonthData = employeeMonthDataArray.map((row: any) => {
+        let branch = row.branch_raw;
+        if (row.branch_raw === '벤츠') branch = 'MB';
+        else if (row.branch_raw === '경남사업소') branch = '창원';
+        else if (row.branch_raw?.includes('화성')) branch = '화성';
+        else if (row.branch_raw?.includes('남부')) branch = '남부';
+        else if (row.branch_raw?.includes('중부')) branch = '중부';
+        else if (row.branch_raw?.includes('서부')) branch = '서부';
+        else if (row.branch_raw?.includes('동부')) branch = '동부';
+        else if (row.branch_raw?.includes('제주')) branch = '제주';
+        else if (row.branch_raw?.includes('부산')) branch = '부산';
+        else branch = row.branch_raw?.replace('사업소', '').replace('지사', '') || '';
 
-      const comparisonData = comparisonDataArray.map((row: any) => ({
-        business_type: row.business_type,
-        year: row.year,
-        total_weight: Number(row.total_weight || 0),
-        total_amount: Number(row.total_amount || 0),
-        total_quantity: Number(row.total_quantity || 0),
-      }));
+        return {
+          team: row.team,
+          employee_name: row.employee_name,
+          branch,
+          year: row.year,
+          year_month: row.year_month,
+          total_weight: Math.round(Number(row.total_weight || 0)),
+          total_amount: Math.round(Number(row.total_amount || 0)),
+          total_quantity: Math.round(Number(row.total_quantity || 0)),
+        };
+      });
 
-      const teamData = teamDataArray.map((row: any) => ({
-        team: row.team,
-        year: row.year,
-        total_weight: Number(row.total_weight || 0),
-        total_amount: Number(row.total_amount || 0),
-        total_quantity: Number(row.total_quantity || 0),
-      }));
+      // Aggregate monthly data by year for B2C vs B2B
+      const comparisonAggregated: Record<string, { total_weight: number; total_amount: number; total_quantity: number }> = {};
+      comparisonDataArray.forEach((row: any) => {
+        const key = `${row.business_type}-${row.year}`;
+        if (!comparisonAggregated[key]) {
+          comparisonAggregated[key] = { total_weight: 0, total_amount: 0, total_quantity: 0 };
+        }
+        comparisonAggregated[key].total_weight += Math.round(Number(row.total_weight || 0));
+        comparisonAggregated[key].total_amount += Math.round(Number(row.total_amount || 0));
+        comparisonAggregated[key].total_quantity += Math.round(Number(row.total_quantity || 0));
+      });
+      const comparisonData = Object.entries(comparisonAggregated).map(([key, totals]) => {
+        const [business_type, year] = key.split('-');
+        return { business_type, year, ...totals };
+      });
+
+      // Process team employee data - aggregate by team, employee, and year
+      const teamEmployeeAggregated: Record<string, { total_weight: number; total_amount: number; total_quantity: number; branch: string }> = {};
+      teamEmployeeDataArray.forEach((row: any) => {
+        let branch = row.branch_raw;
+        if (row.branch_raw === '벤츠') branch = 'MB';
+        else if (row.branch_raw === '경남사업소') branch = '창원';
+        else if (row.branch_raw?.includes('화성')) branch = '화성';
+        else if (row.branch_raw?.includes('남부')) branch = '남부';
+        else if (row.branch_raw?.includes('중부')) branch = '중부';
+        else if (row.branch_raw?.includes('서부')) branch = '서부';
+        else if (row.branch_raw?.includes('동부')) branch = '동부';
+        else if (row.branch_raw?.includes('제주')) branch = '제주';
+        else if (row.branch_raw?.includes('부산')) branch = '부산';
+        else branch = row.branch_raw?.replace('사업소', '').replace('지사', '') || '';
+
+        const key = `${row.team}|${row.employee_name}|${row.year}`;
+        if (!teamEmployeeAggregated[key]) {
+          teamEmployeeAggregated[key] = { total_weight: 0, total_amount: 0, total_quantity: 0, branch };
+        }
+        teamEmployeeAggregated[key].total_weight += Math.round(Number(row.total_weight || 0));
+        teamEmployeeAggregated[key].total_amount += Math.round(Number(row.total_amount || 0));
+        teamEmployeeAggregated[key].total_quantity += Math.round(Number(row.total_quantity || 0));
+      });
+      const teamEmployeeData = Object.entries(teamEmployeeAggregated).map(([key, data]) => {
+        const [team, employee_name, year] = key.split('|');
+        return { team, employee_name, year, branch: data.branch, total_weight: data.total_weight, total_amount: data.total_amount, total_quantity: data.total_quantity };
+      });
+
+      // Aggregate B2B data by year
+      const b2bAggregated: Record<string, { total_weight: number; total_amount: number; total_quantity: number }> = {};
+      b2bDataArray.forEach((row: any) => {
+        const key = row.year;
+        if (!b2bAggregated[key]) {
+          b2bAggregated[key] = { total_weight: 0, total_amount: 0, total_quantity: 0 };
+        }
+        b2bAggregated[key].total_weight += Math.round(Number(row.total_weight || 0));
+        b2bAggregated[key].total_amount += Math.round(Number(row.total_amount || 0));
+        b2bAggregated[key].total_quantity += Math.round(Number(row.total_quantity || 0));
+      });
+      const b2bData = Object.entries(b2bAggregated).map(([year, totals]) => {
+        return { year, ...totals };
+      });
 
       return NextResponse.json({
         success: true,
         data: {
-          channelData,
+          employeeMonthData,
           comparisonData,
-          teamData,
+          teamEmployeeData,
+          b2bData,
           currentYear: currentYear.toString(),
           lastYear: lastYear.toString(),
           availableMonths,
@@ -357,21 +480,27 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'sales-analysis') {
+      // Calculate cumulative month strings for filtering
+      const [currentYearNum, currentMonthNum] = currentMonthStr.split('-');
+      const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
+
       // Query sales by AUTO channels (거래처그룹2) and product group across all three tables
       const query = `
         SELECT
           COALESCE(ca.거래처그룹2, 'Other') as channel,
           i.품목그룹1코드 as product_group,
           strftime('%Y', s.일자) as year,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
-          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+          ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
+          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount,
+          ROUND(SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC))) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
           AND ca.업종분류코드 IS NOT NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND (s.거래처코드 NOT IN (SELECT 거래처코드 FROM clients WHERE 담당자코드 IN (SELECT 사원_담당_코드 FROM employees WHERE 사원_담당_명 = '김도량')) OR s.거래처코드 IS NULL)
@@ -386,9 +515,9 @@ export async function GET(request: Request) {
         channel: row.channel || 'Other',
         product_group: row.product_group,
         year: row.year,
-        total_weight: Number(row.total_weight || 0),
-        total_amount: Number(row.total_amount || 0),
-        total_quantity: Number(row.total_quantity || 0),
+        total_weight: Math.round(Number(row.total_weight || 0)),
+        total_amount: Math.round(Number(row.total_amount || 0)),
+        total_quantity: Math.round(Number(row.total_quantity || 0)),
       }));
 
       console.log('Sales analysis channel data:', channelData);
@@ -463,9 +592,10 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'new') {
-      // Query new clients (clients with 신규일 data) and their sales data across all three tables for the selected month
+      // Query new clients (clients with 신규일 data) and their sales data across all three tables - cumulative up to selected month
       const [year, month] = currentMonthStr.split('-');
-      const lastYearMonth = `${lastYear}-${month}`;
+      const [currentYearNum, currentMonthNum] = currentMonthStr.split('-');
+      const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
 
       const query = `
         SELECT
@@ -488,9 +618,9 @@ export async function GET(request: Request) {
           END as branch,
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
-          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity,
+          ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
+          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount,
+          ROUND(SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC))) as total_quantity,
           COUNT(DISTINCT s.일자) as transaction_days
         FROM clients c
         LEFT JOIN ${baseSalesTable} s ON c.거래처코드 = s.거래처코드
@@ -498,7 +628,10 @@ export async function GET(request: Request) {
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE c.신규일 IS NOT NULL
           AND c.신규일 != ''
-          AND (s.일자 LIKE '${lastYearMonth}%' OR s.일자 LIKE '${currentMonthStr}%')
+          AND (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
           AND ec.b2c_팀 IS NOT NULL
           AND ec.b2c_팀 != 'B2B'
           AND e.사원_담당_명 != '김도량'
@@ -533,6 +666,9 @@ export async function GET(request: Request) {
 
       const summaryArray = Object.values(managerSummary).map((s: any) => ({
         ...s,
+        total_weight: Math.round(s.total_weight),
+        total_amount: Math.round(s.total_amount),
+        total_quantity: Math.round(s.total_quantity),
         client_count: s.client_count.size
       }));
 
@@ -557,8 +693,11 @@ export async function GET(request: Request) {
         {}
       );
 
-      // Convert Set to count
+      // Convert Set to count and round values
       Object.keys(totalsByYear).forEach(year => {
+        totalsByYear[year].total_weight = Math.round(totalsByYear[year].total_weight);
+        totalsByYear[year].total_amount = Math.round(totalsByYear[year].total_amount);
+        totalsByYear[year].total_quantity = Math.round(totalsByYear[year].total_quantity);
         totalsByYear[year].client_count = totalsByYear[year].client_count.size;
       });
 
@@ -634,43 +773,51 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'team-strategy') {
-      // Query 1: PVL/CVL sales by team across all three tables
+      // Calculate cumulative month strings for filtering
+      const [currentYearNum, currentMonthNum] = currentMonthStr.split('-');
+      const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
+
+      // Query 1: PVL/CVL sales by team across all three tables - cumulative
       const teamPVCVQuery = `
         SELECT
           COALESCE(ec.b2c_팀, 'B2B팀') as team,
           i.품목그룹1코드 as product_group,
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
-          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+          ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
+          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount,
+          ROUND(SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC))) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND e.사원_담당_명 != '김도량'
         GROUP BY ec.b2c_팀, i.품목그룹1코드, year, year_month
         ORDER BY ec.b2c_팀, year, year_month
       `;
 
-      // Query 2: 남부지사 purchases and sales across all three tables
+      // Query 2: 남부지사 purchases and sales across all three tables - cumulative
       const nambujisaQuery = `
         SELECT
           'sales' as type,
           strftime('%Y', s.일자) as year,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount
+          ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
+          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
           AND (ec.전체사업소 LIKE '%남부%' OR c.거래처그룹1명 LIKE '%남부%')
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND e.사원_담당_명 != '김도량'
@@ -681,8 +828,8 @@ export async function GET(request: Request) {
         SELECT
           'purchase' as type,
           strftime('%Y', p.일자) as year,
-          SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor}) as total_amount
+          ROUND(SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC))) as total_weight,
+          ROUND(SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
         FROM (
           SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 FROM purchases
           UNION ALL
@@ -692,26 +839,30 @@ export async function GET(request: Request) {
         ) p
         LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
         LEFT JOIN items i ON p.품목코드 = i.품목코드
-        WHERE p.일자 >= '${lastYear}-01-01'
-          AND p.일자 <= '${currentYear}-12-31'
+        WHERE (
+            (strftime('%Y', p.일자) = '${currentYear}' AND strftime('%Y-%m', p.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', p.일자) = '${lastYear}' AND strftime('%Y-%m', p.일자) <= '${lastYearMonthStr}')
+          )
           AND c.거래처그룹1명 LIKE '%남부%'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
         GROUP BY year
       `;
 
-      // Query 3: Strategic dealers sales across all three tables
+      // Query 3: Strategic dealers sales across all three tables - cumulative
       const strategicDealersQuery = `
         SELECT
           c.거래처명 as dealer_name,
           strftime('%Y', s.일자) as year,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
-          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+          ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
+          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount,
+          ROUND(SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC))) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND (
             c.거래처명 LIKE '%모빌유화%'
@@ -743,26 +894,26 @@ export async function GET(request: Request) {
         product_group: row.product_group,
         year: row.year,
         year_month: row.year_month,
-        total_weight: Number(row.total_weight || 0),
-        total_amount: Number(row.total_amount || 0),
-        total_quantity: Number(row.total_quantity || 0),
+        total_weight: Math.round(Number(row.total_weight || 0)),
+        total_amount: Math.round(Number(row.total_amount || 0)),
+        total_quantity: Math.round(Number(row.total_quantity || 0)),
       }));
 
       // Process 남부지사 data
       const nambujisaProcessed = nambujisaData.map((row: any) => ({
         type: row.type,
         year: row.year,
-        total_weight: Number(row.total_weight || 0),
-        total_amount: Number(row.total_amount || 0),
+        total_weight: Math.round(Number(row.total_weight || 0)),
+        total_amount: Math.round(Number(row.total_amount || 0)),
       }));
 
       // Process strategic dealers data
       const strategicDealers = strategicDealersData.map((row: any) => ({
         dealer_name: row.dealer_name,
         year: row.year,
-        total_weight: Number(row.total_weight || 0),
-        total_amount: Number(row.total_amount || 0),
-        total_quantity: Number(row.total_quantity || 0),
+        total_weight: Math.round(Number(row.total_weight || 0)),
+        total_amount: Math.round(Number(row.total_amount || 0)),
+        total_quantity: Math.round(Number(row.total_quantity || 0)),
       }));
 
       return NextResponse.json({
@@ -780,26 +931,33 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'team-volume') {
-      // Query monthly sales volume by team, employee, and product group (PVL/CVL only) across all three tables
+      // Calculate cumulative month strings for filtering
+      const [currentYearNum, currentMonthNum] = currentMonthStr.split('-');
+      const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
+
+      // Query monthly sales volume by team, employee, and product group (PVL/CVL only) across all three tables - both years
       const query = `
         SELECT
           ec.b2c_팀 as team,
           e.사원_담당_명 as employee_name,
           i.품목그룹1코드 as product_group,
+          strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
-          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
+          ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE s.일자 >= '${currentYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ec.b2c_팀 IS NOT NULL
           AND e.사원_담당_명 != '김도량'
-        GROUP BY ec.b2c_팀, e.사원_담당_명, i.품목그룹1코드, year_month
-        ORDER BY ec.b2c_팀, e.사원_담당_명, i.품목그룹1코드, year_month
+        GROUP BY ec.b2c_팀, e.사원_담당_명, i.품목그룹1코드, year, year_month
+        ORDER BY ec.b2c_팀, e.사원_담당_명, i.품목그룹1코드, year, year_month
       `;
 
       const volumeDataRaw = await executeSQL(query);
@@ -809,8 +967,9 @@ export async function GET(request: Request) {
         team: row.team || '사무실',
         employee_name: row.employee_name,
         product_group: row.product_group,
+        year: row.year,
         year_month: row.year_month,
-        total_weight: Number(row.total_weight || 0),
+        total_weight: Math.round(Number(row.total_weight || 0)),
       }));
 
       return NextResponse.json({
@@ -818,6 +977,7 @@ export async function GET(request: Request) {
         data: {
           volumeData,
           currentYear: currentYear.toString(),
+          lastYear: lastYear.toString(),
           availableMonths,
           currentMonth: currentMonthStr,
         },
@@ -825,7 +985,11 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'team-sales') {
-      // Query monthly sales amount by team, employee, and product group (PVL/CVL/OTHERS) across all three tables
+      // Calculate cumulative month strings for filtering
+      const [currentYearNum, currentMonthNum] = currentMonthStr.split('-');
+      const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
+
+      // Query monthly sales amount by team, employee, and product group (PVL/CVL/OTHERS) across all three tables - both years
       const query = `
         SELECT
           ec.b2c_팀 as team,
@@ -835,19 +999,22 @@ export async function GET(request: Request) {
             WHEN i.품목그룹1코드 = 'CVL' THEN 'CVL'
             ELSE 'OTHERS'
           END as product_group,
+          strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount
+          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        WHERE s.일자 >= '${currentYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
           AND ec.b2c_팀 IS NOT NULL
           AND e.사원_담당_명 != '김도량'
-        GROUP BY ec.b2c_팀, e.사원_담당_명, product_group, year_month
-        ORDER BY ec.b2c_팀, e.사원_담당_명, product_group, year_month
+        GROUP BY ec.b2c_팀, e.사원_담당_명, product_group, year, year_month
+        ORDER BY ec.b2c_팀, e.사원_담당_명, product_group, year, year_month
       `;
 
       const salesDataRaw = await executeSQL(query);
@@ -857,8 +1024,9 @@ export async function GET(request: Request) {
         team: row.team || '사무실',
         employee_name: row.employee_name,
         product_group: row.product_group,
+        year: row.year,
         year_month: row.year_month,
-        total_amount: Number(row.total_amount || 0),
+        total_amount: Math.round(Number(row.total_amount || 0)),
       }));
 
       return NextResponse.json({
@@ -866,6 +1034,7 @@ export async function GET(request: Request) {
         data: {
           salesData,
           currentYear: currentYear.toString(),
+          lastYear: lastYear.toString(),
           availableMonths,
           currentMonth: currentMonthStr,
         },

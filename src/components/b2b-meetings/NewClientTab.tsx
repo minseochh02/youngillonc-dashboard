@@ -42,9 +42,16 @@ interface NewClientsData {
   }>;
   currentYear: string;
   lastYear: string;
+  availableMonths?: string[];
+  currentMonth?: string;
 }
 
-export default function NewClientTab() {
+interface NewClientTabProps {
+  selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
+}
+
+export default function NewClientTab({ selectedMonth, onMonthsAvailable }: NewClientTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<NewClientsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,7 +59,7 @@ export default function NewClientTab() {
 
   useEffect(() => {
     fetchNewClientsData();
-  }, [includeVat]);
+  }, [includeVat, selectedMonth]);
 
   const toggleManager = (managerKey: string) => {
     const newExpanded = new Set(expandedManagers);
@@ -76,10 +83,17 @@ export default function NewClientTab() {
   const fetchNewClientsData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(withIncludeVat(`/api/dashboard/b2b-meetings?tab=new`, includeVat));
+      const q = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
+      const response = await apiFetch(
+        withIncludeVat(`/api/dashboard/b2b-meetings?tab=new${q}`, includeVat)
+      );
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        const d = result.data;
+        if (onMonthsAvailable && d?.availableMonths?.length) {
+          onMonthsAvailable(d.availableMonths, d.currentMonth!);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch new clients data:', error);

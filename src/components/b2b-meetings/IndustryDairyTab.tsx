@@ -23,26 +23,38 @@ interface IndustryDairyResponse {
   industryDairyData: IndustryDairyData[];
   currentYear: string;
   lastYear: string;
+  availableMonths?: string[];
+  currentMonth?: string;
 }
 
-export default function IndustryDairyTab() {
+interface IndustryDairyTabProps {
+  selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
+}
+
+export default function IndustryDairyTab({ selectedMonth, onMonthsAvailable }: IndustryDairyTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<IndustryDairyResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchIndustryDairyData();
-  }, [includeVat]);
+  }, [includeVat, selectedMonth]);
 
   const fetchIndustryDairyData = async () => {
     setIsLoading(true);
     try {
+      const q = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
       const response = await apiFetch(
-        withIncludeVat('/api/dashboard/b2b-meetings?tab=industry-dairy', includeVat)
+        withIncludeVat(`/api/dashboard/b2b-meetings?tab=industry-dairy${q}`, includeVat)
       );
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        const d = result.data;
+        if (onMonthsAvailable && d?.availableMonths?.length) {
+          onMonthsAvailable(d.availableMonths, d.currentMonth!);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch industry dairy data:', error);
@@ -78,7 +90,7 @@ export default function IndustryDairyTab() {
     );
   }
 
-  const { industryDairyData, currentYear, lastYear } = data;
+  const { industryDairyData, currentYear, lastYear, currentMonth: apiMonth } = data;
 
   // Organize data by item, year, and month
   const getMonthData = (itemKey: string, year: string, month: string) => {
@@ -155,15 +167,9 @@ export default function IndustryDairyTab() {
     }, { total_weight: 0, total_amount: 0 });
   };
 
-  const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')).filter(m => {
-    const now = new Date();
-    const currentYearNum = now.getFullYear();
-    const currentMonthNum = now.getMonth() + 1;
-    const yearNum = parseInt(currentYear);
-    if (yearNum < currentYearNum) return true;
-    if (yearNum === currentYearNum && parseInt(m) <= currentMonthNum) return true;
-    return false;
-  });
+  const refYm = selectedMonth || apiMonth || `${currentYear}-12`;
+  const maxMonthNum = parseInt(refYm.split('-')[1]!, 10);
+  const months = Array.from({ length: maxMonthNum }, (_, i) => String(i + 1).padStart(2, '0'));
 
   const handleExcelDownload = () => {
     if (!data) return;
@@ -300,10 +306,10 @@ export default function IndustryDairyTab() {
                         {formatNumber(categoryLastTotals.total_weight)}
                       </td>
                       <td className="py-2 px-4 text-center font-mono text-emerald-700 dark:text-emerald-300">
-                        ₩{formatNumber(categoryCurrentTotals.total_amount)}
+                        {formatNumber(categoryCurrentTotals.total_amount)}
                       </td>
                       <td className="py-2 px-4 text-center font-mono text-emerald-600/70 dark:text-emerald-500/70">
-                        ₩{formatNumber(categoryLastTotals.total_amount)}
+                        {formatNumber(categoryLastTotals.total_amount)}
                       </td>
                       <td className={`py-2 px-4 text-center font-mono ${
                         categoryAmountChange.isPositive ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'
@@ -340,10 +346,10 @@ export default function IndustryDairyTab() {
                             {formatNumber(lastTotals.total_weight)}
                           </td>
                           <td className="py-3 px-4 text-center font-mono font-medium text-emerald-600 dark:text-emerald-400 text-xs">
-                            ₩{formatNumber(currentTotals.total_amount)}
+                            {formatNumber(currentTotals.total_amount)}
                           </td>
                           <td className="py-3 px-4 text-center font-mono text-emerald-500/60 dark:text-emerald-500/60 text-xs">
-                            ₩{formatNumber(lastTotals.total_amount)}
+                            {formatNumber(lastTotals.total_amount)}
                           </td>
                           <td className={`py-3 px-4 text-center font-mono text-xs ${
                             itemAmountChange.isPositive ? 'text-blue-500/80 dark:text-blue-400/80' : 'text-red-500/80 dark:text-red-400/80'
@@ -376,10 +382,10 @@ export default function IndustryDairyTab() {
                   {formatNumber(lastYearGrandTotals.total_weight)}
                 </td>
                 <td className="py-3 px-4 text-center font-mono text-emerald-700 dark:text-emerald-300">
-                  ₩{formatNumber(currentYearGrandTotals.total_amount)}
+                  {formatNumber(currentYearGrandTotals.total_amount)}
                 </td>
                 <td className="py-3 px-4 text-center font-mono text-emerald-600/70 dark:text-emerald-500/70">
-                  ₩{formatNumber(lastYearGrandTotals.total_amount)}
+                  {formatNumber(lastYearGrandTotals.total_amount)}
                 </td>
                 <td className={`py-3 px-4 text-center font-mono ${
                   totalAmountChange.isPositive

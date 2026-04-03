@@ -42,23 +42,12 @@ export default function B2CMeetingsPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [isExporting, setIsExporting] = useState(false);
 
-  useEffect(() => {
-    // Initial fetch to get available months
-    const fetchInitialData = async () => {
-      try {
-        const response = await apiFetch(withIncludeVat(`/api/dashboard/b2c-meetings?tab=business`, includeVat));
-        const result = await response.json();
-        if (result.success && result.data.availableMonths) {
-          setAvailableMonths(result.data.availableMonths);
-          // Set to latest month by default
-          setSelectedMonth(result.data.availableMonths[result.data.availableMonths.length - 1]);
-        }
-      } catch (error) {
-        console.error('Failed to fetch initial data:', error);
-      }
-    };
-    fetchInitialData();
-  }, [includeVat]);
+  const handleMonthsAvailable = (months: string[], currentMonth: string) => {
+    setAvailableMonths(months);
+    if (!selectedMonth) {
+      setSelectedMonth(currentMonth);
+    }
+  };
 
   const handleExcelDownload = async () => {
     if (!selectedMonth) return;
@@ -238,14 +227,32 @@ export default function B2CMeetingsPage() {
 
             islands.push({
               title: 'PVL/CVL 팀별 분석',
-              headers: ['팀명', `${currentYear} PV`, `${currentYear} CV`, `${lastYear} PV`, `${lastYear} CV`],
-              data: teamsList.map((team: any) => [
-                team,
-                teamAgg(team, currentYear, 'PVL'),
-                teamAgg(team, currentYear, 'CVL'),
-                teamAgg(team, lastYear, 'PVL'),
-                teamAgg(team, lastYear, 'CVL')
-              ])
+              headers: [
+                '팀명',
+                `${currentYear} PV`,
+                `${lastYear} PV`,
+                'PV 변화율(%)',
+                `${currentYear} CV`,
+                `${lastYear} CV`,
+                'CV 변화율(%)'
+              ],
+              data: teamsList.map((team: any) => {
+                const pvC = teamAgg(team, currentYear, 'PVL');
+                const pvL = teamAgg(team, lastYear, 'PVL');
+                const cvC = teamAgg(team, currentYear, 'CVL');
+                const cvL = teamAgg(team, lastYear, 'CVL');
+                const pvPct = pvL === 0 ? 0 : ((pvC - pvL) / pvL) * 100;
+                const cvPct = cvL === 0 ? 0 : ((cvC - cvL) / cvL) * 100;
+                return [
+                  team,
+                  pvC,
+                  pvL,
+                  Number(pvPct.toFixed(1)),
+                  cvC,
+                  cvL,
+                  Number(cvPct.toFixed(1))
+                ];
+              })
             });
           }
 
@@ -390,11 +397,11 @@ export default function B2CMeetingsPage() {
 
       <div className="min-h-[400px]">
         {activeTab === 'business' ? (
-          <BusinessTab selectedMonth={selectedMonth} />
+          <BusinessTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'manager-sales' ? (
-          <ManagerSalesTab selectedMonth={selectedMonth} />
+          <ManagerSalesTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'sales-amount' ? (
-          <SalesAmountTab selectedMonth={selectedMonth} />
+          <SalesAmountTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'sales-analysis' ? (
           <SalesAnalysisTab selectedMonth={selectedMonth} />
         ) : activeTab === 'customer-reason' ? (

@@ -21,24 +21,38 @@ interface FPSResponse {
   fpsData: FPSData[];
   currentYear: string;
   lastYear: string;
+  availableMonths?: string[];
+  currentMonth?: string;
 }
 
-export default function FPSTab() {
+interface FPSTabProps {
+  selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
+}
+
+export default function FPSTab({ selectedMonth, onMonthsAvailable }: FPSTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<FPSResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchFPSData();
-  }, [includeVat]);
+  }, [includeVat, selectedMonth]);
 
   const fetchFPSData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(withIncludeVat('/api/dashboard/b2b-meetings?tab=fps', includeVat));
+      const q = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
+      const response = await apiFetch(
+        withIncludeVat(`/api/dashboard/b2b-meetings?tab=fps${q}`, includeVat)
+      );
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        const d = result.data;
+        if (onMonthsAvailable && d?.availableMonths?.length) {
+          onMonthsAvailable(d.availableMonths, d.currentMonth!);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch FPS data:', error);
@@ -74,7 +88,7 @@ export default function FPSTab() {
     );
   }
 
-  const { fpsData, currentYear, lastYear } = data;
+  const { fpsData, currentYear, lastYear, currentMonth: apiMonth } = data;
   const categories = ['Flagship', 'Premium', 'Standard'];
 
   // Organize data by category, year, and month
@@ -118,21 +132,9 @@ export default function FPSTab() {
   const totalAmountChange = calculateChange(currentYearGrandTotals.total_amount, lastYearGrandTotals.total_amount);
   const totalWeightChange = calculateChange(currentYearGrandTotals.total_weight, lastYearGrandTotals.total_weight);
 
-  // Get all months from Jan to Dec
-  const months = Array.from({ length: 12 }, (_, i) => {
-    const month = String(i + 1).padStart(2, '0');
-    return month;
-  }).filter(m => {
-    const monthNum = parseInt(m);
-    const now = new Date();
-    const currentYearNum = now.getFullYear();
-    const currentMonthNum = now.getMonth() + 1;
-    const yearNum = parseInt(currentYear);
-    
-    if (yearNum < currentYearNum) return true;
-    if (yearNum === currentYearNum && monthNum <= currentMonthNum) return true;
-    return false;
-  });
+  const refYm = selectedMonth || apiMonth || `${currentYear}-12`;
+  const maxMonthNum = parseInt(refYm.split('-')[1]!, 10);
+  const months = Array.from({ length: maxMonthNum }, (_, i) => String(i + 1).padStart(2, '0'));
 
   const getCategoryColor = (category: string) => {
     switch (category) {
@@ -306,7 +308,7 @@ export default function FPSTab() {
                     합계 ({currentYear})
                   </div>
                   <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-                    ₩{formatNumber(currentTotals.total_amount)}
+                    {formatNumber(currentTotals.total_amount)}
                   </div>
                   <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
                     전체 {formatNumber(currentYearGrandTotals.total_amount)} 원 중 {((currentTotals.total_amount / (currentYearGrandTotals.total_amount || 1)) * 100).toFixed(1)}%
@@ -382,12 +384,12 @@ export default function FPSTab() {
                           key={month}
                           className="py-3 px-3 text-center font-mono text-zinc-700 dark:text-zinc-300"
                         >
-                          {monthData ? `₩${formatNumber(monthData.total_amount)}` : '-'}
+                          {monthData ? formatNumber(monthData.total_amount) : '-'}
                         </td>
                       );
                     })}
                     <td className="py-3 px-4 text-center font-mono font-bold text-emerald-700 dark:text-emerald-300">
-                      ₩{formatNumber(yearTotals.total_amount)}
+                      {formatNumber(yearTotals.total_amount)}
                     </td>
                   </tr>
                 );
@@ -409,12 +411,12 @@ export default function FPSTab() {
                       key={month}
                       className="py-3 px-3 text-center font-mono text-zinc-900 dark:text-zinc-100"
                     >
-                      {monthTotal > 0 ? `₩${formatNumber(monthTotal)}` : '-'}
+                      {monthTotal > 0 ? formatNumber(monthTotal) : '-'}
                     </td>
                   );
                 })}
                 <td className="py-3 px-4 text-center font-mono text-emerald-700 dark:text-emerald-300">
-                  ₩{formatNumber(currentYearGrandTotals.total_amount)}
+                  {formatNumber(currentYearGrandTotals.total_amount)}
                 </td>
               </tr>
             </tbody>
@@ -480,10 +482,10 @@ export default function FPSTab() {
                       {formatNumber(lastTotals.total_weight)}
                     </td>
                     <td className="py-3 px-4 text-center font-mono font-semibold text-emerald-700 dark:text-emerald-300">
-                      ₩{formatNumber(currentTotals.total_amount)}
+                      {formatNumber(currentTotals.total_amount)}
                     </td>
                     <td className="py-3 px-4 text-center font-mono text-emerald-600/70 dark:text-emerald-500/70">
-                      ₩{formatNumber(lastTotals.total_amount)}
+                      {formatNumber(lastTotals.total_amount)}
                     </td>
                     <td className={`py-3 px-4 text-center font-mono font-medium ${
                       amountChange >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'
@@ -513,10 +515,10 @@ export default function FPSTab() {
                   {formatNumber(lastYearGrandTotals.total_weight)}
                 </td>
                 <td className="py-3 px-4 text-center font-mono text-emerald-700 dark:text-emerald-300">
-                  ₩{formatNumber(currentYearGrandTotals.total_amount)}
+                  {formatNumber(currentYearGrandTotals.total_amount)}
                 </td>
                 <td className="py-3 px-4 text-center font-mono text-emerald-600/70 dark:text-emerald-500/70">
-                  ₩{formatNumber(lastYearGrandTotals.total_amount)}
+                  {formatNumber(lastYearGrandTotals.total_amount)}
                 </td>
                 <td className={`py-3 px-4 text-center font-mono ${
                   (currentYearGrandTotals.total_amount - lastYearGrandTotals.total_amount) >= 0

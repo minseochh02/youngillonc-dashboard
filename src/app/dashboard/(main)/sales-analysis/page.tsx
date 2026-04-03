@@ -492,15 +492,15 @@ export default function SalesAnalysisPage() {
                 {Number(node.data.total_weight).toLocaleString()}
               </td>
               <td className="px-4 py-3 text-sm text-right font-medium text-blue-600 dark:text-blue-400">
-                ₩{Number(node.data.total_supply_amount).toLocaleString()}
+                {Number(node.data.total_supply_amount).toLocaleString()}
               </td>
               <td className={`px-4 py-3 text-sm text-right ${hasChildren ? 'font-bold' : 'font-semibold'} text-emerald-600 dark:text-emerald-400`}>
-                ₩{Number(node.data.total_amount).toLocaleString()}
+                {Number(node.data.total_amount).toLocaleString()}
               </td>
               {showGoals && (
                 <>
                   <td className="px-4 py-3 text-sm text-right text-zinc-500 dark:text-zinc-400">
-                    {node.goal ? `₩${node.goal.toLocaleString()}` : '-'}
+                    {node.goal ? node.goal.toLocaleString() : '-'}
                   </td>
                   <td className={`px-4 py-3 text-sm text-right font-medium ${
                     node.achievementRate !== undefined
@@ -519,10 +519,10 @@ export default function SalesAnalysisPage() {
           ) : (
             <>
               <td className={`px-2 py-3 text-sm text-right ${hasChildren ? 'font-bold' : 'font-semibold'} text-zinc-900 dark:text-zinc-100`}>
-                ₩{Number(node.data.total_amount).toLocaleString()}
+                {Number(node.data.total_amount).toLocaleString()}
               </td>
               <td className="px-2 py-3 text-sm text-right text-zinc-500 dark:text-zinc-400">
-                {node.lastYearData ? `₩${Number(node.lastYearData.total_amount).toLocaleString()}` : '-'}
+                {node.lastYearData ? Number(node.lastYearData.total_amount).toLocaleString() : '-'}
               </td>
               <td className={`px-2 py-3 text-sm text-right font-medium ${
                 node.lastYearData
@@ -532,7 +532,7 @@ export default function SalesAnalysisPage() {
                   : 'text-zinc-400'
               }`}>
                 {node.lastYearData
-                  ? `${(Number(node.data.total_amount) - Number(node.lastYearData.total_amount)) >= 0 ? '+' : ''}₩${(Number(node.data.total_amount) - Number(node.lastYearData.total_amount)).toLocaleString()}`
+                  ? `${(Number(node.data.total_amount) - Number(node.lastYearData.total_amount)) >= 0 ? '+' : ''}${(Number(node.data.total_amount) - Number(node.lastYearData.total_amount)).toLocaleString()}`
                   : '-'
                 }
               </td>
@@ -551,7 +551,7 @@ export default function SalesAnalysisPage() {
               {showGoals && (
                 <>
                   <td className="px-2 py-3 text-sm text-right text-zinc-500 dark:text-zinc-400">
-                    {node.goal ? `₩${node.goal.toLocaleString()}` : '-'}
+                    {node.goal ? node.goal.toLocaleString() : '-'}
                   </td>
                   <td className={`px-2 py-3 text-sm text-right font-medium ${
                     node.achievementRate !== undefined
@@ -1285,14 +1285,14 @@ export default function SalesAnalysisPage() {
             <DollarSign className="w-4 h-4 text-zinc-400" />
             <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">공급가액</p>
           </div>
-          <p className="text-lg font-bold text-blue-600 dark:text-blue-400">₩{totals.supplyAmount.toLocaleString()}</p>
+          <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{totals.supplyAmount.toLocaleString()}</p>
         </div>
         <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="w-4 h-4 text-zinc-400" />
             <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">합계</p>
           </div>
-          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">₩{totals.amount.toLocaleString()}</p>
+          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{totals.amount.toLocaleString()}</p>
         </div>
       </div>
 

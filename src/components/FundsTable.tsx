@@ -31,7 +31,7 @@ const getCurrencySymbol = (currency: string = "KRW") => {
     case "EUR": return "€";
     case "JPY": return "¥";
     case "GBP": return "£";
-    case "KRW": return "₩";
+    case "KRW": return "";
     default: return currency + " ";
   }
 };

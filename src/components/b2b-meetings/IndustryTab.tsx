@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, Fragment } from 'react';
-import { Calendar, Loader2, Building, DollarSign, TrendingUp, Users, Package } from 'lucide-react';
+import { Loader2, Building, DollarSign, TrendingUp, Users, Package } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
@@ -21,36 +21,41 @@ interface IndustryData {
   total_amount: number;
 }
 
-export default function IndustryTab() {
+interface IndustryTabProps {
+  selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
+}
+
+export default function IndustryTab({ selectedMonth, onMonthsAvailable }: IndustryTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<IndustryData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [startDate, setStartDate] = useState(() => {
-    const date = new Date();
-    date.setMonth(0, 1); // January 1st of current year
-    return date.toISOString().split('T')[0];
-  });
-  const [endDate, setEndDate] = useState(() => {
-    const date = new Date();
-    return date.toISOString().split('T')[0];
-  });
+  const [periodLabel, setPeriodLabel] = useState('');
 
   useEffect(() => {
     fetchData();
-  }, [startDate, endDate, includeVat]);
+  }, [selectedMonth, includeVat]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
+      const q = selectedMonth ? `month=${encodeURIComponent(selectedMonth)}` : '';
       const response = await apiFetch(
         withIncludeVat(
-          `/api/dashboard/b2b-meetings/industry?startDate=${startDate}&endDate=${endDate}`,
+          `/api/dashboard/b2b-meetings/industry${q ? `?${q}` : ''}`,
           includeVat
         )
       );
       const result = await response.json();
       if (result.success) {
         setData(result.data || []);
+        if (onMonthsAvailable && result.availableMonths?.length) {
+          onMonthsAvailable(result.availableMonths, result.currentMonth);
+        }
+        if (result.currentMonth) {
+          const [y, m] = result.currentMonth.split('-');
+          setPeriodLabel(`${y}년 ${parseInt(m, 10)}월`);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch industry data:', error);
@@ -78,7 +83,7 @@ export default function IndustryTab() {
       '합계': item.total_amount,
     }));
 
-    const filename = `B2B_산업별_${startDate}_${endDate}.xlsx`;
+    const filename = `B2B_산업별_${selectedMonth || 'export'}.xlsx`;
     
     // Use island format for reference date support
     const { exportIslandTables } = require('@/lib/excel-export');
@@ -88,7 +93,7 @@ export default function IndustryTab() {
     exportIslandTables(
       [{ title: 'B2B 산업별 판매 현황', headers, data: rows }],
       filename,
-      `${startDate} ~ ${endDate}`
+      periodLabel ? `${periodLabel} (전체 일자)` : '선택 월'
     );
   };
 
@@ -180,7 +185,7 @@ export default function IndustryTab() {
     getMobilCategoryTotals(b).totalAmount - getMobilCategoryTotals(a).totalAmount
   );
 
-  const formatCurrency = (num: number) => `₩${Math.round(num).toLocaleString()}`;
+  const formatCurrency = (num: number) => Math.round(num).toLocaleString();
   const formatNumber = (num: number) => Math.round(num).toLocaleString();
 
   const totals = data.reduce((acc, row) => ({
@@ -203,22 +208,13 @@ export default function IndustryTab() {
     <div className="space-y-6">
       {/* Controls */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2">
-          <Calendar className="w-4 h-4 text-zinc-400" />
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="text-sm bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100"
-          />
-          <span className="text-zinc-400">~</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="text-sm bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100"
-          />
-        </div>
+        {periodLabel ? (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            조회 기간: <span className="font-medium text-zinc-800 dark:text-zinc-200">{periodLabel}</span>
+          </p>
+        ) : (
+          <span className="text-sm text-zinc-400">기간 로딩 중…</span>
+        )}
 
         <div className="flex gap-2">
           <button
@@ -246,7 +242,7 @@ export default function IndustryTab() {
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">산업별 실적 요약</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{startDate} ~ {endDate}</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{periodLabel || '—'}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -425,10 +421,10 @@ export default function IndustryTab() {
                                   {Number(team.total_weight).toLocaleString()}
                                 </td>
                                 <td className="px-4 py-1.5 text-xs text-right text-zinc-500 font-mono">
-                                  ₩{Number(team.total_supply_amount).toLocaleString()}
+                                  {Number(team.total_supply_amount).toLocaleString()}
                                 </td>
                                 <td className="px-4 py-1.5 text-xs text-right text-purple-400/70 font-medium font-mono">
-                                  ₩{Number(team.total_amount).toLocaleString()}
+                                  {Number(team.total_amount).toLocaleString()}
                                 </td>
                               </tr>
                             ))}
@@ -453,10 +449,10 @@ export default function IndustryTab() {
                     {totals.weight.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-zinc-900 dark:text-zinc-100">
-                    ₩{totals.supplyAmount.toLocaleString()}
+                    {totals.supplyAmount.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-purple-600 dark:text-purple-400">
-                    ₩{totals.totalAmount.toLocaleString()}
+                    {totals.totalAmount.toLocaleString()}
                   </td>
                 </tr>
               </tbody>

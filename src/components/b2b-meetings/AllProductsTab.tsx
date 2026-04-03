@@ -21,26 +21,38 @@ interface AllProductsResponse {
   allProductsData: AllProductsData[];
   currentYear: string;
   lastYear: string;
+  availableMonths?: string[];
+  currentMonth?: string;
 }
 
-export default function AllProductsTab() {
+interface AllProductsTabProps {
+  selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
+}
+
+export default function AllProductsTab({ selectedMonth, onMonthsAvailable }: AllProductsTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<AllProductsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, [includeVat]);
+  }, [includeVat, selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
+      const q = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
       const response = await apiFetch(
-        withIncludeVat('/api/dashboard/b2b-meetings?tab=all-products', includeVat)
+        withIncludeVat(`/api/dashboard/b2b-meetings?tab=all-products${q}`, includeVat)
       );
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        const d = result.data;
+        if (onMonthsAvailable && d?.availableMonths?.length) {
+          onMonthsAvailable(d.availableMonths, d.currentMonth!);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch all products data:', error);
@@ -76,7 +88,7 @@ export default function AllProductsTab() {
     );
   }
 
-  const { allProductsData, currentYear, lastYear } = data;
+  const { allProductsData, currentYear, lastYear, currentMonth: apiMonth } = data;
 
   // Get unique teams and sort them
   const teams = Array.from(new Set(allProductsData.map(d => d.team))).sort((a, b) => {
@@ -86,21 +98,9 @@ export default function AllProductsTab() {
     return a.localeCompare(b);
   });
 
-  // Get all months from Jan to Dec
-  const months = Array.from({ length: 12 }, (_, i) => {
-    const month = String(i + 1).padStart(2, '0');
-    return month;
-  }).filter(m => {
-    const monthNum = parseInt(m);
-    const now = new Date();
-    const currentYearNum = now.getFullYear();
-    const currentMonthNum = now.getMonth() + 1;
-    const yearNum = parseInt(currentYear);
-    
-    if (yearNum < currentYearNum) return true;
-    if (yearNum === currentYearNum && monthNum <= currentMonthNum) return true;
-    return false;
-  });
+  const refYm = selectedMonth || apiMonth || `${currentYear}-12`;
+  const maxMonthNum = parseInt(refYm.split('-')[1]!, 10);
+  const months = Array.from({ length: maxMonthNum }, (_, i) => String(i + 1).padStart(2, '0'));
 
   // Organize data by team, year, and month
   const getMonthData = (team: string, year: string, month: string) => {

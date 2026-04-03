@@ -10,7 +10,8 @@ import {
   type ReactNode,
 } from "react";
 
-const STORAGE_KEY = "dashboard-include-vat";
+/** v2: default is VAT off; bump key so legacy "true" prefs do not re-enable by default */
+const STORAGE_KEY = "dashboard-include-vat-v2";
 
 type VatIncludeContextValue = {
   includeVat: boolean;

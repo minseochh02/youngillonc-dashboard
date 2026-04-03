@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
@@ -8,9 +8,12 @@ import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
-interface ChannelDataRow {
-  channel: string;
+interface EmployeeMonthDataRow {
+  team: string;
+  employee_name: string;
+  branch: string;
   year: string;
+  year_month: string;
   total_weight: number;
   total_amount: number;
   total_quantity: number;
@@ -24,8 +27,17 @@ interface ComparisonDataRow {
   total_quantity: number;
 }
 
-interface TeamDataRow {
+interface TeamEmployeeDataRow {
   team: string;
+  employee_name: string;
+  branch: string;
+  year: string;
+  total_weight: number;
+  total_amount: number;
+  total_quantity: number;
+}
+
+interface B2BDataRow {
   year: string;
   total_weight: number;
   total_amount: number;
@@ -33,9 +45,10 @@ interface TeamDataRow {
 }
 
 interface SalesAmountData {
-  channelData: ChannelDataRow[];
+  employeeMonthData: EmployeeMonthDataRow[];
   comparisonData: ComparisonDataRow[];
-  teamData: TeamDataRow[];
+  teamEmployeeData: TeamEmployeeDataRow[];
+  b2bData: B2BDataRow[];
   currentYear: string;
   lastYear: string;
 }
@@ -73,11 +86,11 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
   };
 
   const formatNumber = (num: number) => {
-    return num.toLocaleString();
+    return Math.round(num).toLocaleString();
   };
 
   const formatAmount = (num: number) => {
-    return num.toLocaleString();
+    return Math.round(num).toLocaleString();
   };
 
   const calculateChange = (current: number, previous: number) => {
@@ -103,33 +116,25 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
     );
   }
 
-  const { currentYear, lastYear, channelData, comparisonData, teamData } = data;
+  const { currentYear, lastYear, employeeMonthData, comparisonData, teamEmployeeData, b2bData } = data;
 
-  // Get data by channel and year
-  const getChannelData = (channel: string, year: string) => {
-    const found = channelData.find(row => row.channel === channel && row.year === year);
+  // Calculate cumulative period label
+  const currentMonthStr = selectedMonth || `${currentYear}-12`;
+  const [_, currentMonthNum] = currentMonthStr.split('-');
+  const displayMonth = parseInt(currentMonthNum);
+  const cumulativePeriod = `1월~${displayMonth}월 누계`;
+  const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
+
+  // Get employee monthly data
+  const getEmployeeMonthlyData = (employee: string, yearMonth: string) => {
+    const found = employeeMonthData.find(row => row.employee_name === employee && row.year_month === yearMonth);
     return found || { total_weight: 0, total_amount: 0, total_quantity: 0 };
   };
 
-  // Get comparison data by business type and year
-  const getComparisonData = (businessType: string, year: string) => {
-    const found = comparisonData.find(row => row.business_type === businessType && row.year === year);
-    return found || { total_weight: 0, total_amount: 0, total_quantity: 0 };
-  };
-
-  // Get team data by team and year
-  const getTeamData = (team: string, year: string) => {
-    const found = teamData.find(row => row.team === team && row.year === year);
-    return found || { total_weight: 0, total_amount: 0, total_quantity: 0 };
-  };
-
-  // Get unique teams sorted
-  const teams = Array.from(new Set(teamData.map(row => row.team))).sort();
-
-  // Calculate totals by year
-  const getTotalByYear = (year: string) => {
-    return channelData
-      .filter(row => row.year === year)
+  // Calculate cumulative totals by employee
+  const getEmployeeCumulativeData = (employee: string, year: string, upToMonth: string) => {
+    return employeeMonthData
+      .filter(row => row.employee_name === employee && row.year === year && row.year_month <= upToMonth)
       .reduce((acc, row) => ({
         total_weight: acc.total_weight + row.total_weight,
         total_amount: acc.total_amount + row.total_amount,
@@ -137,7 +142,88 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
       }), { total_weight: 0, total_amount: 0, total_quantity: 0 });
   };
 
-  const channels = ['Mobil 1 CCO', 'Mobil Brand Shop', 'IWS', 'Fleet', 'Reseller'];
+  // Get unique employees with their info (grouped by team)
+  interface EmployeeMonthGroup {
+    team: string;
+    employees: { name: string; branch: string }[];
+  }
+
+  const employeeMonthGroups: EmployeeMonthGroup[] = [];
+  const uniqueMonthEmployees = new Set<string>();
+
+  employeeMonthData.forEach(row => {
+    const employeeKey = `${row.team}|${row.employee_name}`;
+    if (!uniqueMonthEmployees.has(employeeKey)) {
+      uniqueMonthEmployees.add(employeeKey);
+      let group = employeeMonthGroups.find(g => g.team === row.team);
+      if (!group) {
+        group = { team: row.team, employees: [] };
+        employeeMonthGroups.push(group);
+      }
+      group.employees.push({ name: row.employee_name, branch: row.branch });
+    }
+  });
+
+  // Sort teams and employees by cumulative sales
+  employeeMonthGroups.sort((a, b) => a.team.localeCompare(b.team));
+  employeeMonthGroups.forEach(group => {
+    group.employees.sort((a, b) => {
+      const aCumulative = getEmployeeCumulativeData(a.name, currentYear, currentMonthStr);
+      const bCumulative = getEmployeeCumulativeData(b.name, currentYear, currentMonthStr);
+      return bCumulative.total_amount - aCumulative.total_amount;
+    });
+  });
+
+  // Get comparison data by business type and year
+  const getComparisonData = (businessType: string, year: string) => {
+    const found = comparisonData.find(row => row.business_type === businessType && row.year === year);
+    return found || { total_weight: 0, total_amount: 0, total_quantity: 0 };
+  };
+
+  // Get employee data by team, employee, and year
+  const getEmployeeData = (team: string, employee: string, year: string) => {
+    const found = teamEmployeeData.find(row => row.team === team && row.employee_name === employee && row.year === year);
+    return found || { total_weight: 0, total_amount: 0, total_quantity: 0, branch: '' };
+  };
+
+  // Get B2B data by year
+  const getB2BData = (year: string) => {
+    const found = b2bData.find(row => row.year === year);
+    return found || { total_weight: 0, total_amount: 0, total_quantity: 0 };
+  };
+
+  // Group employees by team
+  interface EmployeeGroup {
+    team: string;
+    employees: { name: string; branch: string }[];
+  }
+
+  const teamGroups: EmployeeGroup[] = [];
+  const uniqueEmployees = new Set<string>();
+
+  teamEmployeeData.forEach(row => {
+    const employeeKey = `${row.team}|${row.employee_name}`;
+    if (!uniqueEmployees.has(employeeKey)) {
+      uniqueEmployees.add(employeeKey);
+      let group = teamGroups.find(g => g.team === row.team);
+      if (!group) {
+        group = { team: row.team, employees: [] };
+        teamGroups.push(group);
+      }
+      group.employees.push({ name: row.employee_name, branch: row.branch });
+    }
+  });
+
+  // Sort teams and employees within each team
+  teamGroups.sort((a, b) => a.team.localeCompare(b.team));
+  teamGroups.forEach(group => {
+    group.employees.sort((a, b) => {
+      const aCurrent = getEmployeeData(group.team, a.name, currentYear);
+      const bCurrent = getEmployeeData(group.team, b.name, currentYear);
+      return bCurrent.total_amount - aCurrent.total_amount;
+    });
+  });
+
 
   const handleExcelDownload = () => {
     if (!data) {
@@ -180,62 +266,128 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
 
     exportData.push({});
 
-    // Add B2C team breakdown
+    // Add B2C team and employee breakdown
     exportData.push({
-      '팀': 'B2C 팀별 매출액',
+      '팀': 'B2C 팀별 직원별 매출액',
     });
 
-    teams.forEach((team) => {
-      const currentData = getTeamData(team, currentYear);
-      const lastData = getTeamData(team, lastYear);
-      const amountChange = calculateChange(currentData.total_amount, lastData.total_amount);
+    let b2cTeamTotalCurrent = { total_weight: 0, total_amount: 0 };
+    let b2cTeamTotalLast = { total_weight: 0, total_amount: 0 };
 
-      exportData.push({
-        '팀': team,
-        [`${currentYear}년 매출액(원)`]: formatAmount(currentData.total_amount),
-        [`${lastYear}년 매출액(원)`]: formatAmount(lastData.total_amount),
-        '변화율(%)': amountChange.percent.toFixed(1),
-        [`${currentYear}년 중량(L)`]: currentData.total_weight,
-        [`${lastYear}년 중량(L)`]: lastData.total_weight,
+    teamGroups.forEach(group => {
+      let teamTotalCurrent = { total_weight: 0, total_amount: 0 };
+      let teamTotalLast = { total_weight: 0, total_amount: 0 };
+
+      group.employees.forEach(emp => {
+        const currentData = getEmployeeData(group.team, emp.name, currentYear);
+        const lastData = getEmployeeData(group.team, emp.name, lastYear);
+        const amountChange = calculateChange(currentData.total_amount, lastData.total_amount);
+
+        teamTotalCurrent.total_weight += currentData.total_weight;
+        teamTotalCurrent.total_amount += currentData.total_amount;
+        teamTotalLast.total_weight += lastData.total_weight;
+        teamTotalLast.total_amount += lastData.total_amount;
+
+        exportData.push({
+          '팀': group.team,
+          '직원명': emp.name,
+          '사업소': emp.branch,
+          [`${currentYear}년 매출액(원)`]: formatAmount(currentData.total_amount),
+          [`${lastYear}년 매출액(원)`]: formatAmount(lastData.total_amount),
+          '변화율(%)': amountChange.percent.toFixed(1),
+          [`${currentYear}년 중량(L)`]: currentData.total_weight,
+          [`${lastYear}년 중량(L)`]: lastData.total_weight,
+        });
       });
+
+      const teamAmountChange = calculateChange(teamTotalCurrent.total_amount, teamTotalLast.total_amount);
+      exportData.push({
+        '팀': group.team,
+        '직원명': '소계',
+        '사업소': '',
+        [`${currentYear}년 매출액(원)`]: formatAmount(teamTotalCurrent.total_amount),
+        [`${lastYear}년 매출액(원)`]: formatAmount(teamTotalLast.total_amount),
+        '변화율(%)': teamAmountChange.percent.toFixed(1),
+        [`${currentYear}년 중량(L)`]: teamTotalCurrent.total_weight,
+        [`${lastYear}년 중량(L)`]: teamTotalLast.total_weight,
+      });
+
+      b2cTeamTotalCurrent.total_weight += teamTotalCurrent.total_weight;
+      b2cTeamTotalCurrent.total_amount += teamTotalCurrent.total_amount;
+      b2cTeamTotalLast.total_weight += teamTotalLast.total_weight;
+      b2cTeamTotalLast.total_amount += teamTotalLast.total_amount;
+    });
+
+    const b2cTeamAmountChange = calculateChange(b2cTeamTotalCurrent.total_amount, b2cTeamTotalLast.total_amount);
+    exportData.push({
+      '팀': '',
+      '직원명': 'B2C 소계',
+      '사업소': '',
+      [`${currentYear}년 매출액(원)`]: formatAmount(b2cTeamTotalCurrent.total_amount),
+      [`${lastYear}년 매출액(원)`]: formatAmount(b2cTeamTotalLast.total_amount),
+      '변화율(%)': b2cTeamAmountChange.percent.toFixed(1),
+      [`${currentYear}년 중량(L)`]: b2cTeamTotalCurrent.total_weight,
+      [`${lastYear}년 중량(L)`]: b2cTeamTotalLast.total_weight,
+    });
+
+    const b2bCurrentExport = getB2BData(currentYear);
+    const b2bLastExport = getB2BData(lastYear);
+    const b2bAmountChangeExport = calculateChange(b2bCurrentExport.total_amount, b2bLastExport.total_amount);
+    exportData.push({
+      '팀': '',
+      '직원명': 'B2B 소계',
+      '사업소': '',
+      [`${currentYear}년 매출액(원)`]: formatAmount(b2bCurrentExport.total_amount),
+      [`${lastYear}년 매출액(원)`]: formatAmount(b2bLastExport.total_amount),
+      '변화율(%)': b2bAmountChangeExport.percent.toFixed(1),
+      [`${currentYear}년 중량(L)`]: b2bCurrentExport.total_weight,
+      [`${lastYear}년 중량(L)`]: b2bLastExport.total_weight,
     });
 
     exportData.push({});
 
-    // Add header
+    // Add employee monthly breakdown
     exportData.push({
-      '채널': 'AUTO 채널별 매출액',
+      '팀': '직원별 월별 매출액',
     });
 
-    // Add channel rows
-    channels.forEach((channel) => {
-      const currentData = getChannelData(channel, currentYear);
-      const lastData = getChannelData(channel, lastYear);
-      const amountChange = calculateChange(currentData.total_amount, lastData.total_amount);
+    employeeMonthGroups.forEach(group => {
+      group.employees.forEach(emp => {
+        // Add cumulative row
+        const cumulativeCurrent = getEmployeeCumulativeData(emp.name, currentYear, currentMonthStr);
+        const cumulativeLast = getEmployeeCumulativeData(emp.name, lastYear, lastYearMonthStr);
+        const cumulativeChange = calculateChange(cumulativeCurrent.total_amount, cumulativeLast.total_amount);
 
-      exportData.push({
-        '채널': channel,
-        [`${currentYear}년 매출액(원)`]: formatAmount(currentData.total_amount),
-        [`${lastYear}년 매출액(원)`]: formatAmount(lastData.total_amount),
-        '변화율(%)': amountChange.percent.toFixed(1),
-        [`${currentYear}년 중량(L)`]: currentData.total_weight,
-        [`${lastYear}년 중량(L)`]: lastData.total_weight,
+        exportData.push({
+          '팀': group.team,
+          '직원명': emp.name,
+          '사업소': emp.branch,
+          '월': '누계',
+          [`${currentYear}년 매출액(원)`]: formatAmount(cumulativeCurrent.total_amount),
+          [`${lastYear}년 매출액(원)`]: formatAmount(cumulativeLast.total_amount),
+          '변화율(%)': cumulativeChange.percent.toFixed(1),
+        });
+
+        // Add monthly rows
+        const months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+        months.forEach((month) => {
+          const currentYearMonth = `${currentYear}-${month}`;
+          const lastYearMonth = `${lastYear}-${month}`;
+          const currentData = getEmployeeMonthlyData(emp.name, currentYearMonth);
+          const lastData = getEmployeeMonthlyData(emp.name, lastYearMonth);
+          const change = calculateChange(currentData.total_amount, lastData.total_amount);
+
+          exportData.push({
+            '팀': '',
+            '직원명': '',
+            '사업소': '',
+            '월': `${parseInt(month)}월`,
+            [`${currentYear}년 매출액(원)`]: formatAmount(currentData.total_amount),
+            [`${lastYear}년 매출액(원)`]: formatAmount(lastData.total_amount),
+            '변화율(%)': change.percent.toFixed(1),
+          });
+        });
       });
-    });
-
-    // Add total
-    const totalCurrent = getTotalByYear(currentYear);
-    const totalLast = getTotalByYear(lastYear);
-    const totalChange = calculateChange(totalCurrent.total_amount, totalLast.total_amount);
-
-    exportData.push({});
-    exportData.push({
-      '채널': '전체 합계',
-      [`${currentYear}년 매출액(원)`]: formatAmount(totalCurrent.total_amount),
-      [`${lastYear}년 매출액(원)`]: formatAmount(totalLast.total_amount),
-      '변화율(%)': totalChange.percent.toFixed(1),
-      [`${currentYear}년 중량(L)`]: totalCurrent.total_weight,
-      [`${lastYear}년 중량(L)`]: totalLast.total_weight,
     });
 
     const filename = generateFilename('B2C_AUTO채널별매출액');
@@ -264,7 +416,7 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">B2C (AUTO) 매출</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 합계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{cumulativePeriod}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -297,7 +449,7 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">B2B (비AUTO) 매출</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 합계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{cumulativePeriod}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -323,16 +475,18 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
         </div>
       </div>
 
-      {/* B2C Team Sales Table */}
+      {/* B2C Team & Employee Sales Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">B2C 팀별 매출액</h4>
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">B2C 팀별 직원별 매출액 ({cumulativePeriod})</h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">팀</th>
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">직원명</th>
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">사업소</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">{currentYear}년 매출액</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear}년 매출액</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">변화율</th>
@@ -341,136 +495,277 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
               </tr>
             </thead>
             <tbody>
-              {teams.map((team) => {
-                const currentData = getTeamData(team, currentYear);
-                const lastData = getTeamData(team, lastYear);
-                const amountChange = calculateChange(currentData.total_amount, lastData.total_amount);
+              {teamGroups.map((group) => {
+                let teamTotalCurrent = { total_weight: 0, total_amount: 0 };
+                let teamTotalLast = { total_weight: 0, total_amount: 0 };
 
                 return (
-                  <tr
-                    key={team}
-                    className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
-                  >
-                    <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
-                      {team}
+                  <Fragment key={group.team}>
+                    {group.employees.map((emp) => {
+                      const currentData = getEmployeeData(group.team, emp.name, currentYear);
+                      const lastData = getEmployeeData(group.team, emp.name, lastYear);
+                      const amountChange = calculateChange(currentData.total_amount, lastData.total_amount);
+
+                      teamTotalCurrent.total_weight += currentData.total_weight;
+                      teamTotalCurrent.total_amount += currentData.total_amount;
+                      teamTotalLast.total_weight += lastData.total_weight;
+                      teamTotalLast.total_amount += lastData.total_amount;
+
+                      return (
+                        <tr
+                          key={`${group.team}-${emp.name}`}
+                          className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
+                        >
+                          <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300">
+                            {group.team}
+                          </td>
+                          <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
+                            {emp.name}
+                          </td>
+                          <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400 text-xs">
+                            {emp.branch}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300">
+                            {formatAmount(currentData.total_amount)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                            {formatAmount(lastData.total_amount)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                              amountChange.isPositive ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {amountChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(amountChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs">
+                            {formatNumber(currentData.total_weight)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs">
+                            {formatNumber(lastData.total_weight)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {(() => {
+                      const teamAmountChange = calculateChange(teamTotalCurrent.total_amount, teamTotalLast.total_amount);
+                      return (
+                        <tr className="bg-zinc-100 dark:bg-zinc-800/50 border-b-2 border-zinc-300 dark:border-zinc-700">
+                          <td className="py-2 px-4 font-semibold text-zinc-800 dark:text-zinc-200">{group.team}</td>
+                          <td className="py-2 px-4 font-semibold text-zinc-900 dark:text-zinc-100">소계</td>
+                          <td className="py-2 px-4"></td>
+                          <td className="py-2 px-4 text-right font-mono font-semibold text-blue-800 dark:text-blue-200">
+                            {formatAmount(teamTotalCurrent.total_amount)}
+                          </td>
+                          <td className="py-2 px-4 text-right font-mono font-semibold text-zinc-800 dark:text-zinc-200">
+                            {formatAmount(teamTotalLast.total_amount)}
+                          </td>
+                          <td className="py-2 px-4 text-right">
+                            <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                              teamAmountChange.isPositive ? 'text-green-700' : 'text-red-700'
+                            }`}>
+                              {teamAmountChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(teamAmountChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="py-2 px-4 text-right font-mono font-semibold text-zinc-700 dark:text-zinc-300 text-xs">
+                            {formatNumber(teamTotalCurrent.total_weight)}
+                          </td>
+                          <td className="py-2 px-4 text-right font-mono font-semibold text-zinc-700 dark:text-zinc-300 text-xs">
+                            {formatNumber(teamTotalLast.total_weight)}
+                          </td>
+                        </tr>
+                      );
+                    })()}
+                  </Fragment>
+                );
+              })}
+              {/* B2C Subtotal */}
+              {(() => {
+                let b2cTotalCurrent = { total_weight: 0, total_amount: 0 };
+                let b2cTotalLast = { total_weight: 0, total_amount: 0 };
+
+                teamGroups.forEach(group => {
+                  group.employees.forEach(emp => {
+                    const currentData = getEmployeeData(group.team, emp.name, currentYear);
+                    const lastData = getEmployeeData(group.team, emp.name, lastYear);
+                    b2cTotalCurrent.total_weight += currentData.total_weight;
+                    b2cTotalCurrent.total_amount += currentData.total_amount;
+                    b2cTotalLast.total_weight += lastData.total_weight;
+                    b2cTotalLast.total_amount += lastData.total_amount;
+                  });
+                });
+
+                const b2cAmountChange = calculateChange(b2cTotalCurrent.total_amount, b2cTotalLast.total_amount);
+                return (
+                  <tr className="bg-blue-100 dark:bg-blue-950/30 border-t-2 border-blue-300 dark:border-blue-700 font-bold">
+                    <td className="py-3 px-4" colSpan={2}>B2C 소계</td>
+                    <td className="py-3 px-4"></td>
+                    <td className="py-3 px-4 text-right font-mono text-blue-800 dark:text-blue-200">
+                      {formatAmount(b2cTotalCurrent.total_amount)}
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">
-                      {formatAmount(currentData.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatAmount(lastData.total_amount)}
+                    <td className="py-3 px-4 text-right font-mono text-zinc-800 dark:text-zinc-200">
+                      {formatAmount(b2cTotalLast.total_amount)}
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium ${
-                        amountChange.isPositive ? 'text-green-600' : 'text-red-600'
+                      <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                        b2cAmountChange.isPositive ? 'text-green-700' : 'text-red-700'
                       }`}>
-                        {amountChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(amountChange.percent).toFixed(1)}%
+                        {b2cAmountChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {Math.abs(b2cAmountChange.percent).toFixed(1)}%
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs">
-                      {formatNumber(currentData.total_weight)}
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 text-xs">
+                      {formatNumber(b2cTotalCurrent.total_weight)}
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs">
-                      {formatNumber(lastData.total_weight)}
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 text-xs">
+                      {formatNumber(b2cTotalLast.total_weight)}
                     </td>
                   </tr>
                 );
-              })}
+              })()}
+              {/* B2B Subtotal */}
+              {(() => {
+                const b2bCurrent = getB2BData(currentYear);
+                const b2bLast = getB2BData(lastYear);
+                const b2bAmountChange = calculateChange(b2bCurrent.total_amount, b2bLast.total_amount);
+                return (
+                  <tr className="bg-amber-100 dark:bg-amber-950/30 border-t-2 border-amber-300 dark:border-amber-700 font-bold">
+                    <td className="py-3 px-4" colSpan={2}>B2B 소계</td>
+                    <td className="py-3 px-4"></td>
+                    <td className="py-3 px-4 text-right font-mono text-amber-800 dark:text-amber-200">
+                      {formatAmount(b2bCurrent.total_amount)}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-zinc-800 dark:text-zinc-200">
+                      {formatAmount(b2bLast.total_amount)}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                        b2bAmountChange.isPositive ? 'text-green-700' : 'text-red-700'
+                      }`}>
+                        {b2bAmountChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {Math.abs(b2bAmountChange.percent).toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 text-xs">
+                      {formatNumber(b2bCurrent.total_weight)}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 text-xs">
+                      {formatNumber(b2bLast.total_weight)}
+                    </td>
+                  </tr>
+                );
+              })()}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Channel Sales Table */}
+      {/* Employee Monthly Sales Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">AUTO 채널별 매출액</h4>
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">직원별 월별 매출액 ({cumulativePeriod})</h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">채널</th>
+                <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-20">팀</th>
+                <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-24">직원명</th>
+                <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-20">사업소</th>
+                <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-16">월</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">{currentYear}년 매출액</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear}년 매출액</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">변화율</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{currentYear}년 중량(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear}년 중량(L)</th>
               </tr>
             </thead>
             <tbody>
-              {channels.map((channel) => {
-                const currentData = getChannelData(channel, currentYear);
-                const lastData = getChannelData(channel, lastYear);
-                const amountChange = calculateChange(currentData.total_amount, lastData.total_amount);
+              {employeeMonthGroups.map((group) => (
+                <Fragment key={group.team}>
+                  {group.employees.map((emp) => {
+                    // Cumulative row
+                    const cumulativeCurrent = getEmployeeCumulativeData(emp.name, currentYear, currentMonthStr);
+                    const cumulativeLast = getEmployeeCumulativeData(emp.name, lastYear, lastYearMonthStr);
+                    const cumulativeChange = calculateChange(cumulativeCurrent.total_amount, cumulativeLast.total_amount);
 
-                return (
-                  <tr
-                    key={channel}
-                    className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
-                  >
-                    <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
-                      {channel}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">
-                      {formatAmount(currentData.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatAmount(lastData.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium ${
-                        amountChange.isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {amountChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(amountChange.percent).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs">
-                      {formatNumber(currentData.total_weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs">
-                      {formatNumber(lastData.total_weight)}
-                    </td>
-                  </tr>
-                );
-              })}
+                    return (
+                      <Fragment key={`${group.team}-${emp.name}`}>
+                        {/* Cumulative Row */}
+                        <tr className="bg-blue-50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-800 font-semibold">
+                          <td className="py-3 px-2 text-zinc-700 dark:text-zinc-300 text-xs">
+                            {group.team}
+                          </td>
+                          <td className="py-3 px-2 font-medium text-zinc-900 dark:text-zinc-100 text-sm">
+                            {emp.name}
+                          </td>
+                          <td className="py-3 px-2 text-zinc-600 dark:text-zinc-400 text-xs">
+                            {emp.branch}
+                          </td>
+                          <td className="py-3 px-2 text-zinc-900 dark:text-zinc-100 text-sm">
+                            누계
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300">
+                            {formatAmount(cumulativeCurrent.total_amount)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                            {formatAmount(cumulativeLast.total_amount)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                              cumulativeChange.isPositive ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {cumulativeChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(cumulativeChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
 
-              {/* Total Row */}
-              {(() => {
-                const totalCurrent = getTotalByYear(currentYear);
-                const totalLast = getTotalByYear(lastYear);
-                const totalChange = calculateChange(totalCurrent.total_amount, totalLast.total_amount);
+                        {/* Monthly Rows */}
+                        {['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map((month) => {
+                          // Only show months up to the selected month
+                          const selectedMonthNum = parseInt(currentMonthNum);
+                          if (parseInt(month) > selectedMonthNum) return null;
 
-                return (
-                  <tr className="border-t-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50">
-                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100">
-                      전체 합계
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold">
-                      {formatAmount(totalCurrent.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 font-semibold">
-                      {formatAmount(totalLast.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium ${
-                        totalChange.isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {totalChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(totalChange.percent).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs font-semibold">
-                      {formatNumber(totalCurrent.total_weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs font-semibold">
-                      {formatNumber(totalLast.total_weight)}
-                    </td>
-                  </tr>
-                );
-              })()}
+                          const currentYearMonth = `${currentYear}-${month}`;
+                          const lastYearMonth = `${lastYear}-${month}`;
+                          const currentData = getEmployeeMonthlyData(emp.name, currentYearMonth);
+                          const lastData = getEmployeeMonthlyData(emp.name, lastYearMonth);
+                          const change = calculateChange(currentData.total_amount, lastData.total_amount);
+
+                          return (
+                            <tr
+                              key={month}
+                              className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
+                            >
+                              <td className="py-2 px-2 text-zinc-500 dark:text-zinc-400 text-xs"></td>
+                              <td className="py-2 px-2 text-zinc-500 dark:text-zinc-400 text-xs"></td>
+                              <td className="py-2 px-2 text-zinc-500 dark:text-zinc-400 text-xs"></td>
+                              <td className="py-2 px-2 text-zinc-700 dark:text-zinc-300 text-sm">
+                                {parseInt(month)}월
+                              </td>
+                              <td className="py-2 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">
+                                {formatAmount(currentData.total_amount)}
+                              </td>
+                              <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                                {formatAmount(lastData.total_amount)}
+                              </td>
+                              <td className="py-2 px-4 text-right">
+                                <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                                  change.isPositive ? 'text-green-600' : 'text-red-600'
+                                }`}>
+                                  {change.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                  {Math.abs(change.percent).toFixed(1)}%
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        }).filter(Boolean)}
+                      </Fragment>
+                    );
+                  })}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         </div>
@@ -492,7 +787,7 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
               <li>Reseller: 28500-28510</li>
             </ul>
           </li>
-          <li>기간: {lastYear}년 vs {currentYear}년</li>
+          <li>기간: {lastYear}년 {cumulativePeriod} vs {currentYear}년 {cumulativePeriod}</li>
         </ul>
       </div>
     </div>

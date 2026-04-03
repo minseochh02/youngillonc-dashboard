@@ -31,6 +31,7 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<SalesAnalysisData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [reasonAnalysis, setReasonAnalysis] = useState<{ [channel: string]: string }>({});
 
   useEffect(() => {
     fetchSalesAnalysisData();
@@ -69,6 +70,13 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
     return { percent: change, isPositive: change >= 0 };
   };
 
+  const handleReasonChange = (channel: string, value: string) => {
+    setReasonAnalysis(prev => ({
+      ...prev,
+      [channel]: value
+    }));
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-zinc-400">
@@ -87,6 +95,11 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
   }
 
   const { currentYear, lastYear, channelData } = data;
+
+  // Calculate cumulative period labels
+  const currentMonthStr = selectedMonth || `${currentYear}-12`;
+  const [_, currentMonthNum] = currentMonthStr.split('-');
+  const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
 
   // Get data by channel, product group and year
   const getChannelData = (channel: string, productGroup: string, year: string) => {
@@ -129,43 +142,40 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
 
     // Add header
     exportData.push({
-      '채널': '전체 채널별 매출액',
+      '채널': '전체 채널별 중량 분석',
     });
 
-    // Add channel rows with PVL/CVL breakdown
+    // Add channel rows with CVL/PVL breakdown
     allChannels.forEach((channel) => {
-      const pvlCurrent = getChannelData(channel, 'PVL', currentYear);
       const cvlCurrent = getChannelData(channel, 'CVL', currentYear);
+      const pvlCurrent = getChannelData(channel, 'PVL', currentYear);
       const totalCurrent = getChannelTotal(channel, currentYear);
       const totalLast = getChannelTotal(channel, lastYear);
-      const totalChange = calculateChange(totalCurrent.total_amount, totalLast.total_amount);
+      const weightChange = calculateChange(totalCurrent.total_weight, totalLast.total_weight);
 
       exportData.push({
         '채널': channel,
-        [`PVL 중량(${currentYear})`]: pvlCurrent.total_weight,
-        [`CVL 중량(${currentYear})`]: cvlCurrent.total_weight,
-        [`합계 중량(${currentYear})`]: totalCurrent.total_weight,
-        [`PVL 매출(${currentYear})`]: pvlCurrent.total_amount,
-        [`CVL 매출(${currentYear})`]: cvlCurrent.total_amount,
-        [`합계 매출(${currentYear})`]: totalCurrent.total_amount,
-        '변화율(%)': totalChange.percent.toFixed(1),
+        [`CVL 중량(L)`]: cvlCurrent.total_weight,
+        [`PVL 중량(L)`]: pvlCurrent.total_weight,
+        [`합계 중량(L)`]: totalCurrent.total_weight,
+        '변화율(%)': weightChange.percent.toFixed(1),
+        '원인분석': reasonAnalysis[channel] || '',
       });
     });
 
     // Add total
     const totalCurrent = getTotalByYear(currentYear);
     const totalLast = getTotalByYear(lastYear);
-    const totalChange = calculateChange(totalCurrent.total_amount, totalLast.total_amount);
+    const totalWeightChange = calculateChange(totalCurrent.total_weight, totalLast.total_weight);
 
     exportData.push({});
     exportData.push({
       '채널': '전체 합계',
-      [`합계 중량(${currentYear})`]: totalCurrent.total_weight,
-      [`합계 매출(${currentYear})`]: totalCurrent.total_amount,
-      '변화율(%)': totalChange.percent.toFixed(1),
+      [`합계 중량(L)`]: totalCurrent.total_weight,
+      '변화율(%)': totalWeightChange.percent.toFixed(1),
     });
 
-    const filename = generateFilename('전체채널별매출분석');
+    const filename = generateFilename('전체채널별중량분석');
     exportToExcel(exportData, filename);
   };
 
@@ -203,7 +213,7 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">PVL 실적</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 합계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">1월~{parseInt(currentMonthNum)}월 누계</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -236,7 +246,7 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">CVL 실적</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 합계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">1월~{parseInt(currentMonthNum)}월 누계</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -265,24 +275,21 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
       {/* All Channels Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">AUTO 채널별 매출액 (거래처그룹2)</h4>
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">AUTO 채널별 매출액 (1월~{parseInt(currentMonthNum)}월 누계)</h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
                 <th rowSpan={2} className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">채널</th>
-                <th colSpan={3} className="text-center py-2 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider border-l border-zinc-200 dark:border-zinc-700">중량 (L) - {currentYear}년</th>
-                <th colSpan={3} className="text-center py-2 px-4 text-xs font-bold text-purple-600 uppercase tracking-wider border-l border-zinc-200 dark:border-zinc-700">매출액 (원) - {currentYear}년</th>
+                <th colSpan={3} className="text-center py-2 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider border-l border-zinc-200 dark:border-zinc-700">중량 (L) - {currentYear}년 누계</th>
                 <th rowSpan={2} className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider border-l border-zinc-200 dark:border-zinc-700 border-b border-zinc-200 dark:border-zinc-800">변화율<br/>(전체)</th>
+                <th rowSpan={2} className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider border-l border-zinc-200 dark:border-zinc-700 border-b border-zinc-200 dark:border-zinc-800">원인분석</th>
               </tr>
               <tr>
-                <th className="text-right py-2 px-4 text-[10px] font-bold text-zinc-500 border-l border-zinc-200 dark:border-zinc-700 border-b border-zinc-200 dark:border-zinc-800">PVL</th>
-                <th className="text-right py-2 px-4 text-[10px] font-bold text-zinc-500 border-b border-zinc-200 dark:border-zinc-800">CVL</th>
+                <th className="text-right py-2 px-4 text-[10px] font-bold text-zinc-500 border-l border-zinc-200 dark:border-zinc-700 border-b border-zinc-200 dark:border-zinc-800">CVL</th>
+                <th className="text-right py-2 px-4 text-[10px] font-bold text-zinc-500 border-b border-zinc-200 dark:border-zinc-800">PVL</th>
                 <th className="text-right py-2 px-4 text-[10px] font-bold text-blue-600 border-b border-zinc-200 dark:border-zinc-800">합계</th>
-                <th className="text-right py-2 px-4 text-[10px] font-bold text-zinc-500 border-l border-zinc-200 dark:border-zinc-700 border-b border-zinc-200 dark:border-zinc-800">PVL</th>
-                <th className="text-right py-2 px-4 text-[10px] font-bold text-zinc-500 border-b border-zinc-200 dark:border-zinc-800">CVL</th>
-                <th className="text-right py-2 px-4 text-[10px] font-bold text-purple-600 border-b border-zinc-200 dark:border-zinc-800">합계</th>
               </tr>
             </thead>
             <tbody>
@@ -293,6 +300,9 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
                 const totalLast = getChannelTotal(channel, lastYear);
                 const totalChange = calculateChange(totalCurrent.total_amount, totalLast.total_amount);
 
+                // Calculate change based on weight instead of amount
+                const weightChange = calculateChange(totalCurrent.total_weight, totalLast.total_weight);
+
                 return (
                   <tr
                     key={channel}
@@ -301,34 +311,34 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
                     <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
                       {channel}
                     </td>
-                    {/* Weight Columns */}
+                    {/* Weight Columns - CVL, PVL, Total */}
                     <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs border-l border-zinc-100 dark:border-zinc-800/50">
-                      {formatNumber(pvlCurrent.total_weight)}
+                      {formatNumber(cvlCurrent.total_weight)}
                     </td>
                     <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs">
-                      {formatNumber(cvlCurrent.total_weight)}
+                      {formatNumber(pvlCurrent.total_weight)}
                     </td>
                     <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold bg-blue-50/20">
                       {formatNumber(totalCurrent.total_weight)}
                     </td>
-                    {/* Amount Columns */}
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs border-l border-zinc-100 dark:border-zinc-800/50">
-                      {formatNumber(pvlCurrent.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs">
-                      {formatNumber(cvlCurrent.total_amount)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-purple-700 dark:text-purple-300 font-bold bg-purple-50/20">
-                      {formatNumber(totalCurrent.total_amount)}
-                    </td>
                     {/* Change Column */}
                     <td className="py-3 px-4 text-right border-l border-zinc-100 dark:border-zinc-800/50">
                       <span className={`inline-flex items-center gap-1 font-medium ${
-                        totalChange.isPositive ? 'text-green-600' : 'text-red-600'
+                        weightChange.isPositive ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        {totalChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(totalChange.percent).toFixed(1)}%
+                        {weightChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {Math.abs(weightChange.percent).toFixed(1)}%
                       </span>
+                    </td>
+                    {/* Reason Analysis Input */}
+                    <td className="py-3 px-4 border-l border-zinc-100 dark:border-zinc-800/50">
+                      <input
+                        type="text"
+                        value={reasonAnalysis[channel] || ''}
+                        onChange={(e) => handleReasonChange(channel, e.target.value)}
+                        placeholder="원인 입력..."
+                        className="w-full px-2 py-1.5 text-sm rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
                     </td>
                   </tr>
                 );
@@ -336,31 +346,26 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
 
               {/* Total Row */}
               {(() => {
-                const pvlGrand = channelData.filter(r => r.product_group === 'PVL' && r.year === currentYear).reduce((acc, r) => acc + r.total_weight, 0);
                 const cvlGrand = channelData.filter(r => r.product_group === 'CVL' && r.year === currentYear).reduce((acc, r) => acc + r.total_weight, 0);
-                
-                const pvlGrandAmt = channelData.filter(r => r.product_group === 'PVL' && r.year === currentYear).reduce((acc, r) => acc + r.total_amount, 0);
-                const cvlGrandAmt = channelData.filter(r => r.product_group === 'CVL' && r.year === currentYear).reduce((acc, r) => acc + r.total_amount, 0);
+                const pvlGrand = channelData.filter(r => r.product_group === 'PVL' && r.year === currentYear).reduce((acc, r) => acc + r.total_weight, 0);
 
                 const totalCurrent = getTotalByYear(currentYear);
                 const totalLast = getTotalByYear(lastYear);
-                const totalChange = calculateChange(totalCurrent.total_amount, totalLast.total_amount);
+                const totalWeightChange = calculateChange(totalCurrent.total_weight, totalLast.total_weight);
 
                 return (
                   <tr className="border-t-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 font-bold">
                     <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100 uppercase">전체 합계</td>
-                    <td className="py-3 px-4 text-right font-mono text-xs border-l border-zinc-200 dark:border-zinc-700">{formatNumber(pvlGrand)}</td>
-                    <td className="py-3 px-4 text-right font-mono text-xs">{formatNumber(cvlGrand)}</td>
+                    <td className="py-3 px-4 text-right font-mono text-xs border-l border-zinc-200 dark:border-zinc-700">{formatNumber(cvlGrand)}</td>
+                    <td className="py-3 px-4 text-right font-mono text-xs">{formatNumber(pvlGrand)}</td>
                     <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 bg-blue-50/30">{formatNumber(totalCurrent.total_weight)}</td>
-                    <td className="py-3 px-4 text-right font-mono text-xs border-l border-zinc-200 dark:border-zinc-700">{formatNumber(pvlGrandAmt)}</td>
-                    <td className="py-3 px-4 text-right font-mono text-xs">{formatNumber(cvlGrandAmt)}</td>
-                    <td className="py-3 px-4 text-right font-mono text-purple-700 dark:text-purple-300 bg-purple-50/30">{formatNumber(totalCurrent.total_amount)}</td>
                     <td className="py-3 px-4 text-right border-l border-zinc-200 dark:border-zinc-700">
-                      <span className={`inline-flex items-center gap-1 ${totalChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                        {totalChange.isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                        {Math.abs(totalChange.percent).toFixed(1)}%
+                      <span className={`inline-flex items-center gap-1 ${totalWeightChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                        {totalWeightChange.isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                        {Math.abs(totalWeightChange.percent).toFixed(1)}%
                       </span>
                     </td>
+                    <td className="py-3 px-4 border-l border-zinc-200 dark:border-zinc-700"></td>
                   </tr>
                 );
               })()}

@@ -361,7 +361,7 @@ export default function InactiveCompaniesPage() {
             </span>
           </td>
           <td className="px-4 py-3 text-sm text-right text-blue-600 dark:text-blue-400 font-semibold">
-            ₩{Number(node.data.last_period_sales || 0).toLocaleString()}
+            {Number(node.data.last_period_sales || 0).toLocaleString()}
           </td>
           <td className="px-4 py-3 text-sm min-w-[200px]">
             {node.level === 'client' && node.data.client_code ? (
@@ -605,7 +605,7 @@ export default function InactiveCompaniesPage() {
             inactiveMonths === 6 ? 'text-orange-600 dark:text-orange-400' :
             'text-red-600 dark:text-red-400'
           }`}>
-            ₩{totals.lastPeriodSales.toLocaleString()}
+            {totals.lastPeriodSales.toLocaleString()}
           </p>
         </div>
 
@@ -716,7 +716,7 @@ export default function InactiveCompaniesPage() {
                     -
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-blue-600 dark:text-blue-400">
-                    ₩{totals.lastPeriodSales.toLocaleString()}
+                    {totals.lastPeriodSales.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-zinc-500 dark:text-zinc-400">
                     -

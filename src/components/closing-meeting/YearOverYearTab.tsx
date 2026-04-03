@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Loader2, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
@@ -35,12 +35,14 @@ interface YearOverYearData {
 
 interface YearOverYearProps {
   selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
 }
 
-export default function YearOverYearTab({ selectedMonth }: YearOverYearProps) {
+export default function YearOverYearTab({ selectedMonth, onMonthsAvailable }: YearOverYearProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<YearOverYearData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const hasReportedMonths = useRef(false);
 
   useEffect(() => {
     fetchData();
@@ -57,6 +59,11 @@ export default function YearOverYearTab({ selectedMonth }: YearOverYearProps) {
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        // Report available months to parent only once
+        if (onMonthsAvailable && result.data.availableMonths && !hasReportedMonths.current) {
+          hasReportedMonths.current = true;
+          onMonthsAvailable(result.data.availableMonths, result.data.currentMonth);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch year-over-year comparison:', error);

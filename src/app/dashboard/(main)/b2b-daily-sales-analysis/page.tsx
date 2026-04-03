@@ -60,7 +60,7 @@ function fmt(val: number): string {
 
 function fmtCurrency(val: number): string {
   if (val === 0) return "-";
-  return "₩" + val.toLocaleString();
+  return val.toLocaleString();
 }
 
 // ── Page ──
@@ -420,7 +420,7 @@ export default function B2BDailySalesAnalysisPage() {
             {activeView === 'hierarchy' ? '총 공급가액' : '총 판매금액'}
           </p>
           <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
-            ₩{activeView === 'hierarchy' 
+            {activeView === 'hierarchy' 
               ? totals.supply_amount.toLocaleString() 
               : profitTotals.amount.toLocaleString()}
           </p>
@@ -432,7 +432,7 @@ export default function B2BDailySalesAnalysisPage() {
           <p className={`text-xl font-bold ${activeView === 'hierarchy' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
             {activeView === 'hierarchy' 
               ? data.length.toLocaleString() + '개'
-              : '₩' + profitTotals.profit.toLocaleString()}
+              : profitTotals.profit.toLocaleString()}
           </p>
         </div>
         {activeView === 'profit' && (
@@ -541,7 +541,7 @@ export default function B2BDailySalesAnalysisPage() {
                                   수량: <span className="font-semibold">{vendorTotal.quantity.toLocaleString()}</span>
                                 </span>
                                 <span className="text-zinc-600 dark:text-zinc-400">
-                                  공급가: <span className="font-semibold">₩{vendorTotal.supply_amount.toLocaleString()}</span>
+                                  공급가: <span className="font-semibold">{vendorTotal.supply_amount.toLocaleString()}</span>
                                 </span>
                               </div>
                             </div>
@@ -563,8 +563,8 @@ export default function B2BDailySalesAnalysisPage() {
                                       <tr key={idx} className="hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
                                         <td className="px-28 py-2 text-zinc-900 dark:text-zinc-100">{item.item_name}</td>
                                         <td className="px-4 py-2 text-right text-zinc-700 dark:text-zinc-300">{item.quantity.toLocaleString()}</td>
-                                        <td className="px-4 py-2 text-right text-zinc-700 dark:text-zinc-300">₩{item.unit_price.toLocaleString()}</td>
-                                        <td className="px-4 py-2 text-right font-semibold text-blue-600 dark:text-blue-400">₩{item.supply_amount.toLocaleString()}</td>
+                                        <td className="px-4 py-2 text-right text-zinc-700 dark:text-zinc-300">{item.unit_price.toLocaleString()}</td>
+                                        <td className="px-4 py-2 text-right font-semibold text-blue-600 dark:text-blue-400">{item.supply_amount.toLocaleString()}</td>
                                       </tr>
                                     ))}
                                   </tbody>

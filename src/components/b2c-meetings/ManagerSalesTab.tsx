@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
@@ -39,9 +39,10 @@ interface ManagerSalesData {
 
 interface ManagerSalesTabProps {
   selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
 }
 
-export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps) {
+export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: ManagerSalesTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<ManagerSalesData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,6 +66,10 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
         console.log('Employee data count:', result.data.employeeData?.length);
         console.log('Summary data count:', result.data.summaryData?.length);
         setData(result.data);
+        // Report available months to parent
+        if (onMonthsAvailable && result.data.availableMonths) {
+          onMonthsAvailable(result.data.availableMonths, result.data.currentMonth);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch manager sales data:', error);
@@ -112,6 +117,7 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
   const { currentYear, lastYear, summaryData, employeeData, currentMonth } = data;
   const targetMonth = selectedMonth || currentMonth;
   const lastYearMonth = targetMonth.replace(currentYear, lastYear);
+  const [_, selectedMonthNum] = targetMonth.split('-');
 
   // Aggregate summary by category and year
   const summaryByCategory = (category: string, year: string) => {
@@ -205,7 +211,115 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
     return b.total_current - a.total_current;
   });
 
+  // Create monthly breakdown data structure
+  interface EmployeeMonthData {
+    team: string;
+    employee_name: string;
+    branch: string;
+    months: Record<string, {
+      fleet_current: number;
+      fleet_last: number;
+      lcc_current: number;
+      lcc_last: number;
+      total_current: number;
+      total_last: number;
+    }>;
+    cumulative_fleet_current: number;
+    cumulative_fleet_last: number;
+    cumulative_lcc_current: number;
+    cumulative_lcc_last: number;
+    cumulative_total_current: number;
+    cumulative_total_last: number;
+  }
+
+  const employeeMonthMap: Record<string, EmployeeMonthData> = {};
+
+  employeeData.forEach((row) => {
+    const key = row.employee_name;
+    if (!employeeMonthMap[key]) {
+      employeeMonthMap[key] = {
+        team: row.team,
+        employee_name: row.employee_name,
+        branch: row.branch,
+        months: {},
+        cumulative_fleet_current: 0,
+        cumulative_fleet_last: 0,
+        cumulative_lcc_current: 0,
+        cumulative_lcc_last: 0,
+        cumulative_total_current: 0,
+        cumulative_total_last: 0,
+      };
+    }
+
+    const month = row.year_month.split('-')[1];
+    if (!employeeMonthMap[key].months[month]) {
+      employeeMonthMap[key].months[month] = {
+        fleet_current: 0,
+        fleet_last: 0,
+        lcc_current: 0,
+        lcc_last: 0,
+        total_current: 0,
+        total_last: 0,
+      };
+    }
+
+    const isCurrent = row.year === currentYear;
+    const isFleet = row.channel === 'Fleet';
+    const weight = row.total_weight;
+
+    if (isCurrent) {
+      if (isFleet) {
+        employeeMonthMap[key].months[month].fleet_current += weight;
+        employeeMonthMap[key].cumulative_fleet_current += weight;
+      } else {
+        employeeMonthMap[key].months[month].lcc_current += weight;
+        employeeMonthMap[key].cumulative_lcc_current += weight;
+      }
+      employeeMonthMap[key].months[month].total_current += weight;
+      employeeMonthMap[key].cumulative_total_current += weight;
+    } else {
+      if (isFleet) {
+        employeeMonthMap[key].months[month].fleet_last += weight;
+        employeeMonthMap[key].cumulative_fleet_last += weight;
+      } else {
+        employeeMonthMap[key].months[month].lcc_last += weight;
+        employeeMonthMap[key].cumulative_lcc_last += weight;
+      }
+      employeeMonthMap[key].months[month].total_last += weight;
+      employeeMonthMap[key].cumulative_total_last += weight;
+    }
+  });
+
+  const employeeMonthList = Object.values(employeeMonthMap).sort((a, b) => {
+    if (a.team !== b.team) {
+      return a.team.localeCompare(b.team);
+    }
+    return b.cumulative_total_current - a.cumulative_total_current;
+  });
+
   console.log('Final employee list count:', employeeList.length);
+
+  /** 팀별로 묶어 담당자 행 다음에 소계를 넣기 위한 그룹 */
+  const teamGroups: { team: string; employees: EmployeeChannelData[] }[] = [];
+  for (const emp of employeeList) {
+    const last = teamGroups[teamGroups.length - 1];
+    if (!last || last.team !== emp.team) {
+      teamGroups.push({ team: emp.team, employees: [emp] });
+    } else {
+      last.employees.push(emp);
+    }
+  }
+
+  const sumTeamMetrics = (employees: EmployeeChannelData[]) =>
+    employees.reduce(
+      (acc, e) => ({
+        fleet_current: acc.fleet_current + e.fleet_current,
+        fleet_last: acc.fleet_last + e.fleet_last,
+        lcc_current: acc.lcc_current + e.lcc_current,
+        lcc_last: acc.lcc_last + e.lcc_last,
+      }),
+      { fleet_current: 0, fleet_last: 0, lcc_current: 0, lcc_last: 0 }
+    );
 
   const handleExcelDownload = () => {
     if (!data) {
@@ -252,21 +366,113 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
       '구분': '팀별 담당자 Fleet/LCC 매출',
     });
 
-    employeeList.forEach((emp) => {
-      const fleetChange = calculateChange(emp.fleet_current, emp.fleet_last);
-      const lccChange = calculateChange(emp.lcc_current, emp.lcc_last);
+    teamGroups.forEach(({ team, employees }) => {
+      employees.forEach((emp) => {
+        const totalChange = calculateChange(emp.total_current, emp.total_last);
+        const fleetChange = calculateChange(emp.fleet_current, emp.fleet_last);
+        const lccChange = calculateChange(emp.lcc_current, emp.lcc_last);
+
+        exportData.push({
+          '팀': emp.team,
+          '사업소': emp.branch,
+          '직원명': emp.employee_name,
+          [`Fleet+LCC 합계 ${currentYear}년(L)`]: emp.total_current,
+          [`Fleet+LCC 합계 ${lastYear}년(L)`]: emp.total_last,
+          'Fleet+LCC 합계 변화율(%)': totalChange.percent.toFixed(1),
+          [`Fleet ${currentYear}년(L)`]: emp.fleet_current,
+          [`Fleet ${lastYear}년(L)`]: emp.fleet_last,
+          'Fleet 변화율(%)': fleetChange.percent.toFixed(1),
+          [`LCC ${currentYear}년(L)`]: emp.lcc_current,
+          [`LCC ${lastYear}년(L)`]: emp.lcc_last,
+          'LCC 변화율(%)': lccChange.percent.toFixed(1),
+        });
+      });
+
+      const sub = sumTeamMetrics(employees);
+      const subTotalCurrent = sub.fleet_current + sub.lcc_current;
+      const subTotalLast = sub.fleet_last + sub.lcc_last;
+      const subTotalChange = calculateChange(subTotalCurrent, subTotalLast);
+      const subFleetChange = calculateChange(sub.fleet_current, sub.fleet_last);
+      const subLccChange = calculateChange(sub.lcc_current, sub.lcc_last);
+      exportData.push({
+        '팀': team,
+        '사업소': '',
+        '직원명': '소계',
+        [`Fleet+LCC 합계 ${currentYear}년(L)`]: subTotalCurrent,
+        [`Fleet+LCC 합계 ${lastYear}년(L)`]: subTotalLast,
+        'Fleet+LCC 합계 변화율(%)': subTotalChange.percent.toFixed(1),
+        [`Fleet ${currentYear}년(L)`]: sub.fleet_current,
+        [`Fleet ${lastYear}년(L)`]: sub.fleet_last,
+        'Fleet 변화율(%)': subFleetChange.percent.toFixed(1),
+        [`LCC ${currentYear}년(L)`]: sub.lcc_current,
+        [`LCC ${lastYear}년(L)`]: sub.lcc_last,
+        'LCC 변화율(%)': subLccChange.percent.toFixed(1),
+      });
+    });
+
+    // Add blank row separator
+    exportData.push({});
+
+    // Add Monthly Breakdown section
+    exportData.push({
+      '구분': '팀별 담당자 월별 Fleet/LCC 매출 (누계 포함)',
+    });
+
+    employeeMonthList.forEach((emp) => {
+      // Cumulative row
+      const totalChange = calculateChange(emp.cumulative_total_current, emp.cumulative_total_last);
+      const fleetChange = calculateChange(emp.cumulative_fleet_current, emp.cumulative_fleet_last);
+      const lccChange = calculateChange(emp.cumulative_lcc_current, emp.cumulative_lcc_last);
 
       exportData.push({
         '팀': emp.team,
-        '사업소': emp.branch,
         '직원명': emp.employee_name,
-        [`Fleet ${currentYear}년(L)`]: emp.fleet_current,
-        [`Fleet ${lastYear}년(L)`]: emp.fleet_last,
+        '사업소': emp.branch,
+        '월': '누계',
+        [`Fleet+LCC 합계 ${currentYear}년(L)`]: emp.cumulative_total_current,
+        [`Fleet+LCC 합계 ${lastYear}년(L)`]: emp.cumulative_total_last,
+        'Fleet+LCC 합계 변화율(%)': totalChange.percent.toFixed(1),
+        [`Fleet ${currentYear}년(L)`]: emp.cumulative_fleet_current,
+        [`Fleet ${lastYear}년(L)`]: emp.cumulative_fleet_last,
         'Fleet 변화율(%)': fleetChange.percent.toFixed(1),
-        [`LCC ${currentYear}년(L)`]: emp.lcc_current,
-        [`LCC ${lastYear}년(L)`]: emp.lcc_last,
+        [`LCC ${currentYear}년(L)`]: emp.cumulative_lcc_current,
+        [`LCC ${lastYear}년(L)`]: emp.cumulative_lcc_last,
         'LCC 변화율(%)': lccChange.percent.toFixed(1),
       });
+
+      // Monthly rows
+      const monthNum = parseInt(selectedMonthNum);
+      for (let i = 1; i <= monthNum; i++) {
+        const month = String(i).padStart(2, '0');
+        const monthData = emp.months[month] || {
+          fleet_current: 0,
+          fleet_last: 0,
+          lcc_current: 0,
+          lcc_last: 0,
+          total_current: 0,
+          total_last: 0,
+        };
+
+        const monthTotalChange = calculateChange(monthData.total_current, monthData.total_last);
+        const monthFleetChange = calculateChange(monthData.fleet_current, monthData.fleet_last);
+        const monthLccChange = calculateChange(monthData.lcc_current, monthData.lcc_last);
+
+        exportData.push({
+          '팀': '',
+          '직원명': '',
+          '사업소': '',
+          '월': `${parseInt(month)}월`,
+          [`Fleet+LCC 합계 ${currentYear}년(L)`]: monthData.total_current,
+          [`Fleet+LCC 합계 ${lastYear}년(L)`]: monthData.total_last,
+          'Fleet+LCC 합계 변화율(%)': monthTotalChange.percent.toFixed(1),
+          [`Fleet ${currentYear}년(L)`]: monthData.fleet_current,
+          [`Fleet ${lastYear}년(L)`]: monthData.fleet_last,
+          'Fleet 변화율(%)': monthFleetChange.percent.toFixed(1),
+          [`LCC ${currentYear}년(L)`]: monthData.lcc_current,
+          [`LCC ${lastYear}년(L)`]: monthData.lcc_last,
+          'LCC 변화율(%)': monthLccChange.percent.toFixed(1),
+        });
+      }
     });
 
     const filename = generateFilename('B2C담당자별Fleet_LCC매출');
@@ -366,6 +572,9 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">팀</th>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">직원명</th>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">사업소</th>
+                <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">
+                  Fleet + LCC 합계
+                </th>
                 <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-purple-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">Fleet</th>
                 <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-orange-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">LCC</th>
               </tr>
@@ -379,68 +588,328 @@ export default function ManagerSalesTab({ selectedMonth }: ManagerSalesTabProps)
                 <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
                 <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년(L)</th>
                 <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년(L)</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
               </tr>
             </thead>
             <tbody>
               {employeeList.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-zinc-500 dark:text-zinc-400">
+                  <td colSpan={12} className="py-8 text-center text-zinc-500 dark:text-zinc-400">
                     직원별 데이터가 없습니다
                   </td>
                 </tr>
               ) : (
-                employeeList.map((emp) => {
-                  const fleetChange = calculateChange(emp.fleet_current, emp.fleet_last);
-                  const lccChange = calculateChange(emp.lcc_current, emp.lcc_last);
+                teamGroups.map(({ team, employees }) => (
+                  <Fragment key={team}>
+                    {employees.map((emp) => {
+                      const totalChange = calculateChange(emp.total_current, emp.total_last);
+                      const fleetChange = calculateChange(emp.fleet_current, emp.fleet_last);
+                      const lccChange = calculateChange(emp.lcc_current, emp.lcc_last);
 
-                  return (
-                    <tr
-                      key={emp.employee_name}
-                      className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
-                    >
-                    <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300 font-medium">
-                      {emp.team}
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-zinc-900 dark:text-zinc-100">
-                      {emp.employee_name}
-                    </td>
-                    <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300 text-xs">
-                      {emp.branch}
-                    </td>
-                    {/* Fleet Columns */}
-                    <td className="py-3 px-4 text-right font-mono text-purple-700 dark:text-purple-300 font-semibold border-l border-zinc-200 dark:border-zinc-700">
-                      {formatNumber(emp.fleet_current)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                      {formatNumber(emp.fleet_last)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                        fleetChange.isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {fleetChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(fleetChange.percent).toFixed(1)}%
-                      </span>
-                    </td>
-                    {/* LCC Columns */}
-                    <td className="py-3 px-4 text-right font-mono text-orange-700 dark:text-orange-300 font-semibold border-l border-zinc-200 dark:border-zinc-700">
-                      {formatNumber(emp.lcc_current)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                      {formatNumber(emp.lcc_last)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                        lccChange.isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {lccChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(lccChange.percent).toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })
+                      return (
+                        <tr
+                          key={emp.employee_name}
+                          className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
+                        >
+                          <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300 font-medium">
+                            {emp.team}
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-zinc-900 dark:text-zinc-100">
+                            {emp.employee_name}
+                          </td>
+                          <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300 text-xs">
+                            {emp.branch}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold border-l border-zinc-200 dark:border-zinc-700">
+                            {formatNumber(emp.total_current)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                            {formatNumber(emp.total_last)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span
+                              className={`inline-flex items-center gap-1 font-medium text-xs ${
+                                totalChange.isPositive ? 'text-green-600' : 'text-red-600'
+                              }`}
+                            >
+                              {totalChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(totalChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-purple-700 dark:text-purple-300 font-semibold border-l border-zinc-200 dark:border-zinc-700">
+                            {formatNumber(emp.fleet_current)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                            {formatNumber(emp.fleet_last)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span
+                              className={`inline-flex items-center gap-1 font-medium text-xs ${
+                                fleetChange.isPositive ? 'text-green-600' : 'text-red-600'
+                              }`}
+                            >
+                              {fleetChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(fleetChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-orange-700 dark:text-orange-300 font-semibold border-l border-zinc-200 dark:border-zinc-700">
+                            {formatNumber(emp.lcc_current)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                            {formatNumber(emp.lcc_last)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span
+                              className={`inline-flex items-center gap-1 font-medium text-xs ${
+                                lccChange.isPositive ? 'text-green-600' : 'text-red-600'
+                              }`}
+                            >
+                              {lccChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(lccChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {(() => {
+                      const sub = sumTeamMetrics(employees);
+                      const subTotalCurrent = sub.fleet_current + sub.lcc_current;
+                      const subTotalLast = sub.fleet_last + sub.lcc_last;
+                      const subTotalChange = calculateChange(subTotalCurrent, subTotalLast);
+                      const subFleetChange = calculateChange(sub.fleet_current, sub.fleet_last);
+                      const subLccChange = calculateChange(sub.lcc_current, sub.lcc_last);
+                      return (
+                        <tr
+                          className="border-b border-zinc-200 dark:border-zinc-700 bg-zinc-100/90 dark:bg-zinc-800/80 font-semibold"
+                        >
+                          <td className="py-3 px-4 text-zinc-800 dark:text-zinc-200">{team}</td>
+                          <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100">소계</td>
+                          <td className="py-3 px-4 text-zinc-500 dark:text-zinc-400 text-xs">—</td>
+                          <td className="py-3 px-4 text-right font-mono text-blue-800 dark:text-blue-200 border-l border-zinc-200 dark:border-zinc-700">
+                            {formatNumber(subTotalCurrent)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                            {formatNumber(subTotalLast)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span
+                              className={`inline-flex items-center gap-1 font-medium text-xs ${
+                                subTotalChange.isPositive ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+                              }`}
+                            >
+                              {subTotalChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(subTotalChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-purple-800 dark:text-purple-200 border-l border-zinc-200 dark:border-zinc-700">
+                            {formatNumber(sub.fleet_current)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                            {formatNumber(sub.fleet_last)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span
+                              className={`inline-flex items-center gap-1 font-medium text-xs ${
+                                subFleetChange.isPositive ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+                              }`}
+                            >
+                              {subFleetChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(subFleetChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-orange-800 dark:text-orange-200 border-l border-zinc-200 dark:border-zinc-700">
+                            {formatNumber(sub.lcc_current)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                            {formatNumber(sub.lcc_last)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span
+                              className={`inline-flex items-center gap-1 font-medium text-xs ${
+                                subLccChange.isPositive ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+                              }`}
+                            >
+                              {subLccChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(subLccChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })()}
+                  </Fragment>
+                ))
               )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Monthly Breakdown Table */}
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">팀별 담당자 월별 Fleet/LCC 매출 (누계: 1월~{parseInt(selectedMonthNum)}월)</h4>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+              <tr>
+                <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-20">팀</th>
+                <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-24">직원명</th>
+                <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-20">사업소</th>
+                <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-16">월</th>
+                <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">Fleet + LCC 합계</th>
+                <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-purple-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">Fleet</th>
+                <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-orange-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">LCC</th>
+              </tr>
+              <tr>
+                <th className="text-left py-2 px-2"></th>
+                <th className="text-left py-2 px-2"></th>
+                <th className="text-left py-2 px-2"></th>
+                <th className="text-left py-2 px-2"></th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년(L)</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년({'>'}L)</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년(L)</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
+              </tr>
+            </thead>
+            <tbody>
+              {employeeMonthList.map((emp) => {
+                const totalChange = calculateChange(emp.cumulative_total_current, emp.cumulative_total_last);
+                const fleetChange = calculateChange(emp.cumulative_fleet_current, emp.cumulative_fleet_last);
+                const lccChange = calculateChange(emp.cumulative_lcc_current, emp.cumulative_lcc_last);
+
+                return (
+                  <Fragment key={emp.employee_name}>
+                    {/* Cumulative Row */}
+                    <tr className="bg-blue-50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-800 font-semibold">
+                      <td className="py-3 px-2 text-zinc-700 dark:text-zinc-300 text-xs">{emp.team}</td>
+                      <td className="py-3 px-2 font-medium text-zinc-900 dark:text-zinc-100 text-sm">{emp.employee_name}</td>
+                      <td className="py-3 px-2 text-zinc-600 dark:text-zinc-400 text-xs">{emp.branch}</td>
+                      <td className="py-3 px-2 text-zinc-900 dark:text-zinc-100 text-sm">누계</td>
+                      <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 border-l border-zinc-200 dark:border-zinc-700">
+                        {formatNumber(emp.cumulative_total_current)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                        {formatNumber(emp.cumulative_total_last)}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                          totalChange.isPositive ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {totalChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {Math.abs(totalChange.percent).toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono text-purple-700 dark:text-purple-300 border-l border-zinc-200 dark:border-zinc-700">
+                        {formatNumber(emp.cumulative_fleet_current)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                        {formatNumber(emp.cumulative_fleet_last)}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                          fleetChange.isPositive ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {fleetChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {Math.abs(fleetChange.percent).toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono text-orange-700 dark:text-orange-300 border-l border-zinc-200 dark:border-zinc-700">
+                        {formatNumber(emp.cumulative_lcc_current)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                        {formatNumber(emp.cumulative_lcc_last)}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                          lccChange.isPositive ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {lccChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {Math.abs(lccChange.percent).toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+
+                    {/* Monthly Rows */}
+                    {Array.from({ length: 12 }, (__, i) => {
+                      const month = String(i + 1).padStart(2, '0');
+                      const monthNum = parseInt(selectedMonthNum);
+                      if (i + 1 > monthNum) return null;
+
+                      const monthData = emp.months[month] || {
+                        fleet_current: 0,
+                        fleet_last: 0,
+                        lcc_current: 0,
+                        lcc_last: 0,
+                        total_current: 0,
+                        total_last: 0,
+                      };
+
+                      const monthTotalChange = calculateChange(monthData.total_current, monthData.total_last);
+                      const monthFleetChange = calculateChange(monthData.fleet_current, monthData.fleet_last);
+                      const monthLccChange = calculateChange(monthData.lcc_current, monthData.lcc_last);
+
+                      return (
+                        <tr key={month} className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
+                          <td className="py-2 px-2"></td>
+                          <td className="py-2 px-2"></td>
+                          <td className="py-2 px-2"></td>
+                          <td className="py-2 px-2 text-zinc-700 dark:text-zinc-300 text-sm">{parseInt(month)}월</td>
+                          <td className="py-2 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100 border-l border-zinc-200 dark:border-zinc-700">
+                            {formatNumber(monthData.total_current)}
+                          </td>
+                          <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                            {formatNumber(monthData.total_last)}
+                          </td>
+                          <td className="py-2 px-4 text-right">
+                            <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                              monthTotalChange.isPositive ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {monthTotalChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(monthTotalChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="py-2 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100 border-l border-zinc-200 dark:border-zinc-700">
+                            {formatNumber(monthData.fleet_current)}
+                          </td>
+                          <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                            {formatNumber(monthData.fleet_last)}
+                          </td>
+                          <td className="py-2 px-4 text-right">
+                            <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                              monthFleetChange.isPositive ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {monthFleetChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(monthFleetChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="py-2 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100 border-l border-zinc-200 dark:border-zinc-700">
+                            {formatNumber(monthData.lcc_current)}
+                          </td>
+                          <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
+                            {formatNumber(monthData.lcc_last)}
+                          </td>
+                          <td className="py-2 px-4 text-right">
+                            <span className={`inline-flex items-center gap-1 font-medium text-xs ${
+                              monthLccChange.isPositive ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {monthLccChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(monthLccChange.percent).toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    }).filter(Boolean)}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

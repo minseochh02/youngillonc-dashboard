@@ -1,12 +1,49 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 
+/** YTD through the same calendar month for current and prior year (alias must be the sales table alias, e.g. s). */
+function sqlSalesYtdThroughMonth(
+  alias: string,
+  lastYear: number,
+  currentYear: number,
+  lastYearMonthStr: string,
+  currentMonthStr: string
+) {
+  return `(
+    (strftime('%Y', ${alias}.일자) = '${lastYear}' AND strftime('%Y-%m', ${alias}.일자) <= '${lastYearMonthStr}')
+    OR (strftime('%Y', ${alias}.일자) = '${currentYear}' AND strftime('%Y-%m', ${alias}.일자) <= '${currentMonthStr}')
+  )`;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const tab = searchParams.get('tab') || 'industry';
+    const selectedMonthParam = searchParams.get('month');
     const includeVat = searchParams.get('includeVat') === 'true';
     const divisor = includeVat ? '1.0' : '1.1';
+
+    const dateRangeQuery = `
+      SELECT DISTINCT substr(일자, 1, 7) as month FROM (
+        SELECT 일자 FROM sales
+        UNION ALL SELECT 일자 FROM east_division_sales
+        UNION ALL SELECT 일자 FROM west_division_sales
+      ) WHERE 일자 IS NOT NULL AND 일자 != '' AND 일자 LIKE '202%'
+      ORDER BY month ASC
+    `;
+    const dateRangeResult = await executeSQL(dateRangeQuery);
+    const availableMonths: string[] = dateRangeResult?.rows?.map((r: { month: string }) => r.month) || [];
+    const latestMonthStr =
+      availableMonths[availableMonths.length - 1] || new Date().toISOString().slice(0, 7);
+    const currentMonthStr =
+      selectedMonthParam && availableMonths.includes(selectedMonthParam)
+        ? selectedMonthParam
+        : latestMonthStr;
+    const [refYearStr, refMonthPart] = currentMonthStr.split('-');
+    const currentYear = parseInt(refYearStr, 10);
+    const lastYear = currentYear - 1;
+    const lastYearMonthStr = `${lastYear}-${refMonthPart}`;
+    const monthMeta = { availableMonths, currentMonth: currentMonthStr };
 
     // 0. Base table for sales (unioned across all three tables and using 실납업체 logic)
     const baseSalesSubquery = `(
@@ -18,9 +55,6 @@ export async function GET(request: Request) {
     )`;
 
     if (tab === 'industry') {
-      const currentYear = new Date().getFullYear();
-      const lastYear = currentYear - 1;
-
       // Query sales by industry (영일분류)
       const query = `
         SELECT
@@ -36,8 +70,7 @@ export async function GET(request: Request) {
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 = 'IL'
           AND e.사원_담당_명 != '김도량'
@@ -61,16 +94,14 @@ export async function GET(request: Request) {
         success: true,
         data: {
           industryData,
-          currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
+          currentYear: String(currentYear),
+          lastYear: String(lastYear),
+          ...monthMeta,
         },
       });
     }
 
     if (tab === 'client') {
-      const currentYear = new Date().getFullYear();
-      const lastYear = currentYear - 1;
-
       // Query product sales comparison year-over-year for B2B across all three tables
       const query = `
         SELECT
@@ -79,16 +110,15 @@ export async function GET(request: Request) {
           i.품목그룹1코드,
           i.품목그룹2코드,
           i.품목그룹3코드,
-          SUM(CASE WHEN strftime('%Y', s.일자) = '${lastYear}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_year_weight,
-          SUM(CASE WHEN strftime('%Y', s.일자) = '${currentYear}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_year_weight
+          SUM(CASE WHEN strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}' AND strftime('%Y', s.일자) = '${lastYear}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_year_weight,
+          SUM(CASE WHEN strftime('%Y-%m', s.일자) <= '${currentMonthStr}' AND strftime('%Y', s.일자) = '${currentYear}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_year_weight
         FROM ${baseSalesSubquery} s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 = 'IL'
           AND e.사원_담당_명 != '김도량'
@@ -120,16 +150,14 @@ export async function GET(request: Request) {
         success: true,
         data: {
           productData,
-          currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
+          currentYear: String(currentYear),
+          lastYear: String(lastYear),
+          ...monthMeta,
         },
       });
     }
 
     if (tab === 'product-group') {
-      const currentYear = new Date().getFullYear();
-      const lastYear = currentYear - 1;
-
       // Query sales by product group across all three tables
       const query = `
         SELECT
@@ -149,8 +177,7 @@ export async function GET(request: Request) {
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND (COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) NOT IN (SELECT 거래처코드 FROM clients WHERE 담당자코드 IN (SELECT 사원_담당_코드 FROM employees WHERE 사원_담당_명 = '김도량')) OR COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) IS NULL)
         GROUP BY product_group, year, year_month
@@ -174,15 +201,14 @@ export async function GET(request: Request) {
         success: true,
         data: {
           productGroupData,
-          currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
+          currentYear: String(currentYear),
+          lastYear: String(lastYear),
+          ...monthMeta,
         },
       });
     }
 
     if (tab === 'team') {
-      const currentYear = new Date().getFullYear();
-
       // Query monthly sales by B2B office, team, industry, and sector across all three tables
       const query = `
         SELECT
@@ -210,8 +236,8 @@ export async function GET(request: Request) {
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
-        WHERE s.일자 >= '${currentYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE strftime('%Y', s.일자) = '${currentYear}'
+          AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}'
           AND ca.업종분류코드 IS NULL
           AND e.사원_담당_명 != '김도량'
           AND c.거래처그룹1명 IS NOT NULL
@@ -236,15 +262,13 @@ export async function GET(request: Request) {
         success: true,
         data: {
           b2bData,
-          currentYear: currentYear.toString(),
+          currentYear: String(currentYear),
+          ...monthMeta,
         },
       });
     }
 
     if (tab === 'fps') {
-      const currentYear = new Date().getFullYear();
-      const lastYear = currentYear - 1;
-
       // Query sales by FPS (Flagship/Premium/Standard) categories across all three tables
       const query = `
         SELECT
@@ -264,8 +288,7 @@ export async function GET(request: Request) {
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
           AND e.사원_담당_명 != '김도량'
@@ -290,16 +313,14 @@ export async function GET(request: Request) {
         success: true,
         data: {
           fpsData,
-          currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
+          currentYear: String(currentYear),
+          lastYear: String(lastYear),
+          ...monthMeta,
         },
       });
     }
 
     if (tab === 'region') {
-      const currentYear = new Date().getFullYear();
-      const lastYear = currentYear - 1;
-
       // Query sales by region (지역코드) grouped into 서울경기, 충청, 경남 across all three tables
       const query = `
         SELECT
@@ -319,8 +340,7 @@ export async function GET(request: Request) {
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND e.사원_담당_명 != '김도량'
@@ -345,17 +365,15 @@ export async function GET(request: Request) {
         success: true,
         data: {
           regionData,
-          currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
+          currentYear: String(currentYear),
+          lastYear: String(lastYear),
+          ...monthMeta,
         },
       });
     }
 
     if (tab === 'new') {
       // Query new B2B clients (clients with 신규일 data) and their sales data across all three tables
-      const currentYear = new Date().getFullYear();
-      const lastYear = currentYear - 1;
-
       const query = `
         SELECT
           c.거래처코드,
@@ -387,8 +405,8 @@ export async function GET(request: Request) {
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE c.신규일 IS NOT NULL
           AND c.신규일 != ''
-          AND s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+          AND s.일자 IS NOT NULL
+          AND ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 = 'IL'
           AND e.사원_담당_명 != '김도량'
@@ -472,16 +490,14 @@ export async function GET(request: Request) {
           clients,
           managerSummary: Object.values(managerSummary),
           totalsByYear,
-          currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
+          currentYear: String(currentYear),
+          lastYear: String(lastYear),
+          ...monthMeta,
         },
       });
     }
 
     if (tab === 'all-products') {
-      const currentYear = new Date().getFullYear();
-      const lastYear = currentYear - 1;
-
       // Query sales by B2B team (all products) across all three tables
       const query = `
         SELECT
@@ -499,8 +515,7 @@ export async function GET(request: Request) {
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND e.사원_담당_명 != '김도량'
         GROUP BY team, year, year_month
         HAVING team != '미분류'
@@ -523,16 +538,14 @@ export async function GET(request: Request) {
         success: true,
         data: {
           allProductsData,
-          currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
+          currentYear: String(currentYear),
+          lastYear: String(lastYear),
+          ...monthMeta,
         },
       });
     }
 
     if (tab === 'industry-dairy') {
-      const currentYear = new Date().getFullYear();
-      const lastYear = currentYear - 1;
-
       // Query sales by individual items across all three tables for IL group
       const query = `
         SELECT
@@ -550,8 +563,7 @@ export async function GET(request: Request) {
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
-        WHERE s.일자 >= '${lastYear}-01-01'
-          AND s.일자 <= '${currentYear}-12-31'
+        WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 = 'IL'
           AND e.사원_담당_명 != '김도량'
@@ -582,8 +594,9 @@ export async function GET(request: Request) {
         success: true,
         data: {
           industryDairyData,
-          currentYear: currentYear.toString(),
-          lastYear: lastYear.toString(),
+          currentYear: String(currentYear),
+          lastYear: String(lastYear),
+          ...monthMeta,
         },
       });
     }

@@ -39,7 +39,7 @@ export default function InOutTable({ data }: InOutTableProps) {
           <span className="font-bold text-zinc-900 dark:text-zinc-100">{title}</span>
         </div>
         <div className={`text-lg font-black tabular-nums ${isDeposit ? 'text-blue-700 dark:text-blue-400' : 'text-red-700 dark:text-red-400'}`}>
-          ₩{formatNumber(isDeposit ? totalIn : totalOut)}
+          {formatNumber(isDeposit ? totalIn : totalOut)}
         </div>
       </div>
 
@@ -97,20 +97,20 @@ export default function InOutTable({ data }: InOutTableProps) {
           <div className="flex items-center gap-2 text-blue-100 text-xs font-bold uppercase tracking-widest">
             <Plus className="w-3 h-3" /> 총 입금 (Inflow)
           </div>
-          <div className="text-3xl font-black tabular-nums mt-1">₩{formatNumber(totalIn)}</div>
+          <div className="text-3xl font-black tabular-nums mt-1">{formatNumber(totalIn)}</div>
         </div>
         <div className="p-6 bg-zinc-900 rounded-3xl text-white shadow-lg shadow-zinc-200 dark:shadow-none flex flex-col gap-1">
           <div className="flex items-center gap-2 text-zinc-400 text-xs font-bold uppercase tracking-widest">
             <Minus className="w-3 h-3" /> 총 지출 (Outflow)
           </div>
-          <div className="text-3xl font-black tabular-nums mt-1">₩{formatNumber(totalOut)}</div>
+          <div className="text-3xl font-black tabular-nums mt-1">{formatNumber(totalOut)}</div>
         </div>
         <div className={`p-6 rounded-3xl shadow-lg flex flex-col gap-1 ${netFlow >= 0 ? 'bg-white text-zinc-900 border-2 border-green-500 shadow-green-100' : 'bg-red-50 text-red-900 border-2 border-red-500 shadow-red-100'} dark:bg-zinc-900 dark:text-white`}>
           <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 text-xs font-bold uppercase tracking-widest">
             <Calculator className="w-3 h-3" /> 순현금흐름 (Net)
           </div>
           <div className="text-3xl font-black tabular-nums mt-1">
-            {netFlow >= 0 ? "+" : "-"}₩{formatNumber(Math.abs(netFlow))}
+            {netFlow >= 0 ? "+" : "-"}{formatNumber(Math.abs(netFlow))}
           </div>
         </div>
       </div>

@@ -31,9 +31,10 @@ interface BusinessData {
 
 interface BusinessTabProps {
   selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
 }
 
-export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
+export default function BusinessTab({ selectedMonth, onMonthsAvailable }: BusinessTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<BusinessData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,6 +54,10 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        // Report available months to parent
+        if (onMonthsAvailable && result.data.availableMonths) {
+          onMonthsAvailable(result.data.availableMonths, result.data.currentMonth);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch business data:', error);
@@ -62,7 +67,7 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
   };
 
   const formatNumber = (num: number) => {
-    return num.toLocaleString();
+    return Math.round(num).toLocaleString();
   };
 
   const calculateChange = (current: number, previous: number) => {
@@ -95,26 +100,33 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
 
   const { currentYear, lastYear, totalsByYear } = data;
 
-  // Aggregate by branch and business type for each year
-  const aggregateByYear = (year: string) => {
-    const yearData = data.businessData.filter(row => row.year === year);
+  // Calculate cumulative month strings for filtering
+  const currentMonthStr = selectedMonth || `${currentYear}-12`;
+  const [_, currentMonthNum] = currentMonthStr.split('-');
+  const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
+
+  // Aggregate by branch and business type for each year (cumulative up to selected month)
+  const aggregateByYear = (year: string, upToMonth: string) => {
+    const yearData = data.businessData.filter(
+      row => row.year === year && row.year_month <= upToMonth
+    );
     const aggregated = new Map<string, { weight: number; amount: number; quantity: number }>();
 
     yearData.forEach(row => {
       const key = `${row.business_type}-${row.branch}`;
       const existing = aggregated.get(key) || { weight: 0, amount: 0, quantity: 0 };
       aggregated.set(key, {
-        weight: existing.weight + Number(row.total_weight || 0),
-        amount: existing.amount + Number(row.total_amount || 0),
-        quantity: existing.quantity + Number(row.total_quantity || 0),
+        weight: Math.round(existing.weight + Number(row.total_weight || 0)),
+        amount: Math.round(existing.amount + Number(row.total_amount || 0)),
+        quantity: Math.round(existing.quantity + Number(row.total_quantity || 0)),
       });
     });
 
     return aggregated;
   };
 
-  const currentYearData = aggregateByYear(currentYear);
-  const lastYearData = aggregateByYear(lastYear);
+  const currentYearData = aggregateByYear(currentYear, currentMonthStr);
+  const lastYearData = aggregateByYear(lastYear, lastYearMonthStr);
 
   // Get unique branches
   const branches = new Set<string>();
@@ -218,6 +230,10 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
   const totalLastAmount = totalsByYear[lastYear]?.total_amount || 0;
   const totalAmountChange = calculateChange(totalCurrentAmount, totalLastAmount);
 
+  // Format month display for cumulative period
+  const displayMonth = parseInt(currentMonthNum);
+  const cumulativePeriod = `1월~${displayMonth}월 누계`;
+
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
@@ -230,7 +246,7 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 실적 요약</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">전체 사업소 합계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{cumulativePeriod} · 전체 사업소 합계</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -262,8 +278,8 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
               )}
             </div>
             <div>
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">전년 대비 증감</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear} vs {lastYear}</p>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">전년 대비 증감 (누계)</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear} vs {lastYear} · {cumulativePeriod}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -296,7 +312,7 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
       {/* Year-over-Year Comparison Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">사업소별 연도 비교</h4>
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">사업소별 연도 비교 ({cumulativePeriod})</h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -386,26 +402,23 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: 12 }, (_, i) => {
+              {Array.from({ length: 12 }, (__, i) => {
                 const month = String(i + 1).padStart(2, '0');
-                const now = new Date();
-                const currentMonthNum = now.getMonth() + 1;
-                const currentYearNum = now.getFullYear();
-                const yearNum = parseInt(currentYear);
 
-                if (yearNum > currentYearNum) return null;
-                if (yearNum === currentYearNum && i + 1 > currentMonthNum) return null;
+                // Only show months up to the selected month
+                const selectedMonthNum = parseInt(currentMonthNum);
+                if (i + 1 > selectedMonthNum) return null;
 
                 const currentYearMonth = `${currentYear}-${month}`;
                 const lastYearMonth = `${lastYear}-${month}`;
 
                 // Calculate total for this month across all branches
-                const monthCurrentTotal = data.businessData
+                const monthCurrentTotal = Math.round(data.businessData
                   .filter(row => row.year_month === currentYearMonth)
-                  .reduce((sum, row) => sum + Number(row.total_weight || 0), 0);
-                const monthLastTotal = data.businessData
+                  .reduce((sum, row) => sum + Number(row.total_weight || 0), 0));
+                const monthLastTotal = Math.round(data.businessData
                   .filter(row => row.year_month === lastYearMonth)
-                  .reduce((sum, row) => sum + Number(row.total_weight || 0), 0);
+                  .reduce((sum, row) => sum + Number(row.total_weight || 0), 0));
                 const monthTotalChange = calculateChange(monthCurrentTotal, monthLastTotal);
 
                 return (
@@ -424,8 +437,8 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
                         row => row.year_month === lastYearMonth && `${row.business_type}-${row.branch}` === key
                       );
 
-                      const current = Number(currentMonthData?.total_weight || 0);
-                      const last = Number(lastMonthData?.total_weight || 0);
+                      const current = Math.round(Number(currentMonthData?.total_weight || 0));
+                      const last = Math.round(Number(lastMonthData?.total_weight || 0));
                       const change = calculateChange(current, last);
 
                       return (
@@ -463,12 +476,12 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
                   합계
                 </td>
                 {sortedBranches.map((key) => {
-                  const currentTotal = data.businessData
-                    .filter(row => row.year === currentYear && `${row.business_type}-${row.branch}` === key)
-                    .reduce((sum, row) => sum + Number(row.total_weight || 0), 0);
-                  const lastTotal = data.businessData
-                    .filter(row => row.year === lastYear && `${row.business_type}-${row.branch}` === key)
-                    .reduce((sum, row) => sum + Number(row.total_weight || 0), 0);
+                  const currentTotal = Math.round(data.businessData
+                    .filter(row => row.year === currentYear && row.year_month <= currentMonthStr && `${row.business_type}-${row.branch}` === key)
+                    .reduce((sum, row) => sum + Number(row.total_weight || 0), 0));
+                  const lastTotal = Math.round(data.businessData
+                    .filter(row => row.year === lastYear && row.year_month <= lastYearMonthStr && `${row.business_type}-${row.branch}` === key)
+                    .reduce((sum, row) => sum + Number(row.total_weight || 0), 0));
                   const change = calculateChange(currentTotal, lastTotal);
 
                   return (
@@ -510,7 +523,7 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
         <ul className="list-disc list-inside space-y-0.5">
           <li>제품: (품목그룹1코드)</li>
           <li>거래처: AUTO 업종분류기준 코드</li>
-          <li>기간: {lastYear}년 vs {currentYear}년</li>
+          <li>기간: {lastYear}년 {cumulativePeriod} vs {currentYear}년 {cumulativePeriod}</li>
         </ul>
       </div>
     </div>

@@ -102,6 +102,10 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
 
   const { currentYear, lastYear, teamData, nambujisaData, strategicDealers } = data;
 
+  // Calculate cumulative period labels
+  const currentMonthStr = selectedMonth || `${currentYear}-12`;
+  const [_, currentMonthNum] = currentMonthStr.split('-');
+
   // Aggregate team data by team and product group for each year
   const aggregateTeamData = () => {
     const aggregated = new Map<string, { pv: number; cv: number }>();
@@ -188,21 +192,27 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
     exportData.push({
       '팀명': '팀명',
       [`${currentYear} PV`]: `${currentYear} PV`,
-      [`${currentYear} CV`]: `${currentYear} CV`,
       [`${lastYear} PV`]: `${lastYear} PV`,
+      'PV 변화율(%)': 'PV 변화율(%)',
+      [`${currentYear} CV`]: `${currentYear} CV`,
       [`${lastYear} CV`]: `${lastYear} CV`,
+      'CV 변화율(%)': 'CV 변화율(%)',
     });
 
     teams.forEach(team => {
       const currentData = teamAggregated.get(`${team}-${currentYear}`) || { pv: 0, cv: 0 };
       const lastData = teamAggregated.get(`${team}-${lastYear}`) || { pv: 0, cv: 0 };
+      const pvCh = calculateChange(currentData.pv, lastData.pv);
+      const cvCh = calculateChange(currentData.cv, lastData.cv);
 
       exportData.push({
         '팀명': team,
         [`${currentYear} PV`]: currentData.pv,
-        [`${currentYear} CV`]: currentData.cv,
         [`${lastYear} PV`]: lastData.pv,
+        'PV 변화율(%)': Number(pvCh.percent.toFixed(1)),
+        [`${currentYear} CV`]: currentData.cv,
         [`${lastYear} CV`]: lastData.cv,
+        'CV 변화율(%)': Number(cvCh.percent.toFixed(1)),
       });
     });
 
@@ -270,7 +280,7 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">팀별 PV 실적</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 전체 팀 합계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">1월~{parseInt(currentMonthNum)}월 누계</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -303,7 +313,7 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">팀별 CV 실적</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear}년 전체 팀 합계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">1월~{parseInt(currentMonthNum)}월 누계</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -340,10 +350,10 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
               <tr>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">팀명</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">{currentYear} PV</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">{currentYear} CV</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear} PV</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear} CV</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">PV 변화율</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">{currentYear} CV</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear} CV</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">CV 변화율</th>
               </tr>
             </thead>
@@ -363,14 +373,8 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
                     <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">
                       {formatNumber(currentData.pv)}
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">
-                      {formatNumber(currentData.cv)}
-                    </td>
                     <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
                       {formatNumber(lastData.pv)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatNumber(lastData.cv)}
                     </td>
                     <td className="py-3 px-4 text-right">
                       <span className={`inline-flex items-center gap-1 font-medium ${
@@ -379,6 +383,12 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
                         {pvChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                         {Math.abs(pvChange.percent).toFixed(1)}%
                       </span>
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">
+                      {formatNumber(currentData.cv)}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                      {formatNumber(lastData.cv)}
                     </td>
                     <td className="py-3 px-4 text-right">
                       <span className={`inline-flex items-center gap-1 font-medium ${
@@ -397,14 +407,8 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
                 <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300">
                   {formatNumber(totals.get(currentYear)?.pv || 0)}
                 </td>
-                <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300">
-                  {formatNumber(totals.get(currentYear)?.cv || 0)}
-                </td>
                 <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
                   {formatNumber(totals.get(lastYear)?.pv || 0)}
-                </td>
-                <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                  {formatNumber(totals.get(lastYear)?.cv || 0)}
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className={`inline-flex items-center gap-1 font-medium ${
@@ -413,6 +417,12 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
                   }`}>
                     {Math.abs(calculateChange(totals.get(currentYear)?.pv || 0, totals.get(lastYear)?.pv || 0).percent).toFixed(1)}%
                   </span>
+                </td>
+                <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300">
+                  {formatNumber(totals.get(currentYear)?.cv || 0)}
+                </td>
+                <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                  {formatNumber(totals.get(lastYear)?.cv || 0)}
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className={`inline-flex items-center gap-1 font-medium ${
@@ -431,7 +441,7 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
       {/* 남부지사 Detail */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">남부지사 매입/매출</h4>
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">남부지사 매입/매출 (1월~{parseInt(currentMonthNum)}월 누계)</h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -486,7 +496,7 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
       {/* Strategic Dealers */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">전략딜러</h4>
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">전략딜러 (1월~{parseInt(currentMonthNum)}월 누계)</h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

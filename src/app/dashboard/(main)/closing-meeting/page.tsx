@@ -33,25 +33,12 @@ export default function ClosingMeetingPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [isExporting, setIsExporting] = useState(false);
 
-  useEffect(() => {
-    // Initial fetch to get available months
-    const fetchInitialData = async () => {
-      try {
-        const response = await apiFetch(
-          withIncludeVat(`/api/dashboard/closing-meeting?tab=monthly-summary`, includeVat)
-        );
-        const result = await response.json();
-        if (result.success && result.data.availableMonths) {
-          setAvailableMonths(result.data.availableMonths);
-          // Set to latest month by default
-          setSelectedMonth(result.data.availableMonths[result.data.availableMonths.length - 1]);
-        }
-      } catch (error) {
-        console.error('Failed to fetch initial data:', error);
-      }
-    };
-    fetchInitialData();
-  }, [includeVat]);
+  const handleMonthsAvailable = (months: string[], currentMonth: string) => {
+    setAvailableMonths(months);
+    if (!selectedMonth) {
+      setSelectedMonth(currentMonth);
+    }
+  };
 
   const handleExcelDownload = async () => {
     if (!selectedMonth) return;
@@ -284,17 +271,17 @@ export default function ClosingMeetingPage() {
 
       <div className="min-h-[400px]">
         {activeTab === 'monthly-summary' ? (
-          <MonthlySummaryTab selectedMonth={selectedMonth} />
+          <MonthlySummaryTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'b2c-auto' ? (
-          <B2CAutoAnalysisTab selectedMonth={selectedMonth} />
+          <B2CAutoAnalysisTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'b2b-il' ? (
-          <B2BILAnalysisTab selectedMonth={selectedMonth} />
+          <B2BILAnalysisTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'target-achievement' ? (
-          <TargetAchievementTab selectedMonth={selectedMonth} />
+          <TargetAchievementTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'yoy-comparison' ? (
-          <YearOverYearTab selectedMonth={selectedMonth} />
+          <YearOverYearTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'branch-performance' ? (
-          <BranchPerformanceTab selectedMonth={selectedMonth} />
+          <BranchPerformanceTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'goal-setting' ? (
           <GoalSettingTab />
         ) : null}

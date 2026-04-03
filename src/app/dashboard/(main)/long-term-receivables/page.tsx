@@ -408,10 +408,10 @@ export default function LongTermReceivablesPage() {
             </div>
           </td>
           <td className="px-4 py-3 text-sm text-right text-blue-600 dark:text-blue-400 font-semibold">
-            ₩{Number(node.data.current_total_receivables).toLocaleString()}
+            {Number(node.data.current_total_receivables).toLocaleString()}
           </td>
           <td className="px-4 py-3 text-sm text-right text-red-600 dark:text-red-400 font-bold">
-            ₩{Number(node.data.long_term_receivables).toLocaleString()}
+            {Number(node.data.long_term_receivables).toLocaleString()}
           </td>
           <td className="px-4 py-3 text-sm text-right font-semibold">
             <span className={`px-2 py-1 rounded ${
@@ -425,11 +425,11 @@ export default function LongTermReceivablesPage() {
             </span>
           </td>
           <td className="px-4 py-3 text-sm text-right text-zinc-500 dark:text-zinc-400">
-            ₩{Number(node.data.previous_month_long_term).toLocaleString()}
+            {Number(node.data.previous_month_long_term).toLocaleString()}
           </td>
           <td className="px-4 py-3 text-sm text-right font-semibold">
             <span className={momChange >= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
-              {momChange >= 0 ? '+' : ''}₩{momChange.toLocaleString()}
+              {momChange >= 0 ? '+' : ''}{momChange.toLocaleString()}
             </span>
           </td>
           <td className="px-4 py-3 text-sm text-right font-bold">
@@ -709,7 +709,7 @@ export default function LongTermReceivablesPage() {
             <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">당월 총 미수금</p>
           </div>
           <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
-            ₩{totals.currentTotal.toLocaleString()}
+            {totals.currentTotal.toLocaleString()}
           </p>
         </div>
 
@@ -719,7 +719,7 @@ export default function LongTermReceivablesPage() {
             <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{agingMonths}개월 이상 장기미수금</p>
           </div>
           <p className="text-xl font-bold text-red-600 dark:text-red-400">
-            ₩{totals.longTerm.toLocaleString()}
+            {totals.longTerm.toLocaleString()}
           </p>
         </div>
 
@@ -744,7 +744,7 @@ export default function LongTermReceivablesPage() {
           </div>
           <div className="flex items-baseline gap-2">
             <p className={`text-xl font-bold ${totalMoMChange >= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-              {totalMoMChange >= 0 ? '+' : ''}₩{totalMoMChange.toLocaleString()}
+              {totalMoMChange >= 0 ? '+' : ''}{totalMoMChange.toLocaleString()}
             </p>
             <p className={`text-sm font-medium ${totalMoMChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
               ({totalMoMChangeRate >= 0 ? '+' : ''}{totalMoMChangeRate.toFixed(1)}%)
@@ -855,10 +855,10 @@ export default function LongTermReceivablesPage() {
                     합계
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-blue-600 dark:text-blue-400">
-                    ₩{totals.currentTotal.toLocaleString()}
+                    {totals.currentTotal.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-red-600 dark:text-red-400">
-                    ₩{totals.longTerm.toLocaleString()}
+                    {totals.longTerm.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-sm text-right">
                     <span className={`px-2 py-1 rounded ${
@@ -872,11 +872,11 @@ export default function LongTermReceivablesPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-zinc-500 dark:text-zinc-400">
-                    ₩{totals.previousMonth.toLocaleString()}
+                    {totals.previousMonth.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-sm text-right">
                     <span className={totalMoMChange >= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
-                      {totalMoMChange >= 0 ? '+' : ''}₩{totalMoMChange.toLocaleString()}
+                      {totalMoMChange >= 0 ? '+' : ''}{totalMoMChange.toLocaleString()}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-right">
@@ -981,19 +981,19 @@ export default function LongTermReceivablesPage() {
                         <div>
                           <div className="text-zinc-500 dark:text-zinc-400 text-xs">매출</div>
                           <div className="font-semibold text-blue-600 dark:text-blue-400">
-                            ₩{currentMonthData?.sales?.toLocaleString() || '0'}
+                            {currentMonthData?.sales?.toLocaleString() || '0'}
                           </div>
                         </div>
                         <div>
                           <div className="text-zinc-500 dark:text-zinc-400 text-xs">수금</div>
                           <div className="font-semibold text-green-600 dark:text-green-400">
-                            ₩{currentMonthData?.collections?.toLocaleString() || '0'}
+                            {currentMonthData?.collections?.toLocaleString() || '0'}
                           </div>
                         </div>
                         <div>
                           <div className="text-zinc-500 dark:text-zinc-400 text-xs">기타할인등차액</div>
                           <div className="font-semibold">
-                            ₩{currentMonthData?.adjustments?.toLocaleString() || '0'}
+                            {currentMonthData?.adjustments?.toLocaleString() || '0'}
                           </div>
                         </div>
                         <div>
@@ -1003,7 +1003,7 @@ export default function LongTermReceivablesPage() {
                               ? 'text-red-600 dark:text-red-400'
                               : 'text-zinc-600 dark:text-zinc-400'
                           }`}>
-                            ₩{currentMonthData?.balance?.toLocaleString() || '0'}
+                            {currentMonthData?.balance?.toLocaleString() || '0'}
                           </div>
                         </div>
                         <div>
@@ -1013,7 +1013,7 @@ export default function LongTermReceivablesPage() {
                               ? 'text-red-600 dark:text-red-400'
                               : 'text-zinc-600 dark:text-zinc-400'
                           }`}>
-                            ₩{currentMonthData?.uncollected?.toLocaleString() || '0'}
+                            {currentMonthData?.uncollected?.toLocaleString() || '0'}
                           </div>
                         </div>
                       </div>
@@ -1026,13 +1026,13 @@ export default function LongTermReceivablesPage() {
                             <div>
                               <span className="text-zinc-600 dark:text-zinc-400">매출:</span>
                               <span className="ml-2 font-semibold text-blue-600 dark:text-blue-400">
-                                ₩{client.recent_3_months.sales?.toLocaleString() || '0'}
+                                {client.recent_3_months.sales?.toLocaleString() || '0'}
                               </span>
                             </div>
                             <div>
                               <span className="text-zinc-600 dark:text-zinc-400">수금:</span>
                               <span className="ml-2 font-semibold text-green-600 dark:text-green-400">
-                                ₩{client.recent_3_months.collections?.toLocaleString() || '0'}
+                                {client.recent_3_months.collections?.toLocaleString() || '0'}
                               </span>
                             </div>
                             <div>
@@ -1042,7 +1042,7 @@ export default function LongTermReceivablesPage() {
                                   ? 'text-red-600 dark:text-red-400'
                                   : 'text-green-600 dark:text-green-400'
                               }`}>
-                                {(client.recent_3_months.balance_change || 0) >= 0 ? '+' : ''}₩{client.recent_3_months.balance_change?.toLocaleString() || '0'}
+                                {(client.recent_3_months.balance_change || 0) >= 0 ? '+' : ''}{client.recent_3_months.balance_change?.toLocaleString() || '0'}
                               </span>
                             </div>
                           </div>
@@ -1070,27 +1070,27 @@ export default function LongTermReceivablesPage() {
                                 <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
                                   <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">{monthData.month}</td>
                                   <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400">
-                                    ₩{monthData.sales?.toLocaleString() || '0'}
+                                    {monthData.sales?.toLocaleString() || '0'}
                                   </td>
                                   <td className="px-3 py-2 text-right text-green-600 dark:text-green-400">
-                                    ₩{monthData.collections?.toLocaleString() || '0'}
+                                    {monthData.collections?.toLocaleString() || '0'}
                                   </td>
                                   <td className="px-3 py-2 text-right">
-                                    ₩{monthData.adjustments?.toLocaleString() || '0'}
+                                    {monthData.adjustments?.toLocaleString() || '0'}
                                   </td>
                                   <td className={`px-3 py-2 text-right font-semibold ${
                                     (monthData.balance || 0) > 0
                                       ? 'text-red-600 dark:text-red-400'
                                       : 'text-zinc-600 dark:text-zinc-400'
                                   }`}>
-                                    ₩{monthData.balance?.toLocaleString() || '0'}
+                                    {monthData.balance?.toLocaleString() || '0'}
                                   </td>
                                   <td className={`px-3 py-2 text-right font-semibold ${
                                     (monthData.uncollected || 0) > 0
                                       ? 'text-red-600 dark:text-red-400'
                                       : 'text-zinc-600 dark:text-zinc-400'
                                   }`}>
-                                    ₩{monthData.uncollected?.toLocaleString() || '0'}
+                                    {monthData.uncollected?.toLocaleString() || '0'}
                                   </td>
                                 </tr>
                               ))}

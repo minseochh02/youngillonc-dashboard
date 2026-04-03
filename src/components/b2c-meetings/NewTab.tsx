@@ -131,6 +131,10 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
 
   const { currentYear, lastYear, totalsByYear, managerSummary, clients } = data;
 
+  // Calculate cumulative period labels
+  const currentMonthStr = selectedMonth || `${currentYear}-12`;
+  const [_, currentMonthNum] = currentMonthStr.split('-');
+
   // Group managers by team
   const teamGroups: Record<string, string[]> = {};
   managerSummary.forEach(m => {
@@ -154,7 +158,7 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
 
     // Add manager summary section
     exportData.push({
-      '팀': '담당자별 신규 현황 비교',
+      '팀': `담당자별 신규 현황 비교 (1월~${parseInt(currentMonthNum)}월 누계)`,
     });
 
     sortedTeams.forEach((team) => {
@@ -168,10 +172,10 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
           '팀': team,
           '담당자': manager,
           '사업소': currentManager.branch,
-          [`${currentYear}년 거래처수(개)`]: currentManager.client_count,
-          [`${currentYear}년 중량(L)`]: currentManager.total_weight,
-          [`${lastYear}년 거래처수(개)`]: lastManager.client_count,
-          [`${lastYear}년 중량(L)`]: lastManager.total_weight,
+          [`${currentYear}년 누계 거래처수(개)`]: currentManager.client_count,
+          [`${currentYear}년 누계 중량(L)`]: currentManager.total_weight,
+          [`${lastYear}년 누계 거래처수(개)`]: lastManager.client_count,
+          [`${lastYear}년 누계 중량(L)`]: lastManager.total_weight,
           '중량 변화율(%)': change.percent.toFixed(1),
         });
       });
@@ -182,7 +186,7 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
 
     // Add new clients detail section grouped by team/manager
     exportData.push({
-      '팀': `${currentYear}년 신규 거래처 상세`,
+      '팀': `${currentYear}년 신규 거래처 상세 (1월~${parseInt(currentMonthNum)}월 누계)`,
     });
 
     sortedTeams.forEach((team) => {
@@ -231,7 +235,7 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 신규 현황</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">전체 신규 거래처 합계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">1월~{parseInt(currentMonthNum)}월 누계</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -297,7 +301,7 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
       {/* Manager Summary Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">담당자별 신규 현황 비교</h4>
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">담당자별 신규 현황 비교 (1월~{parseInt(currentMonthNum)}월 누계)</h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -306,8 +310,8 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase">팀</th>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase">담당자</th>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase">사업소</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase">{currentYear}년 (개/L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase">{lastYear}년 (개/L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase">{currentYear}년 누계 (개/L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase">{lastYear}년 누계 (개/L)</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase">중량 변화율</th>
               </tr>
             </thead>
@@ -361,7 +365,7 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
           <div>
-            <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 신규 거래처 상세 (팀/담당자별)</h4>
+            <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 신규 거래처 상세 (1월~{parseInt(currentMonthNum)}월 누계)</h4>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
               담당자를 클릭하여 상세 거래처 목록 확인
             </p>

@@ -23,9 +23,16 @@ interface ProductData {
   productData: ProductDataRow[];
   currentYear: string;
   lastYear: string;
+  availableMonths?: string[];
+  currentMonth?: string;
 }
 
-export default function ClientTab() {
+interface ClientTabProps {
+  selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
+}
+
+export default function ClientTab({ selectedMonth, onMonthsAvailable }: ClientTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<ProductData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,15 +40,22 @@ export default function ClientTab() {
 
   useEffect(() => {
     fetchProductData();
-  }, [includeVat]);
+  }, [includeVat, selectedMonth]);
 
   const fetchProductData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(withIncludeVat(`/api/dashboard/b2b-meetings?tab=client`, includeVat));
+      const q = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
+      const response = await apiFetch(
+        withIncludeVat(`/api/dashboard/b2b-meetings?tab=client${q}`, includeVat)
+      );
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        const d = result.data;
+        if (onMonthsAvailable && d?.availableMonths?.length) {
+          onMonthsAvailable(d.availableMonths, d.currentMonth!);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch product data:', error);

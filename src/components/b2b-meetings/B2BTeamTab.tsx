@@ -21,24 +21,38 @@ interface B2BDataRow {
 interface B2BTeamData {
   b2bData: B2BDataRow[];
   currentYear: string;
+  availableMonths?: string[];
+  currentMonth?: string;
 }
 
-export default function B2BTeamTab() {
+interface B2BTeamTabProps {
+  selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
+}
+
+export default function B2BTeamTab({ selectedMonth, onMonthsAvailable }: B2BTeamTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<B2BTeamData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, [includeVat]);
+  }, [includeVat, selectedMonth]);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(withIncludeVat(`/api/dashboard/b2b-meetings?tab=team`, includeVat));
+      const q = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
+      const response = await apiFetch(
+        withIncludeVat(`/api/dashboard/b2b-meetings?tab=team${q}`, includeVat)
+      );
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        const d = result.data;
+        if (onMonthsAvailable && d?.availableMonths?.length) {
+          onMonthsAvailable(d.availableMonths, d.currentMonth!);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch B2B team data:', error);
@@ -81,7 +95,7 @@ export default function B2BTeamTab() {
     );
   }
 
-  const { currentYear, b2bData } = data;
+  const { currentYear, b2bData, currentMonth: apiMonth } = data;
 
   // Create a structure for the table: office -> team -> industry -> sector -> monthly data
   const tableData = new Map<string, Map<string, Map<string, Map<string, { weight: Map<string, number>; amount: Map<string, number> }>>>>();
@@ -121,19 +135,12 @@ export default function B2BTeamTab() {
     monthlyTotalsAmount.set(row.year_month, currentAmount + row.total_amount);
   });
 
-  // Generate month labels
-  const months = Array.from({ length: 12 }, (_, i) => {
+  const refYm = selectedMonth || apiMonth || `${currentYear}-12`;
+  const maxMonthNum = parseInt(refYm.split('-')[1]!, 10);
+
+  const months = Array.from({ length: maxMonthNum }, (_, i) => {
     const month = String(i + 1).padStart(2, '0');
     return `${currentYear}-${month}`;
-  }).filter(m => {
-    const [year, month] = m.split('-').map(Number);
-    const now = new Date();
-    const currentYearNum = now.getFullYear();
-    const currentMonthNum = now.getMonth() + 1;
-    
-    if (year < currentYearNum) return true;
-    if (year === currentYearNum && month <= currentMonthNum) return true;
-    return false;
   });
 
   // Calculate totals for summary cards

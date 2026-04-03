@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown, Database, ChevronDown, ChevronRight, Pencil, Save } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
@@ -73,9 +73,10 @@ interface B2BILAnalysis {
 
 interface B2BILAnalysisProps {
   selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
 }
 
-export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) {
+export default function B2BILAnalysisTab({ selectedMonth, onMonthsAvailable }: B2BILAnalysisProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<B2BILAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -83,6 +84,7 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
   const [editingTargets, setEditingTargets] = useState<Map<string, number>>(new Map());
   const [isSaving, setIsSaving] = useState<string | null>(null);
+  const hasReportedMonths = useRef(false);
 
   useEffect(() => {
     fetchData();
@@ -99,6 +101,11 @@ export default function B2BILAnalysisTab({ selectedMonth }: B2BILAnalysisProps) 
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        // Report available months to parent only once
+        if (onMonthsAvailable && result.data.availableMonths && !hasReportedMonths.current) {
+          hasReportedMonths.current = true;
+          onMonthsAvailable(result.data.availableMonths, result.data.currentMonth);
+        }
         // Expand all branches by default
         const allBranches = new Set(result.data.branches.map((b: BranchILData) => b.branch));
         setExpandedBranches(allBranches);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import { Calendar } from 'lucide-react';
 import IndustryTab from '@/components/b2b-meetings/IndustryTab';
 import ClientTab from '@/components/b2b-meetings/ClientTab';
 import ProductGroupTab from '@/components/b2b-meetings/ProductGroupTab';
@@ -33,9 +34,19 @@ const tabs = [
 export default function B2BMeetingsPage() {
   const { includeVat } = useVatInclude();
   const [activeTab, setActiveTab] = useState(tabs[0].id);
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState('');
   const [isExporting, setIsExporting] = useState(false);
 
+  const handleMonthsAvailable = (months: string[], currentMonth: string) => {
+    setAvailableMonths(months);
+    if (!selectedMonth) {
+      setSelectedMonth(currentMonth);
+    }
+  };
+
   const handleExcelDownload = async () => {
+    if (!selectedMonth) return;
     setIsExporting(true);
     try {
       const sheets: IslandSheetData[] = [];
@@ -52,12 +63,14 @@ export default function B2BMeetingsPage() {
       ];
 
       // Fetch all data
+      const monthQ = `month=${encodeURIComponent(selectedMonth)}`;
       const results = await Promise.all(
         exportTabs.map(async (tab) => {
           // Special case for industry which has its own route
-          const baseUrl = tab.id === 'industry' 
-            ? `/api/dashboard/b2b-meetings/industry`
-            : `/api/dashboard/b2b-meetings?tab=${tab.id}`;
+          const baseUrl =
+            tab.id === 'industry'
+              ? `/api/dashboard/b2b-meetings/industry?${monthQ}`
+              : `/api/dashboard/b2b-meetings?tab=${tab.id}&${monthQ}`;
           const response = await apiFetch(withIncludeVat(baseUrl, includeVat));
           const result = await response.json();
           return { id: tab.id, name: tab.name, data: result.success ? result.data : null };
@@ -186,13 +199,13 @@ export default function B2BMeetingsPage() {
           sheets.push({ 
             name: res.name, 
             islands, 
-            referenceDate: new Date().toISOString().split('T')[0] 
+            referenceDate: selectedMonth,
           });
         }
       }
 
       const { exportMultiSheetIslandTables } = await import('@/lib/excel-export');
-      exportMultiSheetIslandTables(sheets, generateFilename('B2B_Full_Report'));
+      exportMultiSheetIslandTables(sheets, generateFilename(`B2B_Full_Report_${selectedMonth}`));
     } catch (error) {
       console.error('B2B Full Export Error:', error);
       alert('엑셀 다운로드 중 오류가 발생했습니다.');
@@ -203,39 +216,57 @@ export default function B2BMeetingsPage() {
 
   const renderTabContent = () => {
     if (activeTab === 'industry') {
-      return <IndustryTab />;
+      return (
+        <IndustryTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+      );
     }
 
     if (activeTab === 'team') {
-      return <B2BTeamTab />;
+      return (
+        <B2BTeamTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+      );
     }
 
     if (activeTab === 'client') {
-      return <ClientTab />;
+      return (
+        <ClientTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+      );
     }
 
     if (activeTab === 'product-group') {
-      return <ProductGroupTab />;
+      return (
+        <ProductGroupTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+      );
     }
 
     if (activeTab === 'fps') {
-      return <FPSTab />;
+      return (
+        <FPSTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+      );
     }
 
     if (activeTab === 'region') {
-      return <RegionTab />;
+      return (
+        <RegionTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+      );
     }
 
     if (activeTab === 'new') {
-      return <NewClientTab />;
+      return (
+        <NewClientTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+      );
     }
 
     if (activeTab === 'all-products') {
-      return <AllProductsTab />;
+      return (
+        <AllProductsTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+      );
     }
 
     if (activeTab === 'industry-dairy') {
-      return <IndustryDairyTab />;
+      return (
+        <IndustryDairyTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+      );
     }
 
     return (
@@ -262,7 +293,21 @@ export default function B2BMeetingsPage() {
         <div className="flex items-center gap-3">
           <VatToggle id="vat-b2b-meetings" />
           {isExporting && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
-          <ExcelDownloadButton onClick={handleExcelDownload} disabled={isExporting} />
+          <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
+            <Calendar className="w-4 h-4 text-zinc-500" />
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="bg-transparent text-sm font-medium focus:outline-none cursor-pointer pr-4"
+            >
+              {availableMonths.map((month) => (
+                <option key={month} value={month}>
+                  {month.split('-')[0]}년 {month.split('-')[1]}월
+                </option>
+              ))}
+            </select>
+          </div>
+          <ExcelDownloadButton onClick={handleExcelDownload} disabled={isExporting || !selectedMonth} />
         </div>
       </div>
 

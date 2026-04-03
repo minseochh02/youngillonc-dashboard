@@ -326,7 +326,7 @@ export function GoalModal({ isOpen, onClose, onSave, filterOptions }: GoalModalP
               required
             />
             <p className="text-xs text-zinc-500 mt-1">
-              {metric === 'total_amount' && '금액 단위: 원 (₩)'}
+              {metric === 'total_amount' && '금액 단위: 원'}
               {metric === 'total_quantity' && '수량 단위: 개'}
               {metric === 'total_weight' && '용량 단위: L'}
               {metric === 'transaction_count' && '거래건수'}

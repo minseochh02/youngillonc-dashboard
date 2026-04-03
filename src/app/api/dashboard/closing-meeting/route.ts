@@ -229,6 +229,54 @@ export async function GET(request: Request) {
       const categories = ['MB', 'AVI + MAR', 'AUTO', 'IL'];
       const monthlyData = [];
       let ytdPurchase = 0, ytdPurchaseAmount = 0, ytdSales = 0, ytdSalesAmount = 0, ytdInventory = 0, ytdTargetWeight = 0;
+      let lastYearYtdPurchase = 0, lastYearYtdPurchaseAmount = 0, lastYearYtdSales = 0, lastYearYtdSalesAmount = 0, lastYearYtdInventory = 0;
+
+      // Calculate last year's cumulative up to the same month
+      const selectedMonthNum = currentMonthStr.split('-')[1];
+      const lastYearCutoff = `${lastYear}-${selectedMonthNum}`;
+
+      // Also track last year by category
+      const lastYearByCategory = new Map<string, { purchase: number, sales: number, inventory: number }>();
+      categories.forEach(cat => lastYearByCategory.set(cat, { purchase: 0, sales: 0, inventory: 0 }));
+
+      for (const monthStr of availableMonths) {
+        if (monthStr <= lastYearCutoff && monthStr.startsWith(String(lastYear))) {
+          let purchaseWeight = 0, purchaseAmount = 0, salesWeight = 0, salesAmount = 0;
+
+          categories.forEach(cat => {
+            const key = `${monthStr}_${cat}`;
+            const s = salesMap.get(key) || { weight: 0, amount: 0 };
+            const p = purchasesMap.get(key) || { weight: 0, amount: 0 };
+            purchaseWeight += p.weight;
+            purchaseAmount += p.amount;
+            salesWeight += s.weight;
+            salesAmount += s.amount;
+
+            // Track by category
+            const catData = lastYearByCategory.get(cat)!;
+            catData.purchase += p.weight;
+            catData.sales += s.weight;
+            catData.inventory += (p.weight - s.weight);
+          });
+
+          lastYearYtdPurchase += purchaseWeight;
+          lastYearYtdPurchaseAmount += purchaseAmount;
+          lastYearYtdSales += salesWeight;
+          lastYearYtdSalesAmount += salesAmount;
+          lastYearYtdInventory += (purchaseWeight - salesWeight);
+        }
+      }
+
+      // Convert last year category data to array
+      const lastYearCategoryBreakdown = categories.map(cat => {
+        const data = lastYearByCategory.get(cat)!;
+        return {
+          category: cat,
+          purchase_weight: Math.round(data.purchase),
+          sales_weight: Math.round(data.sales),
+          inventory_weight: Math.round(data.inventory),
+        };
+      });
 
       for (const monthStr of availableMonths) {
         let purchaseWeight = 0, purchaseAmount = 0, salesWeight = 0, salesAmount = 0, monthTargetWeight = 0;
@@ -296,6 +344,8 @@ export async function GET(request: Request) {
         success: true,
         data: {
           currentYear: currentYear.toString(),
+          lastYear: lastYear.toString(),
+          currentMonth: currentMonthStr,
           availableMonths,
           monthlyData: monthlyData,
           currentMonthData: currentMonthData,
@@ -308,6 +358,15 @@ export async function GET(request: Request) {
             inventory_amount: Math.round(ytdPurchaseAmount - ytdSalesAmount),
             target_weight: Math.round(ytdTargetWeight),
             achievement_rate: ytdTargetWeight > 0 ? (ytdSales / ytdTargetWeight) * 100 : 0,
+          },
+          lastYearToDate: {
+            purchase_weight: Math.round(lastYearYtdPurchase),
+            purchase_amount: Math.round(lastYearYtdPurchaseAmount),
+            sales_weight: Math.round(lastYearYtdSales),
+            sales_amount: Math.round(lastYearYtdSalesAmount),
+            inventory_weight: Math.round(lastYearYtdInventory),
+            inventory_amount: Math.round(lastYearYtdPurchaseAmount - lastYearYtdSalesAmount),
+            categoryBreakdown: lastYearCategoryBreakdown,
           },
         },
       });

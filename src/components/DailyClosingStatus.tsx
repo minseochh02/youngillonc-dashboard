@@ -323,7 +323,7 @@ export default function DailyClosingStatus({
             </div>
             <div className="bg-zinc-800 dark:bg-zinc-700/50 rounded-xl p-4 border border-zinc-700">
               <p className="text-[11px] uppercase tracking-widest text-zinc-400 mb-2 font-bold">당일 매입액</p>
-              <p className="text-2xl font-bold">₩{purchaseData.todayAmount.toLocaleString()}</p>
+              <p className="text-2xl font-bold">{purchaseData.todayAmount.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -354,7 +354,7 @@ export default function DailyClosingStatus({
                         <td className="px-6 py-3 text-zinc-600 dark:text-zinc-300">{payment.date}</td>
                         <td className="px-6 py-3 font-medium text-zinc-900 dark:text-zinc-100">{payment.customerName}</td>
                         <td className="px-6 py-3 text-right tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
-                          ₩{formatNumber(payment.amount)}
+                          {formatNumber(payment.amount)}
                         </td>
                         <td className="px-6 py-3 text-zinc-500 dark:text-zinc-400">{payment.remarks}</td>
                       </tr>

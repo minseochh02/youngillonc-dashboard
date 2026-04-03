@@ -191,7 +191,7 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">실 결제금액</p>
-              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">₩{formatNumber(grandTotal.net_amount)}</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(grandTotal.net_amount)}</p>
               <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
                 총 주문금액 {formatNumber(grandTotal.total_amount)} 대비 {((grandTotal.net_amount / (grandTotal.total_amount || 1)) * 100).toFixed(1)}%
               </p>
@@ -200,7 +200,7 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">거래 규모</p>
               <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatNumber(grandTotal.transaction_count)} 건</p>
               <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
-                총 중량: {formatNumber(grandTotal.total_weight)} kg
+                총 중량: {formatNumber(grandTotal.total_weight)} L
               </p>
             </div>
           </div>
@@ -230,7 +230,7 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
                 </p>
               </div>
               <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
-                {latestMonthTotals ? `₩${formatNumber(latestMonthTotals.net_amount)}` : '-'}
+                {latestMonthTotals ? formatNumber(latestMonthTotals.net_amount) : '-'}
               </p>
             </div>
             <div>
@@ -296,24 +296,24 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
                       return (
                         <td key={team} className="py-3 px-4 text-right font-mono border-r border-zinc-200 dark:border-zinc-700">
                           <div className="flex flex-col">
-                            <span className="text-zinc-900 dark:text-zinc-100 font-semibold text-xs">₩{formatNumber(teamMonthData?.total_amount || 0)}</span>
+                            <span className="text-zinc-900 dark:text-zinc-100 font-semibold text-xs">{formatNumber(teamMonthData?.total_amount || 0)}</span>
                             {teamMonthData && teamMonthData.total_points > 0 && (
-                              <span className="text-[10px] text-red-500">- ₩{formatNumber(teamMonthData.total_points)} (Pt)</span>
+                              <span className="text-[10px] text-red-500">- {formatNumber(teamMonthData.total_points)} 포인트</span>
                             )}
-                            <span className="text-blue-600 dark:text-blue-400 font-bold">₩{formatNumber(teamMonthData?.net_amount || 0)}</span>
-                            <span className="text-[10px] text-zinc-400 mt-1">{formatNumber(teamMonthData?.total_weight || 0)} kg / {teamMonthData?.transaction_count || 0}건</span>
+                            <span className="text-blue-600 dark:text-blue-400 font-bold">{formatNumber(teamMonthData?.net_amount || 0)}</span>
+                            <span className="text-[10px] text-zinc-400 mt-1">{formatNumber(teamMonthData?.total_weight || 0)} L / {teamMonthData?.transaction_count || 0}건</span>
                           </div>
                         </td>
                       );
                     })}
                     <td className="py-3 px-4 text-right font-mono bg-emerald-50/30 dark:bg-emerald-900/10">
                       <div className="flex flex-col">
-                        <span className="text-zinc-600 dark:text-zinc-400 font-semibold text-xs">₩{formatNumber(monthTotals.total_amount)}</span>
+                        <span className="text-zinc-600 dark:text-zinc-400 font-semibold text-xs">{formatNumber(monthTotals.total_amount)}</span>
                         {monthTotals.total_points > 0 && (
-                          <span className="text-[10px] text-red-600">- ₩{formatNumber(monthTotals.total_points)} (Pt)</span>
+                          <span className="text-[10px] text-red-600">- {formatNumber(monthTotals.total_points)} 포인트</span>
                         )}
-                        <span className="text-emerald-700 dark:text-emerald-300 font-bold">₩{formatNumber(monthTotals.net_amount)}</span>
-                        <span className="text-[10px] text-emerald-600/70 mt-1">{formatNumber(monthTotals.total_weight)} kg / {monthTotals.transaction_count}건</span>
+                        <span className="text-emerald-700 dark:text-emerald-300 font-bold">{formatNumber(monthTotals.net_amount)}</span>
+                        <span className="text-[10px] text-emerald-600/70 mt-1">{formatNumber(monthTotals.total_weight)} L / {monthTotals.transaction_count}건</span>
                       </div>
                     </td>
                   </tr>
@@ -338,12 +338,12 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
                   return (
                     <td key={team} className="py-4 px-4 text-right font-mono border-r border-zinc-200 dark:border-zinc-700">
                       <div className="flex flex-col">
-                        <span className="text-zinc-500 dark:text-zinc-400 text-xs">₩{formatNumber(teamAnnualTotal.total_amount)}</span>
+                        <span className="text-zinc-500 dark:text-zinc-400 text-xs">{formatNumber(teamAnnualTotal.total_amount)}</span>
                         {teamAnnualTotal.total_points > 0 && (
-                          <span className="text-[10px] text-red-500">- ₩{formatNumber(teamAnnualTotal.total_points)}</span>
+                          <span className="text-[10px] text-red-500">- {formatNumber(teamAnnualTotal.total_points)} 포인트</span>
                         )}
-                        <span className="text-zinc-900 dark:text-zinc-100 font-bold">₩{formatNumber(teamAnnualTotal.net_amount)}</span>
-                        <span className="text-[10px] text-zinc-500 mt-1">{formatNumber(teamAnnualTotal.total_weight)} kg / {teamAnnualTotal.transaction_count}건</span>
+                        <span className="text-zinc-900 dark:text-zinc-100 font-bold">{formatNumber(teamAnnualTotal.net_amount)}</span>
+                        <span className="text-[10px] text-zinc-500 mt-1">{formatNumber(teamAnnualTotal.total_weight)} L / {teamAnnualTotal.transaction_count}건</span>
                       </div>
                     </td>
                   );
@@ -359,12 +359,12 @@ export default function ShoppingMallTab({ selectedMonth }: ShoppingMallTabProps)
                     }), { total_amount: 0, total_points: 0, net_amount: 0, total_weight: 0, transaction_count: 0 });
                     return (
                       <div className="flex flex-col">
-                        <span className="text-emerald-600 dark:text-emerald-400 text-xs">₩{formatNumber(grandTotal.total_amount)}</span>
+                        <span className="text-emerald-600 dark:text-emerald-400 text-xs">{formatNumber(grandTotal.total_amount)}</span>
                         {grandTotal.total_points > 0 && (
-                          <span className="text-[10px] text-red-600">- ₩{formatNumber(grandTotal.total_points)}</span>
+                          <span className="text-[10px] text-red-600">- {formatNumber(grandTotal.total_points)} 포인트</span>
                         )}
-                        <span className="text-emerald-800 dark:text-emerald-200 text-base font-bold">₩{formatNumber(grandTotal.net_amount)}</span>
-                        <span className="text-[10px] text-emerald-700/80 mt-1">{formatNumber(grandTotal.total_weight)} kg / {grandTotal.transaction_count}건</span>
+                        <span className="text-emerald-800 dark:text-emerald-200 text-base font-bold">{formatNumber(grandTotal.net_amount)}</span>
+                        <span className="text-[10px] text-emerald-700/80 mt-1">{formatNumber(grandTotal.total_weight)} L / {grandTotal.transaction_count}건</span>
                       </div>
                     );
                   })()}

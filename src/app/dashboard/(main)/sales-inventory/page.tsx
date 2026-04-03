@@ -68,7 +68,7 @@ function fmt(val: number): string {
 
 function fmtCurrency(val: number): string {
   if (val === 0) return "-";
-  return "₩" + val.toLocaleString();
+  return val.toLocaleString();
 }
 
 function StatusBadge({ stock, pendingOut }: { stock: number; pendingOut: number }) {

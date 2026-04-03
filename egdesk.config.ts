@@ -167,7 +167,8 @@ export const TABLES = {
   table19: {
     name: 'sales',
     displayName: '판매현황',
-    description: undefined,
+    description:
+      '판매량(보고 용어)=중량 컬럼 집계, 수량 아님. 매출은 공급가(부가세 제외): 합계가 부가세포함이면 ROUND(clean_numeric(합계)/1.1).',
     rowCount: 677948,
     columnCount: 19,
     columns: ['id', '일자', '최초작성일자', '최종수정일시', '작성자', '최종수정자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '합계', '출하창고코드', '신규일', '적요', '적요2', '실납업체', 'imported_at']

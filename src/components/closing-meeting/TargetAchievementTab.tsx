@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Loader2, Target, TrendingUp, TrendingDown } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
@@ -33,12 +33,14 @@ interface TargetAchievementData {
 
 interface TargetAchievementProps {
   selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
 }
 
-export default function TargetAchievementTab({ selectedMonth }: TargetAchievementProps) {
+export default function TargetAchievementTab({ selectedMonth, onMonthsAvailable }: TargetAchievementProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<TargetAchievementData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const hasReportedMonths = useRef(false);
 
   useEffect(() => {
     fetchData();
@@ -55,6 +57,11 @@ export default function TargetAchievementTab({ selectedMonth }: TargetAchievemen
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        // Report available months to parent only once
+        if (onMonthsAvailable && result.data.availableMonths && !hasReportedMonths.current) {
+          hasReportedMonths.current = true;
+          onMonthsAvailable(result.data.availableMonths, result.data.currentMonth);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch target achievement:', error);

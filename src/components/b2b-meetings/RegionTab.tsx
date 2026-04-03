@@ -21,24 +21,38 @@ interface RegionResponse {
   regionData: RegionData[];
   currentYear: string;
   lastYear: string;
+  availableMonths?: string[];
+  currentMonth?: string;
 }
 
-export default function RegionTab() {
+interface RegionTabProps {
+  selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
+}
+
+export default function RegionTab({ selectedMonth, onMonthsAvailable }: RegionTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<RegionResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchRegionData();
-  }, [includeVat]);
+  }, [includeVat, selectedMonth]);
 
   const fetchRegionData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(withIncludeVat('/api/dashboard/b2b-meetings?tab=region', includeVat));
+      const q = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
+      const response = await apiFetch(
+        withIncludeVat(`/api/dashboard/b2b-meetings?tab=region${q}`, includeVat)
+      );
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        const d = result.data;
+        if (onMonthsAvailable && d?.availableMonths?.length) {
+          onMonthsAvailable(d.availableMonths, d.currentMonth!);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch region data:', error);
@@ -74,24 +88,12 @@ export default function RegionTab() {
     );
   }
 
-  const { regionData, currentYear, lastYear } = data;
+  const { regionData, currentYear, lastYear, currentMonth: apiMonth } = data;
   const regions = ['서울경기', '충청', '경남'];
 
-  // Get all months from Jan to Dec
-  const months = Array.from({ length: 12 }, (_, i) => {
-    const month = String(i + 1).padStart(2, '0');
-    return month;
-  }).filter(m => {
-    const monthNum = parseInt(m);
-    const now = new Date();
-    const currentYearNum = now.getFullYear();
-    const currentMonthNum = now.getMonth() + 1;
-    const yearNum = parseInt(currentYear);
-    
-    if (yearNum < currentYearNum) return true;
-    if (yearNum === currentYearNum && monthNum <= currentMonthNum) return true;
-    return false;
-  });
+  const refYm = selectedMonth || apiMonth || `${currentYear}-12`;
+  const maxMonthNum = parseInt(refYm.split('-')[1]!, 10);
+  const months = Array.from({ length: maxMonthNum }, (_, i) => String(i + 1).padStart(2, '0'));
 
   // Organize data by region, year, and month
   const getMonthData = (region: string, year: string, month: string) => {
