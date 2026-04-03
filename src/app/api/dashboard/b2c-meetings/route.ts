@@ -75,7 +75,7 @@ export async function GET(request: Request) {
           AND s.일자 <= '${currentYear}-12-31'
           AND e.사원_담당_명 != '김도량'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND ca.업종분류코드 IS NOT NULL
+          AND ec.전체사업소 IS NOT NULL
         GROUP BY branch, business_type, year, year_month
         ORDER BY year_month, branch
       `;

@@ -25,10 +25,10 @@ export async function GET(request: Request) {
       return `COALESCE(c2.거래처그룹1명, c.거래처그룹1명) LIKE '%${division}%'`;
     };
 
-    const getPurchBranchFilter = () => {
+    const getPurchBranchFilter = (alias: string = 'p') => {
       if (division === '전체') return "1=1";
-      if (division === '창원') return "(창고코드 LIKE '%창원%' OR EXISTS (SELECT 1 FROM warehouses w2 WHERE w2.창고코드 = 창고코드 AND w2.창고명 LIKE '%창원%'))";
-      return `(창고코드 LIKE '%${division}%' OR EXISTS (SELECT 1 FROM warehouses w2 WHERE w2.창고코드 = 창고코드 AND w2.창고명 LIKE '%${division}%'))`;
+      if (division === '창원') return `(${alias}.창고코드 LIKE '%창원%' OR EXISTS (SELECT 1 FROM warehouses w2 WHERE w2.창고코드 = ${alias}.창고코드 AND w2.창고명 LIKE '%창원%'))`;
+      return `(${alias}.창고코드 LIKE '%${division}%' OR EXISTS (SELECT 1 FROM warehouses w2 WHERE w2.창고코드 = ${alias}.창고코드 AND w2.창고명 LIKE '%${division}%'))`;
     };
 
     const getDepBranchFilter = (alias: string = '', isLedger: boolean = false) => {
@@ -47,20 +47,20 @@ export async function GET(request: Request) {
       (
         SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 출하창고코드, 실납업체 FROM sales
         UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 창고코드 as 출하창고코드, 실납업체 FROM east_division_sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, east_division_sales.창고코드 as 출하창고코드, 실납업체 FROM east_division_sales
         UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 창고코드 as 출하창고코드, 실납업체 FROM west_division_sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, west_division_sales.창고코드 as 출하창고코드, 실납업체 FROM west_division_sales
       )
     `;
 
     // Base subquery for purchases
     const basePurchSubquery = `
       (
-        SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 as 합계, 창고코드 FROM purchases
+        SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 as 합계, purchases.창고코드 FROM purchases
         UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 중량, 합계, 창고코드 FROM east_division_purchases
+        SELECT 일자, 거래처코드, 품목코드, 중량, 합계, east_division_purchases.창고코드 FROM east_division_purchases
         UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 중량, 합계, 창고코드 FROM west_division_purchases
+        SELECT 일자, 거래처코드, 품목코드, 중량, 합계, west_division_purchases.창고코드 FROM west_division_purchases
       )
     `;
 
@@ -170,7 +170,7 @@ export async function GET(request: Request) {
         FROM esz018r_6 b
         LEFT JOIN items i ON b.품목코드 = i.품목코드
         LEFT JOIN warehouses w ON b.창고코드 = w.창고코드 OR b.창고코드 = CAST(w.창고코드 AS TEXT)
-        WHERE ${getPurchBranchFilter()}
+        WHERE ${getPurchBranchFilter('b')}
 
         UNION ALL
 
@@ -263,12 +263,57 @@ export async function GET(request: Request) {
       )
     `;
 
-    const [salesRes, collRes, invRes, flagRes, purchRes] = await Promise.all([
+    // 6. Payment Transaction Details (입금내역) - for 주요현황
+    const branchFilter = getDepBranchFilter('c', true);
+    console.log('Payment Details Branch Filter:', branchFilter);
+
+    const paymentDetailsQuery = `
+      SELECT
+        l.일자 as date,
+        COALESCE(c.거래처명, l.거래처코드) as customerName,
+        l.대변금액 as amount,
+        l.적요 as remarks
+      FROM ledger l
+      LEFT JOIN clients c ON l.거래처코드 = c.거래처코드
+      WHERE l.계정코드 = '1089'
+        AND l.대변금액 > 0
+        AND l.적요 NOT LIKE '%할인%'
+        AND l.일자 = '${date}'
+        AND (${branchFilter})
+    `;
+
+    // 7. New Customer Development (신규개척업체)
+    const getNewCustomerBranchFilter = () => {
+      if (division === '전체') return "1=1";
+      if (division === '창원') return "(c.거래처그룹1명 LIKE '%창원%' OR c.거래처그룹1명 = '경남사업소')";
+      if (division === 'MB') return "(c.거래처그룹1명 LIKE '%벤츠%' OR c.거래처그룹1명 LIKE '%MB%')";
+      if (division === '화성') return "c.거래처그룹1명 LIKE '%화성%'";
+      return `c.거래처그룹1명 LIKE '%${division}%'`;
+    };
+
+    const newCustomersQuery = `
+      SELECT
+        c.신규일 as date,
+        c.거래처명 as customerName,
+        c.지역코드 as location,
+        e.사원_담당_명 as remarks
+      FROM clients c
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+      WHERE c.신규일 = '${date}'
+        AND c.신규일 IS NOT NULL
+        AND c.신규일 != ''
+        AND (${getNewCustomerBranchFilter()})
+      ORDER BY c.거래처명
+    `;
+
+    const [salesRes, collRes, invRes, flagRes, purchRes, paymentRes, newCustomersRes] = await Promise.all([
       executeSQL(salesQuery),
       executeSQL(collectionQuery),
       executeSQL(inventoryQuery),
       executeSQL(flagshipQuery),
-      executeSQL(purchaseMetricsQuery)
+      executeSQL(purchaseMetricsQuery),
+      executeSQL(paymentDetailsQuery),
+      executeSQL(newCustomersQuery)
     ]);
 
     // Map Sales Results
@@ -313,6 +358,31 @@ export async function GET(request: Request) {
     const flagship = flagRes?.rows?.[0] || { salesToday: 0, purchaseToday: 0, salesMTD: 0, purchaseMTD: 0 };
     const purchaseMetrics = purchRes?.rows?.[0] || { todayVolume: 0, todayAmount: 0 };
 
+    // Map Payment Details - sort by amount DESC and limit to 20
+    const paymentDetails = (paymentRes?.rows || [])
+      .map((row: any) => {
+        const jeokyo = String(row.remarks || '');
+        const isCard = jeokyo.includes('카드') || jeokyo.includes('이니시스') || jeokyo.includes('삼성') ||
+                      jeokyo.includes('비씨') || jeokyo.includes('현대') || jeokyo.includes('신한') ||
+                      jeokyo.includes('국민') || jeokyo.includes('롯데') || jeokyo.includes('하나');
+        return {
+          date: row.date,
+          customerName: row.customerName,
+          amount: Number(row.amount) || 0,
+          remarks: isCard ? '카드' : '현금'
+        };
+      })
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 20);
+
+    // Map New Customers
+    const newCustomers = (newCustomersRes?.rows || []).map((row: any) => ({
+      date: row.date,
+      customerName: row.customerName,
+      location: row.location || '-',
+      remarks: row.remarks || '-'
+    }));
+
     return NextResponse.json({
       success: true,
       salesData,
@@ -328,6 +398,8 @@ export async function GET(request: Request) {
         todayVolume: Number(purchaseMetrics.todayVolume) || 0,
         todayAmount: Number(purchaseMetrics.todayAmount) || 0
       },
+      paymentDetails,
+      newCustomers,
       date,
       division
     });

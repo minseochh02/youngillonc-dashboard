@@ -106,8 +106,10 @@ export default function MonthlySalesTable({ data, title = "매출 실적", group
                     <tr className="bg-zinc-50/50 dark:bg-zinc-800/50">
                       <td className="px-4 py-2 border-r border-zinc-200 dark:border-zinc-800 text-center text-zinc-500 sticky left-0 z-10 bg-inherit text-xs">D/M계</td>
                       <td className="px-4 py-2 border-r border-zinc-200 dark:border-zinc-800">-</td>
+                      <td className="px-4 py-2 border-r border-zinc-200 dark:border-zinc-800 text-right text-xs">{(monthTotal.totalSalesWeight / 200).toFixed(1)}</td>
                       <td className="px-4 py-2 border-r border-zinc-200 dark:border-zinc-800">-</td>
                       <td className="px-4 py-2 border-r border-zinc-200 dark:border-zinc-800 text-right text-xs">{(monthTotal.mobileSalesWeight / 200).toFixed(1)}</td>
+                      <td className="px-4 py-2 border-r border-zinc-200 dark:border-zinc-800">-</td>
                       <td className="px-4 py-2 text-right text-xs">{(monthTotal.flagshipSalesWeight / 200).toFixed(1)}</td>
                     </tr>
                   </tfoot>

@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
         eal.activity_date,
         eal.activity_type,
         eal.activity_label,
-        krm.message as activity_summary,
+        COALESCE(krm.message, eal.activity_label, '') as activity_summary,
         eal.customer as customer_name,
         eal.location,
         eal.products as products_mentioned,
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
         eal.resolved_by,
         eal.confidence_score
       FROM employee_activity_log eal
-      JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
+      LEFT JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
       WHERE eal.employee_name = '${employeeName}'
         AND eal.activity_date >= '${startDate}'
         AND eal.activity_date <= '${endDate}'

@@ -12,7 +12,16 @@ export async function GET(request: Request) {
     const includeVat = searchParams.get('includeVat') === 'true';
     const editedOnly = searchParams.get('editedOnly') === 'true';
 
-    const divisor = includeVat ? '1.0' : '1.1';
+    // Sales amount calculation: with VAT uses 합계, without VAT uses 수량×단가
+    const salesAmountExpr = includeVat
+      ? 'CAST(REPLACE(s.합계, \',\', \'\') AS NUMERIC)'
+      : '(CAST(REPLACE(s.수량, \',\', \'\') AS NUMERIC) * s.단가)';
+
+    // Purchase amount calculation: with VAT uses 합_계, without VAT uses 공급가액
+    const purchaseAmountExpr = includeVat
+      ? 'CAST(REPLACE(p.합_계, \',\', \'\') AS NUMERIC)'
+      : 'CAST(REPLACE(p.공급가액, \',\', \'\') AS NUMERIC)';
+
     const salesEditedExpr = `COALESCE(NULLIF(substr(COALESCE(s.최종수정일시, ''), 1, 10), ''), '')`;
     const purchaseEditedExpr = `COALESCE(NULLIF(substr(COALESCE(p.최종수정일시, ''), 1, 10), ''), '')`;
     const salesEditedCondition = `${salesEditedExpr} != '' AND ${salesEditedExpr} > s.일자`;
@@ -20,7 +29,7 @@ export async function GET(request: Request) {
     const editedOnlySalesWhere = editedOnly ? ` AND ${salesEditedCondition}` : '';
     const editedOnlyPurchaseWhere = editedOnly ? ` AND ${purchaseEditedCondition}` : '';
     const officeMapping = `
-      CASE 
+      CASE
         WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%MB%' THEN 'MB'
         WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%서울%' THEN 'MB'
         WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%벤츠%' THEN 'MB'
@@ -40,24 +49,24 @@ export async function GET(request: Request) {
     `;
 
     const metrics = `
-      SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as totalSales,
+      SUM(${salesAmountExpr}) as totalSales,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as totalSalesWeight,
-      SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as mobileSalesAmount,
+      SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN ${salesAmountExpr} ELSE 0 END) as mobileSalesAmount,
       SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as mobileSalesWeight,
-      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as flagshipSalesAmount,
+      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN ${salesAmountExpr} ELSE 0 END) as flagshipSalesAmount,
       SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipSalesWeight,
-      SUM(CASE WHEN ${salesEditedCondition} THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as editedAmountImpact,
+      SUM(CASE WHEN ${salesEditedCondition} THEN ${salesAmountExpr} ELSE 0 END) as editedAmountImpact,
       COUNT(CASE WHEN ${salesEditedCondition} THEN 1 ELSE NULL END) as lateEntryCount
     `;
 
     const purchaseMetrics = `
-      SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor}) as totalPurchases,
+      SUM(${purchaseAmountExpr}) as totalPurchases,
       SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as totalPurchaseWeight,
-      SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as mobilePurchaseAmount,
+      SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN ${purchaseAmountExpr} ELSE 0 END) as mobilePurchaseAmount,
       SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(p.중량, ',', '') AS NUMERIC) ELSE 0 END) as mobilePurchaseWeight,
-      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as flagshipPurchaseAmount,
+      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN ${purchaseAmountExpr} ELSE 0 END) as flagshipPurchaseAmount,
       SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(p.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipPurchaseWeight,
-      SUM(CASE WHEN ${purchaseEditedCondition} THEN CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as editedAmountImpact,
+      SUM(CASE WHEN ${purchaseEditedCondition} THEN ${purchaseAmountExpr} ELSE 0 END) as editedAmountImpact,
       COUNT(CASE WHEN ${purchaseEditedCondition} THEN 1 ELSE NULL END) as lateEntryCount
     `;
 

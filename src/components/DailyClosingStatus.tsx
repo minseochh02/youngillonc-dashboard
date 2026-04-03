@@ -25,13 +25,20 @@ interface InventoryRow {
   stock: number;
 }
 
+interface PaymentDetailRow {
+  date: string;
+  customerName: string;
+  amount: number;
+  remarks: string;
+}
+
 interface DailyClosingStatusProps {
   division: string;
   date: string;
   salesData: SalesRow[];
   collectionData: CollectionRow[];
   inventoryData: InventoryRow[];
-  keyStatus: any[];
+  keyStatus: PaymentDetailRow[];
   newCustomers: any[];
   flagship?: {
     salesVol: number;
@@ -327,7 +334,7 @@ export default function DailyClosingStatus({
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 bg-yellow-400/10 dark:bg-yellow-400/5 flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
-            <h4 className="font-bold text-zinc-900 dark:text-zinc-100">주요현황</h4>
+            <h4 className="font-bold text-zinc-900 dark:text-zinc-100">주요현황 (입금내역)</h4>
           </div>
           <div className="p-4">
             <div className="border border-zinc-100 dark:border-zinc-800 rounded-xl overflow-hidden">
@@ -340,10 +347,23 @@ export default function DailyClosingStatus({
                     <th className="px-6 py-3 text-left">비고</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50 text-zinc-400 italic">
-                  <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center">기록된 주요 현황이 없습니다.</td>
-                  </tr>
+                <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+                  {keyStatus && keyStatus.length > 0 ? (
+                    keyStatus.map((payment, i) => (
+                      <tr key={i} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
+                        <td className="px-6 py-3 text-zinc-600 dark:text-zinc-300">{payment.date}</td>
+                        <td className="px-6 py-3 font-medium text-zinc-900 dark:text-zinc-100">{payment.customerName}</td>
+                        <td className="px-6 py-3 text-right tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
+                          ₩{formatNumber(payment.amount)}
+                        </td>
+                        <td className="px-6 py-3 text-zinc-500 dark:text-zinc-400">{payment.remarks}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-12 text-center text-zinc-400 italic">입금 내역이 없습니다.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -366,10 +386,21 @@ export default function DailyClosingStatus({
                     <th className="px-6 py-3 text-left">비고</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50 text-zinc-400 italic">
-                  <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center">신규 개척 업체 내역이 없습니다.</td>
-                  </tr>
+                <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+                  {newCustomers && newCustomers.length > 0 ? (
+                    newCustomers.map((customer, i) => (
+                      <tr key={i} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
+                        <td className="px-6 py-3 text-zinc-600 dark:text-zinc-300">{customer.date}</td>
+                        <td className="px-6 py-3 font-medium text-zinc-900 dark:text-zinc-100">{customer.customerName}</td>
+                        <td className="px-6 py-3 text-zinc-600 dark:text-zinc-300">{customer.location}</td>
+                        <td className="px-6 py-3 text-zinc-500 dark:text-zinc-400">{customer.remarks}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-12 text-center text-zinc-400 italic">신규 개척 업체 내역이 없습니다.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

@@ -153,6 +153,10 @@ export default function EmployeesPage() {
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
   const [companyMessages, setCompanyMessages] = useState<CompanyMessage[]>([]);
   const [loadingCompanyMessages, setLoadingCompanyMessages] = useState(false);
+  const [showProductMessagesModal, setShowProductMessagesModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+  const [productMessages, setProductMessages] = useState<CompanyMessage[]>([]);
+  const [loadingProductMessages, setLoadingProductMessages] = useState(false);
 
   // Follow-up Cycle Thresholds
   const [thresholds, setThresholds] = useState({ good: 1, warning: 7 });
@@ -179,7 +183,7 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     loadEmployees();
-  }, []);
+  }, [startDate, endDate]);
 
   useEffect(() => {
     if (selectedEmployee) {
@@ -190,7 +194,11 @@ export default function EmployeesPage() {
   const loadEmployees = async () => {
     setLoadingEmployees(true);
     try {
-      const response = await apiFetch(`/api/employees`);
+      const params = new URLSearchParams({
+        startDate,
+        endDate
+      });
+      const response = await apiFetch(`/api/employees?${params}`);
       const data = await response.json();
       if (data.success) {
         setEmployees(data.data.employeeStats);
@@ -231,7 +239,7 @@ export default function EmployeesPage() {
       }
 
       // 3. Load full activities for the calendar
-      const calParams = new URLSearchParams({ 
+      const calParams = new URLSearchParams({
         employee: name,
         startDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0], // Start of current year
         endDate: new Date().toISOString().split('T')[0] // Today
@@ -298,6 +306,32 @@ export default function EmployeesPage() {
     }
   };
 
+  const loadProductMessages = async (productName: string) => {
+    if (!selectedEmployee) return;
+
+    setLoadingProductMessages(true);
+    setSelectedProduct(productName);
+    setProductMessages([]);
+    setShowProductMessagesModal(true);
+
+    try {
+      const params = new URLSearchParams({
+        employee: selectedEmployee,
+        product: productName
+      });
+      const response = await apiFetch(`/api/employees/product-messages?${params}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setProductMessages(data.data.messages || []);
+      }
+    } catch (error) {
+      console.error('Error loading product messages:', error);
+    } finally {
+      setLoadingProductMessages(false);
+    }
+  };
+
   const filteredMatches = trackerData.filter(match => {
     if (statusFilter === 'all') return true;
     return match.status === statusFilter;
@@ -328,7 +362,15 @@ export default function EmployeesPage() {
           {loadingEmployees ? (
             <div className="text-center py-8 text-gray-500">직원 목록을 불러오는 중...</div>
           ) : (
-            filteredEmployees.map(emp => (
+            <>
+              {employees.length > 0 && employees.every(e => e.total === 0) && (
+                <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <p className="text-xs font-bold text-amber-800 text-center">
+                    이번 달 데이터가 없습니다
+                  </p>
+                </div>
+              )}
+              {filteredEmployees.map(emp => (
               <button
                 key={emp.employee_name}
                 onClick={() => setSelectedEmployee(emp.employee_name)}
@@ -349,8 +391,8 @@ export default function EmployeesPage() {
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                    <div 
-                      className="bg-purple-500 h-full rounded-full transition-all duration-500" 
+                    <div
+                      className="bg-purple-500 h-full rounded-full transition-all duration-500"
                       style={{ width: `${emp.followUpRate}%` }}
                     />
                   </div>
@@ -359,7 +401,8 @@ export default function EmployeesPage() {
                   </span>
                 </div>
               </button>
-            ))
+              ))}
+            </>
           )}
         </div>
       </div>
@@ -369,39 +412,46 @@ export default function EmployeesPage() {
         {selectedEmployee && summaryData ? (
           <>
             {/* Header */}
-            <div className="sticky top-0 z-10 bg-white p-8 border-b border-gray-200">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-3 mb-2">
-                    <h1 className="text-3xl font-bold text-gray-900">{selectedEmployee}</h1>
-                    <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full uppercase tracking-wider">
+            <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-5 py-4 sm:px-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <h1 className="truncate text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">
+                      {selectedEmployee}
+                    </h1>
+                    <span className="inline-flex shrink-0 items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 ring-1 ring-blue-100">
                       {summaryData.profile.employment_status || 'ACTIVE'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-4 text-gray-600">
-                    <div className="flex items-center gap-1.5">
-                      <Briefcase className="w-4 h-4" />
-                      <span className="text-sm font-medium">{summaryData.profile.department || '영업팀'} / {summaryData.profile.position || '직원'}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Building2 className="w-4 h-4" />
-                      <span className="text-sm font-medium">{summaryData.profile.team || '본사'}</span>
-                    </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500">
+                    <span className="inline-flex items-center gap-1">
+                      <Briefcase className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                      <span className="font-medium text-gray-600">
+                        {summaryData.profile.department || '영업팀'} / {summaryData.profile.position || '직원'}
+                      </span>
+                    </span>
+                    <span className="hidden text-gray-300 sm:inline" aria-hidden>
+                      ·
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Building2 className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                      <span className="font-medium text-gray-600">{summaryData.profile.team || '본사'}</span>
+                    </span>
                   </div>
                 </div>
-                
-                <div className="grid grid-cols-3 gap-6 bg-gray-50 rounded-2xl p-6 border border-gray-100">
-                  <div className="text-center">
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">총 방문수</p>
-                    <p className="text-2xl font-black text-gray-900">{summaryData.companies.length}</p>
+
+                <div className="grid shrink-0 grid-cols-3 gap-0 rounded-lg border border-gray-200/80 bg-gray-50/80 py-2 px-1 sm:grid-cols-3 sm:min-w-[16rem] md:min-w-[18rem]">
+                  <div className="min-w-0 flex flex-col items-center justify-center border-r border-gray-200/90 px-2 py-0.5 text-center">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">총 방문수</p>
+                    <p className="text-lg font-semibold tabular-nums text-gray-900">{summaryData.companies.length}</p>
                   </div>
-                  <div className="text-center border-x border-gray-200 px-6">
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">언급 품목</p>
-                    <p className="text-2xl font-black text-gray-900">{summaryData.products.length}</p>
+                  <div className="min-w-0 flex flex-col items-center justify-center border-r border-gray-200/90 px-2 py-0.5 text-center">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">언급 품목</p>
+                    <p className="text-lg font-semibold tabular-nums text-gray-900">{summaryData.products.length}</p>
                   </div>
-                  <div className="text-center">
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Follow-up</p>
-                    <p className="text-2xl font-black text-purple-600">
+                  <div className="min-w-0 flex flex-col items-center justify-center px-2 py-0.5 text-center">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Follow-up</p>
+                    <p className="text-lg font-semibold tabular-nums text-purple-600">
                       {employees.find(e => e.employee_name === selectedEmployee)?.followUpRate}%
                     </p>
                   </div>
@@ -409,7 +459,7 @@ export default function EmployeesPage() {
               </div>
 
               {/* Tabs */}
-              <div className="flex gap-8 mt-10">
+              <div className="-mx-1 mt-4 flex gap-1 overflow-x-auto pb-px [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2 [&::-webkit-scrollbar]:hidden">
                 {[
                   { id: 'tracker', label: 'Follow-up Tracker', icon: CheckCircle2 },
                   { id: 'calendar', label: 'Activity Calendar', icon: LayoutGrid },
@@ -419,18 +469,16 @@ export default function EmployeesPage() {
                 ].map((tab) => (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex items-center gap-2 pb-4 text-sm font-bold transition-all relative ${
+                    className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-2 py-2 text-xs font-medium transition-colors sm:gap-2 sm:px-2.5 sm:text-sm ${
                       activeTab === tab.id
-                        ? 'text-blue-600'
-                        : 'text-gray-400 hover:text-gray-600'
+                        ? 'border-blue-600 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-800'
                     }`}
                   >
-                    <tab.icon className="w-4 h-4" />
+                    <tab.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     {tab.label}
-                    {activeTab === tab.id && (
-                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-full" />
-                    )}
                   </button>
                 ))}
               </div>
@@ -614,32 +662,32 @@ export default function EmployeesPage() {
               {activeTab === 'tracker' && (
                 <div className="space-y-6 max-w-5xl">
                   {/* Tracker Controls with Cycle Thresholds */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4 text-gray-400" />
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                    <div className="flex min-w-0 items-center bg-white py-2 px-3 rounded-lg border border-gray-200">
+                      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [-webkit-overflow-scrolling:touch]">
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-gray-400" />
                           <input 
                             type="date" 
                             value={startDate} 
                             onChange={(e) => setStartDate(e.target.value)}
-                            className="text-sm border-none bg-gray-100 rounded-lg py-1.5 focus:ring-2 focus:ring-blue-500"
+                            className="h-7 w-[8.25rem] shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-xs text-gray-900 [color-scheme:light] focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                           />
-                          <span className="text-gray-400 font-bold">~</span>
+                          <span className="shrink-0 text-xs font-bold text-gray-400">~</span>
                           <input 
                             type="date" 
                             value={endDate} 
                             onChange={(e) => setEndDate(e.target.value)}
-                            className="text-sm border-none bg-gray-100 rounded-lg py-1.5 focus:ring-2 focus:ring-blue-500"
+                            className="h-7 w-[8.25rem] shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-xs text-gray-900 [color-scheme:light] focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                           />
                         </div>
-                        <div className="h-6 w-px bg-gray-200 mx-2" />
-                        <div className="flex items-center gap-2">
-                          <Filter className="w-4 h-4 text-gray-400" />
+                        <div className="h-4 w-px shrink-0 bg-gray-200" />
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <Filter className="h-3.5 w-3.5 text-gray-400" />
                           <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value as any)}
-                            className="text-sm border-none bg-gray-100 rounded-lg py-1.5 focus:ring-2 focus:ring-blue-500"
+                            className="h-7 w-[6.75rem] shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-xs text-gray-900 [color-scheme:light] focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                           >
                             <option value="all">모든 상태</option>
                             <option value="completed">완료됨</option>
@@ -650,32 +698,32 @@ export default function EmployeesPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                      <div className="flex items-center gap-4 w-full">
-                        <span className="text-xs font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">관리 주기 설정 (일)</span>
-                        <div className="flex items-center gap-3 flex-1">
-                          <div className="flex items-center gap-2 flex-1">
-                            <span className="text-[10px] font-bold text-green-600">우수 ≤</span>
-                            <input 
-                              type="number" 
-                              value={thresholds.good} 
-                              onChange={(e) => setThresholds({ ...thresholds, good: parseInt(e.target.value) || 0 })}
-                              className="w-12 text-center text-sm font-bold bg-green-50 border-none rounded-lg py-1 text-green-700 focus:ring-2 focus:ring-green-500"
-                            />
-                          </div>
-                          <div className="flex items-center gap-2 flex-1">
-                            <span className="text-[10px] font-bold text-orange-600">보통 ≤</span>
-                            <input 
-                              type="number" 
-                              value={thresholds.warning} 
-                              onChange={(e) => setThresholds({ ...thresholds, warning: parseInt(e.target.value) || 0 })}
-                              className="w-12 text-center text-sm font-bold bg-orange-50 border-none rounded-lg py-1 text-orange-700 focus:ring-2 focus:ring-orange-500"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1 flex-1">
-                            <span className="text-[10px] font-bold text-red-600">경고 &gt; {thresholds.warning}</span>
-                          </div>
-                        </div>
+                    <div className="flex min-w-0 items-center bg-white py-1.5 px-2.5 rounded-lg border border-gray-200">
+                      <div className="flex min-w-0 flex-1 items-center gap-x-1 gap-y-0.5 overflow-x-auto text-[9px] leading-none sm:overflow-visible">
+                        <span className="shrink-0 font-medium text-gray-500">기준</span>
+                        <span className="shrink-0 text-gray-300" aria-hidden>·</span>
+                        <label className="inline-flex shrink-0 items-center gap-0.5" title="우수">
+                          <span className="font-bold text-green-600">우≤</span>
+                          <input 
+                            type="number" 
+                            value={thresholds.good} 
+                            onChange={(e) => setThresholds({ ...thresholds, good: parseInt(e.target.value) || 0 })}
+                            className="h-6 w-7 rounded border border-green-200/90 bg-green-50/90 p-0 text-center text-[11px] font-bold tabular-nums text-green-900 focus:outline-none focus:ring-1 focus:ring-green-500/50"
+                          />
+                        </label>
+                        <span className="shrink-0 text-gray-300" aria-hidden>·</span>
+                        <label className="inline-flex shrink-0 items-center gap-0.5" title="보통">
+                          <span className="font-bold text-orange-600">보≤</span>
+                          <input 
+                            type="number" 
+                            value={thresholds.warning} 
+                            onChange={(e) => setThresholds({ ...thresholds, warning: parseInt(e.target.value) || 0 })}
+                            className="h-6 w-7 rounded border border-orange-200/90 bg-orange-50/90 p-0 text-center text-[11px] font-bold tabular-nums text-orange-900 focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                          />
+                        </label>
+                        <span className="ml-0.5 inline-flex shrink-0 items-center rounded border border-red-200/90 bg-red-50/90 px-1 py-px font-bold text-red-700 tabular-nums" title="이 일수 초과 시 경고">
+                          경고 {'>'} {thresholds.warning}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -901,7 +949,12 @@ export default function EmployeesPage() {
                 <div className="max-w-5xl">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {summaryData.products.map((product, idx) => (
-                      <div key={idx} className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm hover:border-purple-300 hover:shadow-md transition-all group">
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => loadProductMessages(product.product_name)}
+                        className="w-full text-left bg-white p-6 rounded-2xl border border-gray-200 shadow-sm hover:border-purple-300 hover:shadow-md transition-all group"
+                      >
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-4">
                             <div className="p-3 bg-purple-50 rounded-xl group-hover:bg-purple-100 transition-colors">
@@ -929,13 +982,33 @@ export default function EmployeesPage() {
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">언급 횟수</p>
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
               )}
             </div>
           </>
+        ) : selectedEmployee && loadingDetails ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-2">
+            <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm font-bold">직원 상세 정보를 불러오는 중...</p>
+          </div>
+        ) : selectedEmployee && !summaryData ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 px-6 text-center">
+            <AlertTriangle className="w-12 h-12 text-amber-400 mb-3" />
+            <p className="text-lg font-bold text-gray-800">요약 정보를 불러오지 못했습니다</p>
+            <p className="text-sm mt-1 mb-4">
+              <code className="text-xs bg-gray-100 px-1 rounded">/api/employee-summary</code> 응답을 확인해 주세요.
+            </p>
+            <button
+              type="button"
+              onClick={() => selectedEmployee && loadEmployeeDetails(selectedEmployee)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700"
+            >
+              다시 시도
+            </button>
+          </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
             <Users className="w-16 h-16 text-gray-200 mb-4" />
@@ -1121,6 +1194,93 @@ export default function EmployeesPage() {
                     setShowCompanyMessagesModal(false);
                     setSelectedCompany(null);
                     setCompanyMessages([]);
+                  }}
+                  className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-bold transition-colors"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Messages Modal */}
+      {showProductMessagesModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-gray-900 mb-1">제품 관련 메시지</h2>
+                <p className="text-sm text-gray-600">
+                  {selectedEmployee} - {selectedProduct}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowProductMessagesModal(false);
+                  setSelectedProduct(null);
+                  setProductMessages([]);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {loadingProductMessages ? (
+                <div className="text-center py-12 text-gray-500">로딩 중...</div>
+              ) : productMessages.length > 0 ? (
+                productMessages.map((msg, idx) => (
+                  <div key={idx} className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                          {msg.user_name?.[0] || '?'}
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900 text-sm">{msg.user_name}</p>
+                          <p className="text-[10px] text-gray-500">
+                            {new Date(msg.chat_date).toLocaleString('ko-KR', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      {msg.chat_room && (
+                        <span className="text-[10px] bg-zinc-100 text-zinc-600 px-2 py-1 rounded font-bold">
+                          {msg.chat_room}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
+                      {msg.message}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <MessageSquare className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                  <p className="font-bold">관련 메시지를 찾을 수 없습니다.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-500">
+                  총 <span className="font-bold text-gray-900">{productMessages.length}</span>개의 메시지
+                </p>
+                <button
+                  onClick={() => {
+                    setShowProductMessagesModal(false);
+                    setSelectedProduct(null);
+                    setProductMessages([]);
                   }}
                   className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-bold transition-colors"
                 >

@@ -15,15 +15,15 @@ export async function GET(
   }
 
   try {
-    // Get activity with source_message_ids
+    // Get activity with source_message_id
     const activityQuery = `
       SELECT
         id,
         employee_name,
         activity_date,
-        activity_summary,
+        activity_label,
         chat_room,
-        source_message_ids
+        source_message_id
       FROM employee_activity_log
       WHERE id = ${activityId}
     `;
@@ -39,19 +39,9 @@ export async function GET(
 
     const activity = activityResult.rows[0];
 
-    // Parse source message IDs
-    let messageIds: number[] = [];
-    try {
-      if (activity.source_message_ids) {
-        messageIds = JSON.parse(activity.source_message_ids);
-      }
-    } catch (e) {
-      console.error('Error parsing source_message_ids:', e);
-    }
-
-    // Fetch source messages if we have IDs
+    // Fetch source message if we have an ID
     let messages = [];
-    if (messageIds.length > 0) {
+    if (activity.source_message_id) {
       const messagesQuery = `
         SELECT
           id,
@@ -60,7 +50,7 @@ export async function GET(
           message,
           chat_room
         FROM kakaotalk_raw_messages
-        WHERE id IN (${messageIds.join(',')})
+        WHERE id = ${activity.source_message_id}
         ORDER BY chat_date ASC
       `;
 
@@ -75,7 +65,7 @@ export async function GET(
           id: activity.id,
           employee_name: activity.employee_name,
           activity_date: activity.activity_date,
-          activity_summary: activity.activity_summary,
+          activity_label: activity.activity_label,
           chat_room: activity.chat_room
         },
         messages: messages,

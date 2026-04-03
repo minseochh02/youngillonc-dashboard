@@ -703,18 +703,16 @@ export async function GET(request: Request) {
         GROUP BY branch, team, category
       `;
 
-      const [catResult, hierarchyResult, b2bResult, b2cYtdResult, goalsResult, grandTotals] = await Promise.all([
+      const [catResult, hierarchyResult, goalsResult, grandTotals] = await Promise.all([
         executeSQL(b2cCategoryQuery),
         executeSQL(b2cHierarchyQuery),
-        executeSQL(b2bTotalQuery),
-        executeSQL(b2cYtdQuery),
         executeSQL(`SELECT * FROM sales_goals WHERE year = '${currentYear}' AND month = '${monthNum}'`),
         getGrandTotals()
       ]);
 
       const catData = catResult?.rows || [];
       const hierarchyData = hierarchyResult?.rows || [];
-      // b2bTotalData and b2cYtdData are now handled by grandTotals.b2b
+      // b2bTotalData and b2cYtdData are now handled by grandTotals
       const goalsData = goalsResult?.rows || [];
       
       const goalsMap = new Map<string, number>(goalsData.map((g: any) => [g.target_name, Number(g.target_weight) || 0]));

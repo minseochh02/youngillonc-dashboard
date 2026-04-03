@@ -5,20 +5,20 @@ interface ActivityRow {
   id: number;
   activity_date: string;
   activity_label: string | null;
-  customer: string | null;
+  products: string | null;
   source_message_id: number | null;
 }
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const employeeName = searchParams.get('employee');
-  const companyName = searchParams.get('company');
+  const productName = searchParams.get('product');
 
-  if (!employeeName || !companyName) {
+  if (!employeeName || !productName) {
     return NextResponse.json(
       {
         success: false,
-        error: 'employee and company are required'
+        error: 'employee and product are required'
       },
       { status: 400 }
     );
@@ -30,16 +30,29 @@ export async function GET(request: NextRequest) {
         id,
         activity_date,
         activity_label,
-        customer,
+        products,
         source_message_id
       FROM employee_activity_log
       WHERE employee_name = '${employeeName}'
-        AND customer = '${companyName}'
+        AND products IS NOT NULL
+        AND products != '[]'
+        AND products != ''
       ORDER BY activity_date DESC
     `;
 
     const activitiesResult = await executeSQL(activitiesQuery);
-    const activities: ActivityRow[] = activitiesResult?.rows || [];
+    const allActivities: ActivityRow[] = activitiesResult?.rows || [];
+
+    // Filter activities that contain this product
+    const activities = allActivities.filter(activity => {
+      if (!activity.products) return false;
+      try {
+        const products = JSON.parse(activity.products);
+        return Array.isArray(products) && products.includes(productName);
+      } catch (e) {
+        return false;
+      }
+    });
 
     const messageIdSet = new Set<number>();
 
@@ -73,7 +86,7 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         employeeName,
-        companyName,
+        productName,
         activities,
         messages,
         activityCount: activities.length,
@@ -81,11 +94,11 @@ export async function GET(request: NextRequest) {
       }
     });
   } catch (error: any) {
-    console.error('Error in company messages API:', error);
+    console.error('Error in product messages API:', error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to load company messages'
+        error: error.message || 'Failed to load product messages'
       },
       { status: 500 }
     );

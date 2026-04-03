@@ -340,6 +340,25 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
                   </tr>
                 );
               })}
+              <tr className="bg-blue-50 dark:bg-blue-950/20 border-t-2 border-blue-200 dark:border-blue-800 font-bold">
+                <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100">
+                  합계
+                </td>
+                <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300">
+                  {formatNumber(totalCurrentWeight)}
+                </td>
+                <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                  {formatNumber(totalLastWeight)}
+                </td>
+                <td className="py-3 px-4 text-right">
+                  <span className={`inline-flex items-center gap-1 font-medium ${
+                    totalWeightChange.isPositive ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {totalWeightChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                    {Math.abs(totalWeightChange.percent).toFixed(1)}%
+                  </span>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -363,6 +382,7 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
                     </th>
                   );
                 })}
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider whitespace-nowrap">합계</th>
               </tr>
             </thead>
             <tbody>
@@ -372,15 +392,113 @@ export default function BusinessTab({ selectedMonth }: BusinessTabProps) {
                 const currentMonthNum = now.getMonth() + 1;
                 const currentYearNum = now.getFullYear();
                 const yearNum = parseInt(currentYear);
-                
+
                 if (yearNum > currentYearNum) return null;
                 if (yearNum === currentYearNum && i + 1 > currentMonthNum) return null;
 
                 const currentYearMonth = `${currentYear}-${month}`;
                 const lastYearMonth = `${lastYear}-${month}`;
-                
-                // ... rest of the logic
+
+                // Calculate total for this month across all branches
+                const monthCurrentTotal = data.businessData
+                  .filter(row => row.year_month === currentYearMonth)
+                  .reduce((sum, row) => sum + Number(row.total_weight || 0), 0);
+                const monthLastTotal = data.businessData
+                  .filter(row => row.year_month === lastYearMonth)
+                  .reduce((sum, row) => sum + Number(row.total_weight || 0), 0);
+                const monthTotalChange = calculateChange(monthCurrentTotal, monthLastTotal);
+
+                return (
+                  <tr
+                    key={month}
+                    className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
+                  >
+                    <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100 sticky left-0 bg-white dark:bg-zinc-900">
+                      {parseInt(month)}월
+                    </td>
+                    {sortedBranches.map((key) => {
+                      const currentMonthData = data.businessData.find(
+                        row => row.year_month === currentYearMonth && `${row.business_type}-${row.branch}` === key
+                      );
+                      const lastMonthData = data.businessData.find(
+                        row => row.year_month === lastYearMonth && `${row.business_type}-${row.branch}` === key
+                      );
+
+                      const current = Number(currentMonthData?.total_weight || 0);
+                      const last = Number(lastMonthData?.total_weight || 0);
+                      const change = calculateChange(current, last);
+
+                      return (
+                        <td key={key} className="py-3 px-4 text-right">
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="font-mono text-zinc-900 dark:text-zinc-100">
+                              {formatNumber(current)}
+                            </span>
+                            <span className={`text-xs font-medium ${
+                              change.isPositive ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {change.isPositive ? '+' : ''}{change.percent.toFixed(1)}%
+                            </span>
+                          </div>
+                        </td>
+                      );
+                    })}
+                    <td className="py-3 px-4 text-right bg-blue-50/50 dark:bg-blue-950/10">
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="font-mono font-bold text-blue-700 dark:text-blue-300">
+                          {formatNumber(monthCurrentTotal)}
+                        </span>
+                        <span className={`text-xs font-medium ${
+                          monthTotalChange.isPositive ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {monthTotalChange.isPositive ? '+' : ''}{monthTotalChange.percent.toFixed(1)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                );
               }).filter(Boolean)}
+              <tr className="bg-blue-50 dark:bg-blue-950/20 border-t-2 border-blue-200 dark:border-blue-800 font-bold">
+                <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100 sticky left-0 bg-blue-50 dark:bg-blue-950/20">
+                  합계
+                </td>
+                {sortedBranches.map((key) => {
+                  const currentTotal = data.businessData
+                    .filter(row => row.year === currentYear && `${row.business_type}-${row.branch}` === key)
+                    .reduce((sum, row) => sum + Number(row.total_weight || 0), 0);
+                  const lastTotal = data.businessData
+                    .filter(row => row.year === lastYear && `${row.business_type}-${row.branch}` === key)
+                    .reduce((sum, row) => sum + Number(row.total_weight || 0), 0);
+                  const change = calculateChange(currentTotal, lastTotal);
+
+                  return (
+                    <td key={key} className="py-3 px-4 text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="font-mono text-blue-700 dark:text-blue-300">
+                          {formatNumber(currentTotal)}
+                        </span>
+                        <span className={`text-xs font-medium ${
+                          change.isPositive ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {change.isPositive ? '+' : ''}{change.percent.toFixed(1)}%
+                        </span>
+                      </div>
+                    </td>
+                  );
+                })}
+                <td className="py-3 px-4 text-right">
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="font-mono font-bold text-blue-700 dark:text-blue-300">
+                      {formatNumber(totalCurrentWeight)}
+                    </span>
+                    <span className={`text-xs font-medium ${
+                      totalWeightChange.isPositive ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {totalWeightChange.isPositive ? '+' : ''}{totalWeightChange.percent.toFixed(1)}%
+                    </span>
+                  </div>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>

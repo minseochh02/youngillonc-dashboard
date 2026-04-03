@@ -56,7 +56,9 @@ export default function DailySalesPage() {
             collectionData: result.collectionData,
             inventoryData: result.inventoryData,
             flagship: result.flagship,
-            purchaseData: result.purchaseData
+            purchaseData: result.purchaseData,
+            paymentDetails: result.paymentDetails,
+            newCustomers: result.newCustomers
           });
         }
       } else {
@@ -154,6 +156,22 @@ export default function DailySalesPage() {
                 ['당일 입고량(L)', purchaseData.todayVolume],
                 ['당일 매입액(원)', purchaseData.todayAmount]
               ]
+            });
+          }
+
+          if (res.report.paymentDetails && res.report.paymentDetails.length > 0) {
+            islands.push({
+              title: '주요현황 (입금내역)',
+              headers: ['날짜', '상호', '금액', '비고'],
+              data: res.report.paymentDetails.map((p: any) => [p.date, p.customerName, p.amount, p.remarks])
+            });
+          }
+
+          if (res.report.newCustomers && res.report.newCustomers.length > 0) {
+            islands.push({
+              title: '신규개척업체',
+              headers: ['날짜', '상호', '소재지', '비고'],
+              data: res.report.newCustomers.map((c: any) => [c.date, c.customerName, c.location, c.remarks])
             });
           }
         }
@@ -327,8 +345,8 @@ export default function DailySalesPage() {
             inventoryData={closingData.inventoryData}
             flagship={closingData.flagship}
             purchaseData={closingData.purchaseData}
-            keyStatus={[]}
-            newCustomers={[]}
+            keyStatus={closingData.paymentDetails || []}
+            newCustomers={closingData.newCustomers || []}
           />
         ) : (
           <div className="flex flex-col items-center justify-center min-h-[400px] text-zinc-400 italic">

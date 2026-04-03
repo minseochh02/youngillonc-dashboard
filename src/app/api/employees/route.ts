@@ -46,14 +46,14 @@ export async function GET(request: NextRequest) {
       SELECT
         eal.id,
         eal.employee_name,
-        krm.chat_date as message_date,
-        krm.message as next_action,
+        COALESCE(krm.chat_date, eal.activity_date) as message_date,
+        COALESCE(krm.message, eal.activity_label, '') as next_action,
         eal.activity_label,
         eal.activity_date as next_action_date,
         eal.customer as customer_name,
         eal.confidence_score
       FROM employee_activity_log eal
-      JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
+      LEFT JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
       WHERE (eal.activity_type = 'planned_task' OR eal.activity_type = 'planning')
         AND eal.confidence_score >= 0.7
         AND eal.activity_date >= '${startDate}'
@@ -81,12 +81,12 @@ export async function GET(request: NextRequest) {
         eal.employee_name,
         eal.activity_date,
         eal.activity_type,
-        krm.message as activity_summary,
+        COALESCE(krm.message, eal.activity_label, '') as activity_summary,
         eal.activity_label,
         eal.customer as customer_name,
         eal.confidence_score
       FROM employee_activity_log eal
-      JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
+      LEFT JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
       WHERE (eal.activity_type = 'completed_task' OR eal.activity_type = 'work_completed' OR eal.activity_type = 'sales_activity')
         AND eal.confidence_score >= 0.7
         AND eal.activity_date >= '${startDate}'

@@ -38,8 +38,8 @@ export async function GET(request: Request) {
       result = await executeSQL(query);
     } else if (tableName === 'clients') {
       const query = `
-        SELECT 
-          c.거래처코드, c.거래처명, c.거래처그룹1명 as 사업소, 
+        SELECT
+          c.거래처코드, c.거래처명, c.거래처그룹1명 as 사업소,
           c.업종분류코드, ct.모빌분류, ct.산업분류, ct.영일분류,
           cta.오토_대분류, cta.모빌_대시보드채널,
           c.담당자코드, e.사원_담당_명 as 담당자명
@@ -48,6 +48,19 @@ export async function GET(request: Request) {
         LEFT JOIN company_type_auto cta ON c.업종분류코드 = cta.업종분류코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         ORDER BY c.거래처명 ASC
+      `;
+      result = await executeSQL(query);
+    } else if (tableName === 'employee_industries') {
+      const query = `
+        SELECT DISTINCT
+          e.사원_담당_명 AS employee_name,
+          ct.산업분류,
+          ct.섹터분류
+        FROM employees e
+        INNER JOIN clients c ON e.사원_담당_코드 = c.담당자코드
+        INNER JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
+        WHERE ct.산업분류 IS NOT NULL AND ct.산업분류 != ''
+        ORDER BY e.사원_담당_명, ct.산업분류
       `;
       result = await executeSQL(query);
     } else {

@@ -23,20 +23,11 @@ export async function GET(request: NextRequest) {
       ORDER BY employee_name, id
     `);
 
-    // Load daily standups
-    const standupsResult = await executeSQL(`
-      SELECT *
-      FROM daily_standup_log
-      WHERE report_date = '${date}'
-      ORDER BY employee_name
-    `);
-
     return NextResponse.json({
       success: true,
       data: {
         rawMessages: messagesResult?.rows || [],
-        activities: activitiesResult?.rows || [],
-        standups: standupsResult?.rows || []
+        activities: activitiesResult?.rows || []
       }
     });
   } catch (error: any) {
