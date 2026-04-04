@@ -27,6 +27,8 @@ interface BusinessData {
   }>;
   currentYear: string;
   lastYear: string;
+  /** Inclusive calendar years from (currentYear - 9) through currentYear */
+  years?: string[];
 }
 
 interface BusinessTabProps {
@@ -99,6 +101,10 @@ export default function BusinessTab({ selectedMonth, onMonthsAvailable }: Busine
   }
 
   const { currentYear, lastYear, totalsByYear } = data;
+  const yearColumns =
+    data.years && data.years.length > 0
+      ? data.years
+      : Array.from({ length: 10 }, (_, i) => String(Number(currentYear) - 9 + i));
 
   // Calculate cumulative month strings for filtering
   const currentMonthStr = selectedMonth || `${currentYear}-12`;
@@ -156,29 +162,31 @@ export default function BusinessTab({ selectedMonth, onMonthsAvailable }: Busine
 
     const exportData: any[] = [];
 
-    // Add year-over-year comparison rows
-    exportData.push({
-      '사업소': '총계',
-      [`${currentYear}년 중량(L)`]: totalsByYear[currentYear]?.total_weight || 0,
-      [`${lastYear}년 중량(L)`]: totalsByYear[lastYear]?.total_weight || 0,
-      '변화율(%)': calculateChange(
-        totalsByYear[currentYear]?.total_weight || 0,
-        totalsByYear[lastYear]?.total_weight || 0
-      ).percent.toFixed(1),
+    const totalRow: Record<string, string | number> = { 사업소: '총계' };
+    yearColumns.forEach((y) => {
+      totalRow[`${y}년 중량(L)`] = totalsByYear[y]?.total_weight || 0;
     });
+    totalRow['전년대비 변화율(%)'] = calculateChange(
+      totalsByYear[currentYear]?.total_weight || 0,
+      totalsByYear[lastYear]?.total_weight || 0
+    ).percent.toFixed(1);
+    exportData.push(totalRow);
 
     sortedBranches.forEach((key) => {
       const [businessType, branch] = key.split('-');
+      const rowOut: Record<string, string | number> = {
+        사업소: getDisplayName(businessType, branch),
+      };
+      yearColumns.forEach((y) => {
+        const cap = `${y}-${currentMonthNum}`;
+        const agg = aggregateByYear(y, cap);
+        const w = agg.get(key)?.weight ?? 0;
+        rowOut[`${y}년 중량(L)`] = w;
+      });
       const currentData = currentYearData.get(key) || { weight: 0, amount: 0, quantity: 0 };
       const lastData = lastYearData.get(key) || { weight: 0, amount: 0, quantity: 0 };
-      const change = calculateChange(currentData.weight, lastData.weight);
-
-      exportData.push({
-        '사업소': getDisplayName(businessType, branch),
-        [`${currentYear}년 중량(L)`]: currentData.weight,
-        [`${lastYear}년 중량(L)`]: lastData.weight,
-        '변화율(%)': change.percent.toFixed(1),
-      });
+      rowOut['전년대비 변화율(%)'] = calculateChange(currentData.weight, lastData.weight).percent.toFixed(1);
+      exportData.push(rowOut);
     });
 
     // Add blank row separator
@@ -309,19 +317,33 @@ export default function BusinessTab({ selectedMonth, onMonthsAvailable }: Busine
         </div>
       </div>
 
-      {/* Year-over-Year Comparison Table */}
+      {/* Multi-year comparison table (10 years) */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">사업소별 연도 비교 ({cumulativePeriod})</h4>
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+            사업소별 연도별 용량 ({cumulativePeriod} · {yearColumns[0]}~{yearColumns[yearColumns.length - 1]}년)
+          </h4>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[720px]">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">사업소</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">{currentYear}년 용량(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear}년 용량(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">변화율</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-zinc-500 uppercase tracking-wider sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-800/50 border-r border-zinc-200 dark:border-zinc-700">
+                  사업소
+                </th>
+                {yearColumns.map((y) => (
+                  <th
+                    key={y}
+                    className={`text-right py-3 px-2 text-xs font-bold uppercase tracking-wider whitespace-nowrap ${
+                      y === currentYear ? 'text-blue-600' : 'text-zinc-500'
+                    }`}
+                  >
+                    {y}년 (L)
+                  </th>
+                ))}
+                <th className="text-right py-3 px-3 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap border-l border-zinc-200 dark:border-zinc-700">
+                  전년대비
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -336,19 +358,33 @@ export default function BusinessTab({ selectedMonth, onMonthsAvailable }: Busine
                     key={key}
                     className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
                   >
-                    <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
+                    <td className="py-2.5 px-3 font-medium text-zinc-900 dark:text-zinc-100 sticky left-0 z-[1] bg-white dark:bg-zinc-900 border-r border-zinc-100 dark:border-zinc-800/80">
                       {getDisplayName(businessType, branch)}
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">
-                      {formatNumber(currentData.weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatNumber(lastData.weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium ${
-                        change.isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}>
+                    {yearColumns.map((y) => {
+                      const cap = `${y}-${currentMonthNum}`;
+                      const agg = aggregateByYear(y, cap);
+                      const w = agg.get(key)?.weight ?? 0;
+                      const isCurrentCol = y === currentYear;
+                      return (
+                        <td
+                          key={y}
+                          className={`py-2.5 px-2 text-right font-mono text-xs tabular-nums ${
+                            isCurrentCol
+                              ? 'text-blue-700 dark:text-blue-300 font-semibold'
+                              : 'text-zinc-700 dark:text-zinc-300'
+                          }`}
+                        >
+                          {formatNumber(w)}
+                        </td>
+                      );
+                    })}
+                    <td className="py-2.5 px-3 text-right border-l border-zinc-100 dark:border-zinc-800/80">
+                      <span
+                        className={`inline-flex items-center gap-1 font-medium text-xs ${
+                          change.isPositive ? 'text-green-600' : 'text-red-600'
+                        }`}
+                      >
                         {change.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                         {Math.abs(change.percent).toFixed(1)}%
                       </span>
@@ -357,19 +393,29 @@ export default function BusinessTab({ selectedMonth, onMonthsAvailable }: Busine
                 );
               })}
               <tr className="bg-blue-50 dark:bg-blue-950/20 border-t-2 border-blue-200 dark:border-blue-800 font-bold">
-                <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100">
+                <td className="py-2.5 px-3 text-zinc-900 dark:text-zinc-100 sticky left-0 z-[1] bg-blue-50 dark:bg-blue-950/20 border-r border-blue-200 dark:border-blue-800/60">
                   합계
                 </td>
-                <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300">
-                  {formatNumber(totalCurrentWeight)}
-                </td>
-                <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                  {formatNumber(totalLastWeight)}
-                </td>
-                <td className="py-3 px-4 text-right">
-                  <span className={`inline-flex items-center gap-1 font-medium ${
-                    totalWeightChange.isPositive ? 'text-green-600' : 'text-red-600'
-                  }`}>
+                {yearColumns.map((y) => {
+                  const tw = totalsByYear[y]?.total_weight || 0;
+                  const isCurrentCol = y === currentYear;
+                  return (
+                    <td
+                      key={y}
+                      className={`py-2.5 px-2 text-right font-mono text-xs tabular-nums ${
+                        isCurrentCol ? 'text-blue-700 dark:text-blue-300' : 'text-zinc-700 dark:text-zinc-300'
+                      }`}
+                    >
+                      {formatNumber(tw)}
+                    </td>
+                  );
+                })}
+                <td className="py-2.5 px-3 text-right border-l border-blue-200 dark:border-blue-800/60">
+                  <span
+                    className={`inline-flex items-center gap-1 font-medium text-xs ${
+                      totalWeightChange.isPositive ? 'text-green-600' : 'text-red-600'
+                    }`}
+                  >
                     {totalWeightChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                     {Math.abs(totalWeightChange.percent).toFixed(1)}%
                   </span>
@@ -523,7 +569,10 @@ export default function BusinessTab({ selectedMonth, onMonthsAvailable }: Busine
         <ul className="list-disc list-inside space-y-0.5">
           <li>제품: (품목그룹1코드)</li>
           <li>거래처: AUTO 업종분류기준 코드</li>
-          <li>기간: {lastYear}년 {cumulativePeriod} vs {currentYear}년 {cumulativePeriod}</li>
+          <li>
+            기간: 사업소 표는 {yearColumns[0]}~{yearColumns[yearColumns.length - 1]}년 {cumulativePeriod} · 월별 표는{' '}
+            {lastYear}년 vs {currentYear}년 동월
+          </li>
         </ul>
       </div>
     </div>

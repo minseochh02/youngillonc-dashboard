@@ -5,9 +5,6 @@ import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
-import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
-import { exportToExcel, generateFilename } from '@/lib/excel-export';
-
 interface SummaryDataRow {
   business_type: string;
   category: string;
@@ -29,9 +26,19 @@ interface EmployeeDataRow {
   total_quantity: number;
 }
 
+interface GoalDataRow {
+  employee_name: string;
+  year: string;
+  year_month: string;
+  fleet_goal: number;
+  lcc_goal: number;
+  total_goal: number;
+}
+
 interface ManagerSalesData {
   summaryData: SummaryDataRow[];
   employeeData: EmployeeDataRow[];
+  goalData?: GoalDataRow[];
   currentYear: string;
   lastYear: string;
   currentMonth: string;
@@ -42,14 +49,23 @@ interface ManagerSalesTabProps {
   onMonthsAvailable?: (months: string[], currentMonth: string) => void;
 }
 
+type ViewMode = 'yoy' | 'goal';
+
 export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: ManagerSalesTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<ManagerSalesData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>('yoy');
+  /** null = 전체 사업소 */
+  const [branchFilter, setBranchFilter] = useState<string | null>(null);
 
   useEffect(() => {
     fetchManagerSalesData();
   }, [selectedMonth, includeVat]);
+
+  useEffect(() => {
+    setBranchFilter(null);
+  }, [selectedMonth]);
 
   const fetchManagerSalesData = async () => {
     setIsLoading(true);
@@ -87,6 +103,106 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
     const change = ((current - previous) / previous) * 100;
     return { percent: change, isPositive: change >= 0 };
   };
+
+  const calculateAchievementRate = (current: number, goal: number) => {
+    if (goal === 0) return { percent: 0, isPositive: false };
+    const rate = (current / goal) * 100;
+    return { percent: rate, isPositive: rate >= 100 };
+  };
+
+  /** 당해 금액 + 전년 금액(작은 글씨) 세로 배치 */
+  const YoYValuesCell = ({
+    current,
+    last,
+    accentClass,
+    compact = false,
+  }: {
+    current: number;
+    last: number;
+    accentClass: string;
+    compact?: boolean;
+  }) => (
+    <div
+      className={`flex flex-col items-end justify-center leading-tight ${compact ? 'gap-0' : 'gap-0.5'}`}
+    >
+      <span
+        className={`font-mono font-semibold tabular-nums ${accentClass} ${compact ? 'text-xs' : 'text-sm'}`}
+      >
+        {formatNumber(current)}
+      </span>
+      <span
+        className={`font-mono text-zinc-500 dark:text-zinc-400 tabular-nums ${compact ? 'text-[9px]' : 'text-[10px]'}`}
+      >
+        전년 {formatNumber(last)}
+      </span>
+    </div>
+  );
+
+  /** 당해 금액 + 목표 금액(작은 글씨) 세로 배치 */
+  const GoalValuesCell = ({
+    current,
+    goal,
+    accentClass,
+    compact = false,
+  }: {
+    current: number;
+    goal: number;
+    accentClass: string;
+    compact?: boolean;
+  }) => (
+    <div
+      className={`flex flex-col items-end justify-center leading-tight ${compact ? 'gap-0' : 'gap-0.5'}`}
+    >
+      <span
+        className={`font-mono font-semibold tabular-nums ${accentClass} ${compact ? 'text-xs' : 'text-sm'}`}
+      >
+        {formatNumber(current)}
+      </span>
+      <span
+        className={`font-mono text-zinc-500 dark:text-zinc-400 tabular-nums ${compact ? 'text-[9px]' : 'text-[10px]'}`}
+      >
+        목표 {formatNumber(goal)}
+      </span>
+    </div>
+  );
+
+  /** 증감율·달성율 열 — 좁은 패딩·작은 글씨 */
+  const MetricRateSpan = ({
+    percent,
+    isPositive,
+    compact = false,
+    tone = 'default',
+  }: {
+    percent: number;
+    isPositive: boolean;
+    compact?: boolean;
+    tone?: 'default' | 'subtotal';
+  }) => {
+    const posClass =
+      tone === 'subtotal' ? 'text-green-700 dark:text-green-400' : 'text-green-600';
+    const negClass =
+      tone === 'subtotal' ? 'text-red-700 dark:text-red-400' : 'text-red-600';
+    const iconClass = compact ? 'h-2 w-2 shrink-0' : 'h-2.5 w-2.5 shrink-0';
+    return (
+      <span
+        className={`inline-flex items-center justify-end gap-0.5 font-medium tabular-nums leading-none ${
+          isPositive ? posClass : negClass
+        } ${compact ? 'text-[10px]' : 'text-[11px]'}`}
+      >
+        {isPositive ? (
+          <TrendingUp className={iconClass} />
+        ) : (
+          <TrendingDown className={iconClass} />
+        )}
+        {percent.toFixed(1)}%
+      </span>
+    );
+  };
+
+  const rateColThClass =
+    'text-right py-2 pl-1 pr-1.5 text-[10px] font-bold text-zinc-500 whitespace-nowrap';
+  const rateColTdClass = 'py-2 pl-1 pr-1.5 text-right align-middle';
+  const rateColTdClassCompact = 'py-1.5 pl-1 pr-1.5 text-right align-middle';
 
   if (isLoading) {
     return (
@@ -211,6 +327,49 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
     return b.total_current - a.total_current;
   });
 
+  const normalizeBranch = (b: string | undefined) => {
+    const t = b?.trim();
+    return t && t.length > 0 ? t : '미지정';
+  };
+
+  const branchesSorted = Array.from(
+    new Set(employeeList.map((e) => normalizeBranch(e.branch)))
+  ).sort((a, b) => a.localeCompare(b, 'ko'));
+
+  const filteredEmployeeList =
+    branchFilter === null
+      ? employeeList
+      : employeeList.filter((e) => normalizeBranch(e.branch) === branchFilter);
+
+  // Build goal data map for each employee
+  interface EmployeeGoalData {
+    fleet_goal: number;
+    lcc_goal: number;
+    total_goal: number;
+  }
+
+  const employeeGoalMap: Record<string, EmployeeGoalData> = {};
+
+  // Process goal data if available
+  if (data.goalData) {
+    data.goalData.forEach((row) => {
+      if (row.year_month !== targetMonth) return;
+
+      const key = row.employee_name;
+      if (!employeeGoalMap[key]) {
+        employeeGoalMap[key] = {
+          fleet_goal: 0,
+          lcc_goal: 0,
+          total_goal: 0,
+        };
+      }
+
+      employeeGoalMap[key].fleet_goal = row.fleet_goal || 0;
+      employeeGoalMap[key].lcc_goal = row.lcc_goal || 0;
+      employeeGoalMap[key].total_goal = row.total_goal || 0;
+    });
+  }
+
   // Create monthly breakdown data structure
   interface EmployeeMonthData {
     team: string;
@@ -223,6 +382,9 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
       lcc_last: number;
       total_current: number;
       total_last: number;
+      fleet_goal: number;
+      lcc_goal: number;
+      total_goal: number;
     }>;
     cumulative_fleet_current: number;
     cumulative_fleet_last: number;
@@ -260,6 +422,9 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
         lcc_last: 0,
         total_current: 0,
         total_last: 0,
+        fleet_goal: 0,
+        lcc_goal: 0,
+        total_goal: 0,
       };
     }
 
@@ -290,6 +455,33 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
     }
   });
 
+  // Process monthly goal data if available
+  if (data.goalData) {
+    data.goalData.forEach((row) => {
+      const key = row.employee_name;
+      if (!employeeMonthMap[key]) return;
+
+      const month = row.year_month.split('-')[1];
+      if (!employeeMonthMap[key].months[month]) {
+        employeeMonthMap[key].months[month] = {
+          fleet_current: 0,
+          fleet_last: 0,
+          lcc_current: 0,
+          lcc_last: 0,
+          total_current: 0,
+          total_last: 0,
+          fleet_goal: 0,
+          lcc_goal: 0,
+          total_goal: 0,
+        };
+      }
+
+      employeeMonthMap[key].months[month].fleet_goal = row.fleet_goal || 0;
+      employeeMonthMap[key].months[month].lcc_goal = row.lcc_goal || 0;
+      employeeMonthMap[key].months[month].total_goal = row.total_goal || 0;
+    });
+  }
+
   const employeeMonthList = Object.values(employeeMonthMap).sort((a, b) => {
     if (a.team !== b.team) {
       return a.team.localeCompare(b.team);
@@ -297,11 +489,16 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
     return b.cumulative_total_current - a.cumulative_total_current;
   });
 
+  const filteredEmployeeMonthList =
+    branchFilter === null
+      ? employeeMonthList
+      : employeeMonthList.filter((e) => normalizeBranch(e.branch) === branchFilter);
+
   console.log('Final employee list count:', employeeList.length);
 
   /** 팀별로 묶어 담당자 행 다음에 소계를 넣기 위한 그룹 */
   const teamGroups: { team: string; employees: EmployeeChannelData[] }[] = [];
-  for (const emp of employeeList) {
+  for (const emp of filteredEmployeeList) {
     const last = teamGroups[teamGroups.length - 1];
     if (!last || last.team !== emp.team) {
       teamGroups.push({ team: emp.team, employees: [emp] });
@@ -321,164 +518,6 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
       { fleet_current: 0, fleet_last: 0, lcc_current: 0, lcc_last: 0 }
     );
 
-  const handleExcelDownload = () => {
-    if (!data) {
-      alert('다운로드할 데이터가 없습니다.');
-      return;
-    }
-
-    const exportData: any[] = [];
-
-    // Add Summary section
-    exportData.push({
-      '구분': 'Fleet / LCC 중량 써머리',
-    });
-
-    // Fleet Total
-    const fleetCurrent = summaryByCategory('Fleet', currentYear);
-    const fleetLast = summaryByCategory('Fleet', lastYear);
-    const fleetChange = calculateChange(fleetCurrent.total_weight, fleetLast.total_weight);
-
-    exportData.push({
-      '구분': 'Fleet 합계',
-      [`${currentYear}년 중량(L)`]: fleetCurrent.total_weight,
-      [`${lastYear}년 중량(L)`]: fleetLast.total_weight,
-      '변화율(%)': fleetChange.percent.toFixed(1),
-    });
-
-    // LCC Total
-    const lccCurrent = summaryByCategory('LCC', currentYear);
-    const lccLast = summaryByCategory('LCC', lastYear);
-    const lccChange = calculateChange(lccCurrent.total_weight, lccLast.total_weight);
-
-    exportData.push({
-      '구분': 'LCC 합계',
-      [`${currentYear}년 중량(L)`]: lccCurrent.total_weight,
-      [`${lastYear}년 중량(L)`]: lccLast.total_weight,
-      '변화율(%)': lccChange.percent.toFixed(1),
-    });
-
-    // Add blank row separator
-    exportData.push({});
-
-    // Add Employee Details section
-    exportData.push({
-      '구분': '팀별 담당자 Fleet/LCC 매출',
-    });
-
-    teamGroups.forEach(({ team, employees }) => {
-      employees.forEach((emp) => {
-        const totalChange = calculateChange(emp.total_current, emp.total_last);
-        const fleetChange = calculateChange(emp.fleet_current, emp.fleet_last);
-        const lccChange = calculateChange(emp.lcc_current, emp.lcc_last);
-
-        exportData.push({
-          '팀': emp.team,
-          '사업소': emp.branch,
-          '직원명': emp.employee_name,
-          [`Fleet+LCC 합계 ${currentYear}년(L)`]: emp.total_current,
-          [`Fleet+LCC 합계 ${lastYear}년(L)`]: emp.total_last,
-          'Fleet+LCC 합계 변화율(%)': totalChange.percent.toFixed(1),
-          [`Fleet ${currentYear}년(L)`]: emp.fleet_current,
-          [`Fleet ${lastYear}년(L)`]: emp.fleet_last,
-          'Fleet 변화율(%)': fleetChange.percent.toFixed(1),
-          [`LCC ${currentYear}년(L)`]: emp.lcc_current,
-          [`LCC ${lastYear}년(L)`]: emp.lcc_last,
-          'LCC 변화율(%)': lccChange.percent.toFixed(1),
-        });
-      });
-
-      const sub = sumTeamMetrics(employees);
-      const subTotalCurrent = sub.fleet_current + sub.lcc_current;
-      const subTotalLast = sub.fleet_last + sub.lcc_last;
-      const subTotalChange = calculateChange(subTotalCurrent, subTotalLast);
-      const subFleetChange = calculateChange(sub.fleet_current, sub.fleet_last);
-      const subLccChange = calculateChange(sub.lcc_current, sub.lcc_last);
-      exportData.push({
-        '팀': team,
-        '사업소': '',
-        '직원명': '소계',
-        [`Fleet+LCC 합계 ${currentYear}년(L)`]: subTotalCurrent,
-        [`Fleet+LCC 합계 ${lastYear}년(L)`]: subTotalLast,
-        'Fleet+LCC 합계 변화율(%)': subTotalChange.percent.toFixed(1),
-        [`Fleet ${currentYear}년(L)`]: sub.fleet_current,
-        [`Fleet ${lastYear}년(L)`]: sub.fleet_last,
-        'Fleet 변화율(%)': subFleetChange.percent.toFixed(1),
-        [`LCC ${currentYear}년(L)`]: sub.lcc_current,
-        [`LCC ${lastYear}년(L)`]: sub.lcc_last,
-        'LCC 변화율(%)': subLccChange.percent.toFixed(1),
-      });
-    });
-
-    // Add blank row separator
-    exportData.push({});
-
-    // Add Monthly Breakdown section
-    exportData.push({
-      '구분': '팀별 담당자 월별 Fleet/LCC 매출 (누계 포함)',
-    });
-
-    employeeMonthList.forEach((emp) => {
-      // Cumulative row
-      const totalChange = calculateChange(emp.cumulative_total_current, emp.cumulative_total_last);
-      const fleetChange = calculateChange(emp.cumulative_fleet_current, emp.cumulative_fleet_last);
-      const lccChange = calculateChange(emp.cumulative_lcc_current, emp.cumulative_lcc_last);
-
-      exportData.push({
-        '팀': emp.team,
-        '직원명': emp.employee_name,
-        '사업소': emp.branch,
-        '월': '누계',
-        [`Fleet+LCC 합계 ${currentYear}년(L)`]: emp.cumulative_total_current,
-        [`Fleet+LCC 합계 ${lastYear}년(L)`]: emp.cumulative_total_last,
-        'Fleet+LCC 합계 변화율(%)': totalChange.percent.toFixed(1),
-        [`Fleet ${currentYear}년(L)`]: emp.cumulative_fleet_current,
-        [`Fleet ${lastYear}년(L)`]: emp.cumulative_fleet_last,
-        'Fleet 변화율(%)': fleetChange.percent.toFixed(1),
-        [`LCC ${currentYear}년(L)`]: emp.cumulative_lcc_current,
-        [`LCC ${lastYear}년(L)`]: emp.cumulative_lcc_last,
-        'LCC 변화율(%)': lccChange.percent.toFixed(1),
-      });
-
-      // Monthly rows
-      const monthNum = parseInt(selectedMonthNum);
-      for (let i = 1; i <= monthNum; i++) {
-        const month = String(i).padStart(2, '0');
-        const monthData = emp.months[month] || {
-          fleet_current: 0,
-          fleet_last: 0,
-          lcc_current: 0,
-          lcc_last: 0,
-          total_current: 0,
-          total_last: 0,
-        };
-
-        const monthTotalChange = calculateChange(monthData.total_current, monthData.total_last);
-        const monthFleetChange = calculateChange(monthData.fleet_current, monthData.fleet_last);
-        const monthLccChange = calculateChange(monthData.lcc_current, monthData.lcc_last);
-
-        exportData.push({
-          '팀': '',
-          '직원명': '',
-          '사업소': '',
-          '월': `${parseInt(month)}월`,
-          [`Fleet+LCC 합계 ${currentYear}년(L)`]: monthData.total_current,
-          [`Fleet+LCC 합계 ${lastYear}년(L)`]: monthData.total_last,
-          'Fleet+LCC 합계 변화율(%)': monthTotalChange.percent.toFixed(1),
-          [`Fleet ${currentYear}년(L)`]: monthData.fleet_current,
-          [`Fleet ${lastYear}년(L)`]: monthData.fleet_last,
-          'Fleet 변화율(%)': monthFleetChange.percent.toFixed(1),
-          [`LCC ${currentYear}년(L)`]: monthData.lcc_current,
-          [`LCC ${lastYear}년(L)`]: monthData.lcc_last,
-          'LCC 변화율(%)': monthLccChange.percent.toFixed(1),
-        });
-      }
-    });
-
-    const filename = generateFilename('B2C담당자별Fleet_LCC매출');
-    exportToExcel(exportData, filename);
-  };
-
   const fleetCurrent = summaryByCategory('Fleet', currentYear);
   const fleetLast = summaryByCategory('Fleet', lastYear);
   const fleetChange = calculateChange(fleetCurrent.total_weight, fleetLast.total_weight);
@@ -489,8 +528,75 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
 
   const totalCurrentWeight = fleetCurrent.total_weight + lccCurrent.total_weight;
 
+  const badgeActive =
+    'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900';
+  const badgeInactive =
+    'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700';
+
   return (
     <div className="space-y-6">
+      {/* 비교 기준 + 사업소 badge bar */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 shrink-0">비교 기준</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setViewMode('yoy')}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                viewMode === 'yoy' ? badgeActive : badgeInactive
+              }`}
+            >
+              전년 대비
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('goal')}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                viewMode === 'goal' ? badgeActive : badgeInactive
+              }`}
+            >
+              목표 대비
+            </button>
+          </div>
+        </div>
+        {branchesSorted.length > 0 && (
+          <>
+            <div
+              className="hidden sm:block h-5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
+              aria-hidden
+            />
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 shrink-0">사업소</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setBranchFilter(null)}
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                    branchFilter === null ? badgeActive : badgeInactive
+                  }`}
+                >
+                  전체
+                </button>
+                {branchesSorted.map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => setBranchFilter(b)}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors max-w-[10rem] truncate ${
+                      branchFilter === b ? badgeActive : badgeInactive
+                    }`}
+                    title={b}
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Fleet Performance Card */}
@@ -571,42 +677,52 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
               <tr>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">팀</th>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">직원명</th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">사업소</th>
-                <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">
+                <th colSpan={2} className="text-center py-3 px-4 text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">
                   Fleet + LCC 합계
                 </th>
-                <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-purple-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">Fleet</th>
-                <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-orange-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">LCC</th>
+                <th colSpan={2} className="text-center py-3 px-4 text-xs font-bold text-purple-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">Fleet</th>
+                <th colSpan={2} className="text-center py-3 px-4 text-xs font-bold text-orange-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">LCC</th>
               </tr>
               <tr>
                 <th className="text-left py-2 px-4"></th>
                 <th className="text-left py-2 px-4"></th>
-                <th className="text-left py-2 px-4"></th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{viewMode === 'yoy' ? '비교(L)' : '실적/목표(L)'}</th>
+                <th className={rateColThClass}>{viewMode === 'yoy' ? '증감율' : '달성율'}</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{viewMode === 'yoy' ? '비교(L)' : '실적/목표(L)'}</th>
+                <th className={rateColThClass}>{viewMode === 'yoy' ? '증감율' : '달성율'}</th>
+                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{viewMode === 'yoy' ? '비교(L)' : '실적/목표(L)'}</th>
+                <th className={rateColThClass}>{viewMode === 'yoy' ? '증감율' : '달성율'}</th>
               </tr>
             </thead>
             <tbody>
-              {employeeList.length === 0 ? (
+              {filteredEmployeeList.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-8 text-center text-zinc-500 dark:text-zinc-400">
-                    직원별 데이터가 없습니다
+                  <td colSpan={8} className="py-8 text-center text-zinc-500 dark:text-zinc-400">
+                    {branchFilter !== null
+                      ? '선택한 사업소에 해당하는 담당자가 없습니다'
+                      : '직원별 데이터가 없습니다'}
                   </td>
                 </tr>
               ) : (
                 teamGroups.map(({ team, employees }) => (
                   <Fragment key={team}>
                     {employees.map((emp) => {
+                      // Get goal data for this employee
+                      const empGoals = employeeGoalMap[emp.employee_name] || {
+                        fleet_goal: 0,
+                        lcc_goal: 0,
+                        total_goal: 0,
+                      };
+
+                      // Calculate YoY changes
                       const totalChange = calculateChange(emp.total_current, emp.total_last);
                       const fleetChange = calculateChange(emp.fleet_current, emp.fleet_last);
                       const lccChange = calculateChange(emp.lcc_current, emp.lcc_last);
+
+                      // Calculate achievement rates
+                      const totalAchievement = calculateAchievementRate(emp.total_current, empGoals.total_goal);
+                      const fleetAchievement = calculateAchievementRate(emp.fleet_current, empGoals.fleet_goal);
+                      const lccAchievement = calculateAchievementRate(emp.lcc_current, empGoals.lcc_goal);
 
                       return (
                         <tr
@@ -619,56 +735,89 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
                           <td className="py-3 px-4 font-semibold text-zinc-900 dark:text-zinc-100">
                             {emp.employee_name}
                           </td>
-                          <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300 text-xs">
-                            {emp.branch}
+                          <td className="py-2 px-3 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                            {viewMode === 'yoy' ? (
+                              <YoYValuesCell
+                                current={emp.total_current}
+                                last={emp.total_last}
+                                accentClass="text-blue-700 dark:text-blue-300"
+                              />
+                            ) : (
+                              <GoalValuesCell
+                                current={emp.total_current}
+                                goal={empGoals.total_goal}
+                                accentClass="text-blue-700 dark:text-blue-300"
+                              />
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold border-l border-zinc-200 dark:border-zinc-700">
-                            {formatNumber(emp.total_current)}
+                          <td className={rateColTdClass}>
+                            {viewMode === 'yoy' ? (
+                              <MetricRateSpan
+                                percent={Math.abs(totalChange.percent)}
+                                isPositive={totalChange.isPositive}
+                              />
+                            ) : (
+                              <MetricRateSpan
+                                percent={totalAchievement.percent}
+                                isPositive={totalAchievement.isPositive}
+                              />
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                            {formatNumber(emp.total_last)}
+                          <td className="py-2 px-3 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                            {viewMode === 'yoy' ? (
+                              <YoYValuesCell
+                                current={emp.fleet_current}
+                                last={emp.fleet_last}
+                                accentClass="text-purple-700 dark:text-purple-300"
+                              />
+                            ) : (
+                              <GoalValuesCell
+                                current={emp.fleet_current}
+                                goal={empGoals.fleet_goal}
+                                accentClass="text-purple-700 dark:text-purple-300"
+                              />
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right">
-                            <span
-                              className={`inline-flex items-center gap-1 font-medium text-xs ${
-                                totalChange.isPositive ? 'text-green-600' : 'text-red-600'
-                              }`}
-                            >
-                              {totalChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                              {Math.abs(totalChange.percent).toFixed(1)}%
-                            </span>
+                          <td className={rateColTdClass}>
+                            {viewMode === 'yoy' ? (
+                              <MetricRateSpan
+                                percent={Math.abs(fleetChange.percent)}
+                                isPositive={fleetChange.isPositive}
+                              />
+                            ) : (
+                              <MetricRateSpan
+                                percent={fleetAchievement.percent}
+                                isPositive={fleetAchievement.isPositive}
+                              />
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono text-purple-700 dark:text-purple-300 font-semibold border-l border-zinc-200 dark:border-zinc-700">
-                            {formatNumber(emp.fleet_current)}
+                          <td className="py-2 px-3 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                            {viewMode === 'yoy' ? (
+                              <YoYValuesCell
+                                current={emp.lcc_current}
+                                last={emp.lcc_last}
+                                accentClass="text-orange-700 dark:text-orange-300"
+                              />
+                            ) : (
+                              <GoalValuesCell
+                                current={emp.lcc_current}
+                                goal={empGoals.lcc_goal}
+                                accentClass="text-orange-700 dark:text-orange-300"
+                              />
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                            {formatNumber(emp.fleet_last)}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <span
-                              className={`inline-flex items-center gap-1 font-medium text-xs ${
-                                fleetChange.isPositive ? 'text-green-600' : 'text-red-600'
-                              }`}
-                            >
-                              {fleetChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                              {Math.abs(fleetChange.percent).toFixed(1)}%
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono text-orange-700 dark:text-orange-300 font-semibold border-l border-zinc-200 dark:border-zinc-700">
-                            {formatNumber(emp.lcc_current)}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                            {formatNumber(emp.lcc_last)}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <span
-                              className={`inline-flex items-center gap-1 font-medium text-xs ${
-                                lccChange.isPositive ? 'text-green-600' : 'text-red-600'
-                              }`}
-                            >
-                              {lccChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                              {Math.abs(lccChange.percent).toFixed(1)}%
-                            </span>
+                          <td className={rateColTdClass}>
+                            {viewMode === 'yoy' ? (
+                              <MetricRateSpan
+                                percent={Math.abs(lccChange.percent)}
+                                isPositive={lccChange.isPositive}
+                              />
+                            ) : (
+                              <MetricRateSpan
+                                percent={lccAchievement.percent}
+                                isPositive={lccAchievement.isPositive}
+                              />
+                            )}
                           </td>
                         </tr>
                       );
@@ -680,60 +829,119 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
                       const subTotalChange = calculateChange(subTotalCurrent, subTotalLast);
                       const subFleetChange = calculateChange(sub.fleet_current, sub.fleet_last);
                       const subLccChange = calculateChange(sub.lcc_current, sub.lcc_last);
+
+                      // Calculate subtotal goals
+                      const subTotalGoal = employees.reduce((sum, e) => {
+                        const goals = employeeGoalMap[e.employee_name] || { total_goal: 0, fleet_goal: 0, lcc_goal: 0 };
+                        return sum + goals.total_goal;
+                      }, 0);
+                      const subFleetGoal = employees.reduce((sum, e) => {
+                        const goals = employeeGoalMap[e.employee_name] || { total_goal: 0, fleet_goal: 0, lcc_goal: 0 };
+                        return sum + goals.fleet_goal;
+                      }, 0);
+                      const subLccGoal = employees.reduce((sum, e) => {
+                        const goals = employeeGoalMap[e.employee_name] || { total_goal: 0, fleet_goal: 0, lcc_goal: 0 };
+                        return sum + goals.lcc_goal;
+                      }, 0);
+
+                      const subTotalAchievement = calculateAchievementRate(subTotalCurrent, subTotalGoal);
+                      const subFleetAchievement = calculateAchievementRate(sub.fleet_current, subFleetGoal);
+                      const subLccAchievement = calculateAchievementRate(sub.lcc_current, subLccGoal);
                       return (
                         <tr
                           className="border-b border-zinc-200 dark:border-zinc-700 bg-zinc-100/90 dark:bg-zinc-800/80 font-semibold"
                         >
                           <td className="py-3 px-4 text-zinc-800 dark:text-zinc-200">{team}</td>
                           <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100">소계</td>
-                          <td className="py-3 px-4 text-zinc-500 dark:text-zinc-400 text-xs">—</td>
-                          <td className="py-3 px-4 text-right font-mono text-blue-800 dark:text-blue-200 border-l border-zinc-200 dark:border-zinc-700">
-                            {formatNumber(subTotalCurrent)}
+                          <td className="py-2 px-3 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                            {viewMode === 'yoy' ? (
+                              <YoYValuesCell
+                                current={subTotalCurrent}
+                                last={subTotalLast}
+                                accentClass="text-blue-800 dark:text-blue-200"
+                              />
+                            ) : (
+                              <GoalValuesCell
+                                current={subTotalCurrent}
+                                goal={subTotalGoal}
+                                accentClass="text-blue-800 dark:text-blue-200"
+                              />
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                            {formatNumber(subTotalLast)}
+                          <td className={rateColTdClass}>
+                            {viewMode === 'yoy' ? (
+                              <MetricRateSpan
+                                percent={Math.abs(subTotalChange.percent)}
+                                isPositive={subTotalChange.isPositive}
+                                tone="subtotal"
+                              />
+                            ) : (
+                              <MetricRateSpan
+                                percent={subTotalAchievement.percent}
+                                isPositive={subTotalAchievement.isPositive}
+                                tone="subtotal"
+                              />
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right">
-                            <span
-                              className={`inline-flex items-center gap-1 font-medium text-xs ${
-                                subTotalChange.isPositive ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
-                              }`}
-                            >
-                              {subTotalChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                              {Math.abs(subTotalChange.percent).toFixed(1)}%
-                            </span>
+                          <td className="py-2 px-3 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                            {viewMode === 'yoy' ? (
+                              <YoYValuesCell
+                                current={sub.fleet_current}
+                                last={sub.fleet_last}
+                                accentClass="text-purple-800 dark:text-purple-200"
+                              />
+                            ) : (
+                              <GoalValuesCell
+                                current={sub.fleet_current}
+                                goal={subFleetGoal}
+                                accentClass="text-purple-800 dark:text-purple-200"
+                              />
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono text-purple-800 dark:text-purple-200 border-l border-zinc-200 dark:border-zinc-700">
-                            {formatNumber(sub.fleet_current)}
+                          <td className={rateColTdClass}>
+                            {viewMode === 'yoy' ? (
+                              <MetricRateSpan
+                                percent={Math.abs(subFleetChange.percent)}
+                                isPositive={subFleetChange.isPositive}
+                                tone="subtotal"
+                              />
+                            ) : (
+                              <MetricRateSpan
+                                percent={subFleetAchievement.percent}
+                                isPositive={subFleetAchievement.isPositive}
+                                tone="subtotal"
+                              />
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                            {formatNumber(sub.fleet_last)}
+                          <td className="py-2 px-3 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                            {viewMode === 'yoy' ? (
+                              <YoYValuesCell
+                                current={sub.lcc_current}
+                                last={sub.lcc_last}
+                                accentClass="text-orange-800 dark:text-orange-200"
+                              />
+                            ) : (
+                              <GoalValuesCell
+                                current={sub.lcc_current}
+                                goal={subLccGoal}
+                                accentClass="text-orange-800 dark:text-orange-200"
+                              />
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right">
-                            <span
-                              className={`inline-flex items-center gap-1 font-medium text-xs ${
-                                subFleetChange.isPositive ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
-                              }`}
-                            >
-                              {subFleetChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                              {Math.abs(subFleetChange.percent).toFixed(1)}%
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono text-orange-800 dark:text-orange-200 border-l border-zinc-200 dark:border-zinc-700">
-                            {formatNumber(sub.lcc_current)}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                            {formatNumber(sub.lcc_last)}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <span
-                              className={`inline-flex items-center gap-1 font-medium text-xs ${
-                                subLccChange.isPositive ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
-                              }`}
-                            >
-                              {subLccChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                              {Math.abs(subLccChange.percent).toFixed(1)}%
-                            </span>
+                          <td className={rateColTdClass}>
+                            {viewMode === 'yoy' ? (
+                              <MetricRateSpan
+                                percent={Math.abs(subLccChange.percent)}
+                                isPositive={subLccChange.isPositive}
+                                tone="subtotal"
+                              />
+                            ) : (
+                              <MetricRateSpan
+                                percent={subLccAchievement.percent}
+                                isPositive={subLccAchievement.isPositive}
+                                tone="subtotal"
+                              />
+                            )}
                           </td>
                         </tr>
                       );
@@ -757,33 +965,41 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
               <tr>
                 <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-20">팀</th>
                 <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-24">직원명</th>
-                <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-20">사업소</th>
                 <th className="text-left py-3 px-2 text-xs font-bold text-zinc-500 uppercase tracking-wider w-16">월</th>
-                <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">Fleet + LCC 합계</th>
-                <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-purple-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">Fleet</th>
-                <th colSpan={3} className="text-center py-3 px-4 text-xs font-bold text-orange-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">LCC</th>
+                <th colSpan={2} className="text-center py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">Fleet + LCC 합계</th>
+                <th colSpan={2} className="text-center py-3 px-4 text-xs font-bold text-purple-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">Fleet</th>
+                <th colSpan={2} className="text-center py-3 px-4 text-xs font-bold text-orange-600 uppercase tracking-wider border-l border-zinc-300 dark:border-zinc-700">LCC</th>
               </tr>
               <tr>
                 <th className="text-left py-2 px-2"></th>
                 <th className="text-left py-2 px-2"></th>
                 <th className="text-left py-2 px-2"></th>
-                <th className="text-left py-2 px-2"></th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년({'>'}L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{currentYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">{lastYear}년(L)</th>
-                <th className="text-right py-2 px-4 text-xs font-bold text-zinc-500">변화율</th>
+                <th className="text-right py-2 px-3 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{viewMode === 'yoy' ? '비교(L)' : '실적/목표(L)'}</th>
+                <th className={rateColThClass}>{viewMode === 'yoy' ? '증감율' : '달성율'}</th>
+                <th className="text-right py-2 px-3 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{viewMode === 'yoy' ? '비교(L)' : '실적/목표(L)'}</th>
+                <th className={rateColThClass}>{viewMode === 'yoy' ? '증감율' : '달성율'}</th>
+                <th className="text-right py-2 px-3 text-xs font-bold text-zinc-500 border-l border-zinc-300 dark:border-zinc-700">{viewMode === 'yoy' ? '비교(L)' : '실적/목표(L)'}</th>
+                <th className={rateColThClass}>{viewMode === 'yoy' ? '증감율' : '달성율'}</th>
               </tr>
             </thead>
             <tbody>
-              {employeeMonthList.map((emp) => {
+              {filteredEmployeeMonthList.map((emp) => {
+                // Get goal data for this employee
+                const empGoals = employeeGoalMap[emp.employee_name] || {
+                  fleet_goal: 0,
+                  lcc_goal: 0,
+                  total_goal: 0,
+                };
+
+                // Calculate YoY changes
                 const totalChange = calculateChange(emp.cumulative_total_current, emp.cumulative_total_last);
                 const fleetChange = calculateChange(emp.cumulative_fleet_current, emp.cumulative_fleet_last);
                 const lccChange = calculateChange(emp.cumulative_lcc_current, emp.cumulative_lcc_last);
+
+                // Calculate achievement rates
+                const totalAchievement = calculateAchievementRate(emp.cumulative_total_current, empGoals.total_goal);
+                const fleetAchievement = calculateAchievementRate(emp.cumulative_fleet_current, empGoals.fleet_goal);
+                const lccAchievement = calculateAchievementRate(emp.cumulative_lcc_current, empGoals.lcc_goal);
 
                 return (
                   <Fragment key={emp.employee_name}>
@@ -791,49 +1007,90 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
                     <tr className="bg-blue-50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-800 font-semibold">
                       <td className="py-3 px-2 text-zinc-700 dark:text-zinc-300 text-xs">{emp.team}</td>
                       <td className="py-3 px-2 font-medium text-zinc-900 dark:text-zinc-100 text-sm">{emp.employee_name}</td>
-                      <td className="py-3 px-2 text-zinc-600 dark:text-zinc-400 text-xs">{emp.branch}</td>
                       <td className="py-3 px-2 text-zinc-900 dark:text-zinc-100 text-sm">누계</td>
-                      <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 border-l border-zinc-200 dark:border-zinc-700">
-                        {formatNumber(emp.cumulative_total_current)}
+                      <td className="py-2 px-3 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                        {viewMode === 'yoy' ? (
+                          <YoYValuesCell
+                            current={emp.cumulative_total_current}
+                            last={emp.cumulative_total_last}
+                            accentClass="text-blue-700 dark:text-blue-300"
+                          />
+                        ) : (
+                          <GoalValuesCell
+                            current={emp.cumulative_total_current}
+                            goal={empGoals.total_goal}
+                            accentClass="text-blue-700 dark:text-blue-300"
+                          />
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                        {formatNumber(emp.cumulative_total_last)}
+                      <td className={rateColTdClass}>
+                        {viewMode === 'yoy' ? (
+                          <MetricRateSpan
+                            percent={Math.abs(totalChange.percent)}
+                            isPositive={totalChange.isPositive}
+                          />
+                        ) : (
+                          <MetricRateSpan
+                            percent={totalAchievement.percent}
+                            isPositive={totalAchievement.isPositive}
+                          />
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                          totalChange.isPositive ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {totalChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                          {Math.abs(totalChange.percent).toFixed(1)}%
-                        </span>
+                      <td className="py-2 px-3 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                        {viewMode === 'yoy' ? (
+                          <YoYValuesCell
+                            current={emp.cumulative_fleet_current}
+                            last={emp.cumulative_fleet_last}
+                            accentClass="text-purple-700 dark:text-purple-300"
+                          />
+                        ) : (
+                          <GoalValuesCell
+                            current={emp.cumulative_fleet_current}
+                            goal={empGoals.fleet_goal}
+                            accentClass="text-purple-700 dark:text-purple-300"
+                          />
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-right font-mono text-purple-700 dark:text-purple-300 border-l border-zinc-200 dark:border-zinc-700">
-                        {formatNumber(emp.cumulative_fleet_current)}
+                      <td className={rateColTdClass}>
+                        {viewMode === 'yoy' ? (
+                          <MetricRateSpan
+                            percent={Math.abs(fleetChange.percent)}
+                            isPositive={fleetChange.isPositive}
+                          />
+                        ) : (
+                          <MetricRateSpan
+                            percent={fleetAchievement.percent}
+                            isPositive={fleetAchievement.isPositive}
+                          />
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                        {formatNumber(emp.cumulative_fleet_last)}
+                      <td className="py-2 px-3 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                        {viewMode === 'yoy' ? (
+                          <YoYValuesCell
+                            current={emp.cumulative_lcc_current}
+                            last={emp.cumulative_lcc_last}
+                            accentClass="text-orange-700 dark:text-orange-300"
+                          />
+                        ) : (
+                          <GoalValuesCell
+                            current={emp.cumulative_lcc_current}
+                            goal={empGoals.lcc_goal}
+                            accentClass="text-orange-700 dark:text-orange-300"
+                          />
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                          fleetChange.isPositive ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {fleetChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                          {Math.abs(fleetChange.percent).toFixed(1)}%
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-orange-700 dark:text-orange-300 border-l border-zinc-200 dark:border-zinc-700">
-                        {formatNumber(emp.cumulative_lcc_current)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                        {formatNumber(emp.cumulative_lcc_last)}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                          lccChange.isPositive ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {lccChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                          {Math.abs(lccChange.percent).toFixed(1)}%
-                        </span>
+                      <td className={rateColTdClass}>
+                        {viewMode === 'yoy' ? (
+                          <MetricRateSpan
+                            percent={Math.abs(lccChange.percent)}
+                            isPositive={lccChange.isPositive}
+                          />
+                        ) : (
+                          <MetricRateSpan
+                            percent={lccAchievement.percent}
+                            isPositive={lccAchievement.isPositive}
+                          />
+                        )}
                       </td>
                     </tr>
 
@@ -850,59 +1107,119 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
                         lcc_last: 0,
                         total_current: 0,
                         total_last: 0,
+                        fleet_goal: 0,
+                        lcc_goal: 0,
+                        total_goal: 0,
                       };
 
                       const monthTotalChange = calculateChange(monthData.total_current, monthData.total_last);
                       const monthFleetChange = calculateChange(monthData.fleet_current, monthData.fleet_last);
                       const monthLccChange = calculateChange(monthData.lcc_current, monthData.lcc_last);
 
+                      const monthTotalAchievement = calculateAchievementRate(monthData.total_current, monthData.total_goal);
+                      const monthFleetAchievement = calculateAchievementRate(monthData.fleet_current, monthData.fleet_goal);
+                      const monthLccAchievement = calculateAchievementRate(monthData.lcc_current, monthData.lcc_goal);
+
                       return (
                         <tr key={month} className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
                           <td className="py-2 px-2"></td>
                           <td className="py-2 px-2"></td>
-                          <td className="py-2 px-2"></td>
                           <td className="py-2 px-2 text-zinc-700 dark:text-zinc-300 text-sm">{parseInt(month)}월</td>
-                          <td className="py-2 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100 border-l border-zinc-200 dark:border-zinc-700">
-                            {formatNumber(monthData.total_current)}
+                          <td className="py-1.5 px-2 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                            {viewMode === 'yoy' ? (
+                              <YoYValuesCell
+                                current={monthData.total_current}
+                                last={monthData.total_last}
+                                accentClass="text-zinc-900 dark:text-zinc-100"
+                                compact
+                              />
+                            ) : (
+                              <GoalValuesCell
+                                current={monthData.total_current}
+                                goal={monthData.total_goal}
+                                accentClass="text-zinc-900 dark:text-zinc-100"
+                                compact
+                              />
+                            )}
                           </td>
-                          <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                            {formatNumber(monthData.total_last)}
+                          <td className={rateColTdClassCompact}>
+                            {viewMode === 'yoy' ? (
+                              <MetricRateSpan
+                                percent={Math.abs(monthTotalChange.percent)}
+                                isPositive={monthTotalChange.isPositive}
+                                compact
+                              />
+                            ) : (
+                              <MetricRateSpan
+                                percent={monthTotalAchievement.percent}
+                                isPositive={monthTotalAchievement.isPositive}
+                                compact
+                              />
+                            )}
                           </td>
-                          <td className="py-2 px-4 text-right">
-                            <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                              monthTotalChange.isPositive ? 'text-green-600' : 'text-red-600'
-                            }`}>
-                              {monthTotalChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                              {Math.abs(monthTotalChange.percent).toFixed(1)}%
-                            </span>
+                          <td className="py-1.5 px-2 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                            {viewMode === 'yoy' ? (
+                              <YoYValuesCell
+                                current={monthData.fleet_current}
+                                last={monthData.fleet_last}
+                                accentClass="text-zinc-900 dark:text-zinc-100"
+                                compact
+                              />
+                            ) : (
+                              <GoalValuesCell
+                                current={monthData.fleet_current}
+                                goal={monthData.fleet_goal}
+                                accentClass="text-zinc-900 dark:text-zinc-100"
+                                compact
+                              />
+                            )}
                           </td>
-                          <td className="py-2 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100 border-l border-zinc-200 dark:border-zinc-700">
-                            {formatNumber(monthData.fleet_current)}
+                          <td className={rateColTdClassCompact}>
+                            {viewMode === 'yoy' ? (
+                              <MetricRateSpan
+                                percent={Math.abs(monthFleetChange.percent)}
+                                isPositive={monthFleetChange.isPositive}
+                                compact
+                              />
+                            ) : (
+                              <MetricRateSpan
+                                percent={monthFleetAchievement.percent}
+                                isPositive={monthFleetAchievement.isPositive}
+                                compact
+                              />
+                            )}
                           </td>
-                          <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                            {formatNumber(monthData.fleet_last)}
+                          <td className="py-1.5 px-2 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                            {viewMode === 'yoy' ? (
+                              <YoYValuesCell
+                                current={monthData.lcc_current}
+                                last={monthData.lcc_last}
+                                accentClass="text-zinc-900 dark:text-zinc-100"
+                                compact
+                              />
+                            ) : (
+                              <GoalValuesCell
+                                current={monthData.lcc_current}
+                                goal={monthData.lcc_goal}
+                                accentClass="text-zinc-900 dark:text-zinc-100"
+                                compact
+                              />
+                            )}
                           </td>
-                          <td className="py-2 px-4 text-right">
-                            <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                              monthFleetChange.isPositive ? 'text-green-600' : 'text-red-600'
-                            }`}>
-                              {monthFleetChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                              {Math.abs(monthFleetChange.percent).toFixed(1)}%
-                            </span>
-                          </td>
-                          <td className="py-2 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100 border-l border-zinc-200 dark:border-zinc-700">
-                            {formatNumber(monthData.lcc_current)}
-                          </td>
-                          <td className="py-2 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400">
-                            {formatNumber(monthData.lcc_last)}
-                          </td>
-                          <td className="py-2 px-4 text-right">
-                            <span className={`inline-flex items-center gap-1 font-medium text-xs ${
-                              monthLccChange.isPositive ? 'text-green-600' : 'text-red-600'
-                            }`}>
-                              {monthLccChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                              {Math.abs(monthLccChange.percent).toFixed(1)}%
-                            </span>
+                          <td className={rateColTdClassCompact}>
+                            {viewMode === 'yoy' ? (
+                              <MetricRateSpan
+                                percent={Math.abs(monthLccChange.percent)}
+                                isPositive={monthLccChange.isPositive}
+                                compact
+                              />
+                            ) : (
+                              <MetricRateSpan
+                                percent={monthLccAchievement.percent}
+                                isPositive={monthLccAchievement.isPositive}
+                                compact
+                              />
+                            )}
                           </td>
                         </tr>
                       );

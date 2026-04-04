@@ -449,9 +449,9 @@ export default function NewTab({ selectedMonth }: NewTabProps) {
                               <th className="text-right py-2 px-4 text-[10px] font-bold text-zinc-500 uppercase">중량(L)</th>
                               <th className="text-right py-2 px-4 text-[10px] font-bold text-zinc-500 uppercase">거래일수</th>
                             </tr>
-                            {managerClients.map((client) => (
+                            {managerClients.map((client, clientIndex) => (
                               <tr
-                                key={client.거래처코드}
+                                key={`${managerKey}-${client.거래처코드}-${clientIndex}`}
                                 className="border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/30 dark:bg-zinc-800/10"
                               >
                                 <td className="py-2 px-4 pl-12 text-zinc-500 dark:text-zinc-400 text-xs">{client.신규일}</td>

@@ -34,6 +34,8 @@ export async function GET(request: Request) {
     const [latestYear, latestMonth] = currentMonthStr.split('-').map(Number);
     const currentYear = latestYear;
     const lastYear = currentYear - 1;
+    const businessYearWindow = 10;
+    const businessMinYear = currentYear - (businessYearWindow - 1);
 
     // Base table for sales
     const baseSalesTable = `(
@@ -71,7 +73,7 @@ export async function GET(request: Request) {
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
-        WHERE s.일자 >= '${lastYear}-01-01'
+        WHERE s.일자 >= '${businessMinYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
           AND e.사원_담당_명 != '김도량'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
@@ -83,22 +85,20 @@ export async function GET(request: Request) {
       const businessDataRaw = await executeSQL(query);
       const businessData = Array.isArray(businessDataRaw) ? businessDataRaw : (businessDataRaw?.rows || []);
 
-      // Calculate cumulative totals by year (up to selected month)
-      const [currentYearNum, currentMonthNum] = currentMonthStr.split('-');
-      const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
+      // Calculate cumulative totals by year (up to selected month in each calendar year)
+      const [, currentMonthNum] = currentMonthStr.split('-');
+      const years = Array.from({ length: businessYearWindow }, (_, i) =>
+        String(businessMinYear + i)
+      );
 
       const totalsByYear = businessData.reduce(
         (acc: any, row: any) => {
           const year = row.year;
           const yearMonth = row.year_month;
-
-          // Only include data up to the selected month for comparison
-          // Current year: up to currentMonthStr, Last year: up to same month in lastYear
-          const shouldInclude =
-            (year === String(currentYear) && yearMonth <= currentMonthStr) ||
-            (year === String(lastYear) && yearMonth <= lastYearMonthStr);
-
-          if (!shouldInclude) return acc;
+          const y = Number(year);
+          if (y < businessMinYear || y > currentYear) return acc;
+          const capMonth = `${year}-${currentMonthNum}`;
+          if (yearMonth > capMonth) return acc;
 
           if (!acc[year]) {
             acc[year] = { total_weight: 0, total_amount: 0, total_quantity: 0 };
@@ -118,6 +118,7 @@ export async function GET(request: Request) {
           totalsByYear,
           currentYear: currentYear.toString(),
           lastYear: lastYear.toString(),
+          years,
           availableMonths,
           currentMonth: currentMonthStr,
         },
@@ -281,14 +282,14 @@ export async function GET(request: Request) {
       `;
 
       // Query B2C vs B2B comparison across all three tables (cumulative up to selected month)
+      // Split by both channel type (AUTO/non-AUTO) and employee team (B2C/B2B)
       const comparisonQuery = `
         SELECT
-          CASE
-            WHEN ca.업종분류코드 IS NOT NULL THEN 'B2C'
-            ELSE 'B2B'
-          END as business_type,
+          'B2C' as business_type,
+          CASE WHEN ec.b2c_팀 = 'B2B' THEN 'B2B' ELSE 'B2C' END as employee_team,
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
+          COUNT(DISTINCT s.거래처코드) as client_count,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
@@ -297,16 +298,46 @@ export async function GET(request: Request) {
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 >= '${lastYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
+          AND ca.업종분류코드 IS NOT NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND e.사원_담당_명 != '김도량'
           AND (
             (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
             OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
           )
-        GROUP BY 1, 2, 3
-        ORDER BY 1, 2, 3
+        GROUP BY 1, 2, 3, 4
+
+        UNION ALL
+
+        SELECT
+          'B2B' as business_type,
+          CASE WHEN ec.b2c_팀 = 'B2B' THEN 'B2B' ELSE 'B2C' END as employee_team,
+          strftime('%Y', s.일자) as year,
+          strftime('%Y-%m', s.일자) as year_month,
+          COUNT(DISTINCT s.거래처코드) as client_count,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+        FROM ${baseSalesTable} s
+        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE s.일자 >= '${lastYear}-01-01'
+          AND s.일자 <= '${currentYear}-12-31'
+          AND ca.업종분류코드 IS NULL
+          AND i.품목그룹1코드 IN ('IL', 'AVI', 'MAR', 'MB')
+          AND e.사원_담당_명 != '김도량'
+          AND (
+            (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
+            OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
+          )
+        GROUP BY 1, 2, 3, 4
+        ORDER BY 1, 2, 3, 4
       `;
 
       // Query B2C sales by team and employee across all three tables (cumulative up to selected month)
@@ -341,7 +372,7 @@ export async function GET(request: Request) {
         ORDER BY 1, 2, 4, 5
       `;
 
-      // Query B2B sales (for B2B subtotal)
+      // Query B2B sales (for B2B subtotal) - IL, AVI, MAR, MB products only
       const b2bQuery = `
         SELECT
           strftime('%Y', s.일자) as year,
@@ -357,7 +388,7 @@ export async function GET(request: Request) {
         WHERE s.일자 >= '${lastYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
           AND ca.업종분류코드 IS NULL
-          AND i.품목그룹1코드 IN ('PVL', 'CVL')
+          AND i.품목그룹1코드 IN ('IL', 'AVI', 'MAR', 'MB')
           AND e.사원_담당_명 != '김도량'
           AND (
             (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
@@ -405,20 +436,21 @@ export async function GET(request: Request) {
         };
       });
 
-      // Aggregate monthly data by year for B2C vs B2B
-      const comparisonAggregated: Record<string, { total_weight: number; total_amount: number; total_quantity: number }> = {};
+      // Aggregate monthly data by year for B2C vs B2B with employee team dimension
+      const comparisonAggregated: Record<string, { total_weight: number; total_amount: number; total_quantity: number; client_count: number }> = {};
       comparisonDataArray.forEach((row: any) => {
-        const key = `${row.business_type}-${row.year}`;
+        const key = `${row.business_type}-${row.employee_team}-${row.year}`;
         if (!comparisonAggregated[key]) {
-          comparisonAggregated[key] = { total_weight: 0, total_amount: 0, total_quantity: 0 };
+          comparisonAggregated[key] = { total_weight: 0, total_amount: 0, total_quantity: 0, client_count: 0 };
         }
         comparisonAggregated[key].total_weight += Math.round(Number(row.total_weight || 0));
         comparisonAggregated[key].total_amount += Math.round(Number(row.total_amount || 0));
         comparisonAggregated[key].total_quantity += Math.round(Number(row.total_quantity || 0));
+        comparisonAggregated[key].client_count += Number(row.client_count || 0);
       });
       const comparisonData = Object.entries(comparisonAggregated).map(([key, totals]) => {
-        const [business_type, year] = key.split('-');
-        return { business_type, year, ...totals };
+        const [business_type, employee_team, year] = key.split('-');
+        return { business_type, employee_team, year, ...totals };
       });
 
       // Process team employee data - aggregate by team, employee, and year
