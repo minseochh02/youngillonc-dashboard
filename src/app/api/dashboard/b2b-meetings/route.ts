@@ -87,7 +87,7 @@ export async function GET(request: Request) {
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 = 'IL'
@@ -133,7 +133,7 @@ export async function GET(request: Request) {
         FROM ${baseSalesSubquery} s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
@@ -288,7 +288,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
@@ -343,7 +343,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
@@ -370,7 +370,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
@@ -434,7 +434,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
@@ -461,7 +461,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
@@ -533,7 +533,7 @@ export async function GET(request: Request) {
           COUNT(DISTINCT s.일자) as transaction_days
         FROM clients c
         LEFT JOIN ${baseSalesSubquery} s ON c.거래처코드 = COALESCE(NULLIF(s.실납업체, ''), s.거래처코드)
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
@@ -646,7 +646,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
@@ -669,7 +669,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
@@ -731,7 +731,7 @@ export async function GET(request: Request) {
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 = 'IL'

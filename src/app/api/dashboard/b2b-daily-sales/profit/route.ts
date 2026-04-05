@@ -71,7 +71,7 @@ export async function GET(request: Request) {
       ) s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN items i ON s.품목코드 = i.품목코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       LEFT JOIN (
         SELECT 품목코드, 품목명, 원가단가, 판매단가, 이익율

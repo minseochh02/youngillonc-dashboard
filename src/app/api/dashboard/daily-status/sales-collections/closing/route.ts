@@ -92,7 +92,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN clients c2 ON (s.실납업체 IS NOT NULL AND s.실납업체 != '' AND s.실납업체 = c2.거래처코드)
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE ${getSalesBranchFilter()}
           AND s.일자 >= '${startDate}' AND s.일자 <= '${date}'
@@ -211,7 +211,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN clients c2 ON (s.실납업체 IS NOT NULL AND s.실납업체 != '' AND s.실납업체 = c2.거래처코드)
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE ${getSalesBranchFilter()} AND s.일자 >= '${BASELINE_DATE}' AND s.일자 <= '${date}'
       )
@@ -232,7 +232,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN clients c2 ON (s.실납업체 IS NOT NULL AND s.실납업체 != '' AND s.실납업체 = c2.거래처코드)
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 >= '${startDate}' AND s.일자 <= '${date}' AND i.품목그룹3코드 = 'FLA' AND i.품목그룹1코드 = 'IL' AND ${getSalesBranchFilter()}
         UNION ALL

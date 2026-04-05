@@ -69,7 +69,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
@@ -147,7 +147,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
@@ -173,7 +173,7 @@ export async function GET(request: Request) {
       const managerBaseFrom = `
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
@@ -331,6 +331,20 @@ export async function GET(request: Request) {
         GROUP BY e.사원_담당_명, year, channel
       `;
 
+      // Query goals for Fleet/LCC by employee
+      const goalsQuery = `
+        SELECT
+          employee_name,
+          category,
+          SUM(target_weight) as target_weight,
+          SUM(target_amount) as target_amount
+        FROM sales_goals
+        WHERE year = '${currentYear}'
+          AND category_type = 'business_type'
+          AND category IN ('Fleet', 'LCC')
+        GROUP BY employee_name, category
+      `;
+
       let employeeSalesRaw;
       let totalClientsRaw: any;
       let teamChannelMonthSummaryRaw: any;
@@ -339,6 +353,7 @@ export async function GET(request: Request) {
       let empClientTotalMoRaw: any;
       let empClientChMoRaw: any;
       let empClientSingleMoRaw: any;
+      let goalsRaw: any;
 
       try {
         [
@@ -350,6 +365,7 @@ export async function GET(request: Request) {
           empClientTotalMoRaw,
           empClientChMoRaw,
           empClientSingleMoRaw,
+          goalsRaw,
         ] = await Promise.all([
           executeSQL(query),
           executeSQL(totalClientsByYearQuery),
@@ -359,6 +375,7 @@ export async function GET(request: Request) {
           executeSQL(employeeClientTotalMonthlyQuery),
           executeSQL(employeeClientChannelMonthlyQuery),
           executeSQL(employeeClientsSingleMonthQuery),
+          executeSQL(goalsQuery),
         ]);
       } catch (error: any) {
         console.error('SQL Query Error:', error);
@@ -475,11 +492,41 @@ export async function GET(request: Request) {
         client_count: Number(row.client_count || 0),
       }));
 
+      // Process goals data
+      const goalsData = asRows(goalsRaw);
+      const goalsMap = new Map<string, { fleet: number; lcc: number }>();
+
+      goalsData.forEach((row: any) => {
+        if (!goalsMap.has(row.employee_name)) {
+          goalsMap.set(row.employee_name, { fleet: 0, lcc: 0 });
+        }
+        const goals = goalsMap.get(row.employee_name)!;
+        if (row.category === 'Fleet') {
+          goals.fleet = Number(row.target_weight || 0);
+        } else if (row.category === 'LCC') {
+          goals.lcc = Number(row.target_weight || 0);
+        }
+      });
+
+      // Build goals array for frontend
+      const goalsForFrontend: any[] = [];
+      goalsMap.forEach((goals, employee_name) => {
+        goalsForFrontend.push({
+          employee_name,
+          year: currentYear,
+          year_month: currentMonthStr,
+          fleet_goal: goals.fleet,
+          lcc_goal: goals.lcc,
+          total_goal: goals.fleet + goals.lcc,
+        });
+      });
+
       return NextResponse.json({
         success: true,
         data: {
           summaryData,
           employeeData,
+          goalData: goalsForFrontend,
           totalClientCountByYear,
           teamChannelMonthSummary,
           employeeClientTotalCumulative,
@@ -514,7 +561,7 @@ export async function GET(request: Request) {
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE s.일자 >= '${lastYear}-01-01'
@@ -548,7 +595,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 >= '${lastYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
@@ -576,7 +623,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 >= '${lastYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
@@ -605,7 +652,7 @@ export async function GET(request: Request) {
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE s.일자 >= '${lastYear}-01-01'
@@ -635,7 +682,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE s.일자 >= '${lastYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
           AND ca.업종분류코드 IS NULL
@@ -832,7 +879,7 @@ export async function GET(request: Request) {
           SUM(CASE WHEN strftime('%Y-%m', s.일자) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_year_weight
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE (s.일자 LIKE '${lastYearMonth}%' OR s.일자 LIKE '${currentMonthStr}%')
@@ -907,7 +954,7 @@ export async function GET(request: Request) {
           COUNT(DISTINCT s.일자) as transaction_days
         FROM clients c
         LEFT JOIN ${baseSalesTable} s ON c.거래처코드 = s.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE c.신규일 IS NOT NULL
           AND c.신규일 != ''
@@ -1072,7 +1119,7 @@ export async function GET(request: Request) {
           ROUND(SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC))) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE (
@@ -1094,7 +1141,7 @@ export async function GET(request: Request) {
           ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE (
@@ -1170,7 +1217,7 @@ export async function GET(request: Request) {
           ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE (
@@ -1330,7 +1377,7 @@ export async function GET(request: Request) {
           ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE (
@@ -1397,7 +1444,7 @@ export async function GET(request: Request) {
           ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE ${teamSalesWhere}
@@ -1411,7 +1458,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           COUNT(DISTINCT s.거래처코드) as client_count
         FROM ${baseSalesTable} s
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE ${teamSalesWhere}
@@ -1432,7 +1479,7 @@ export async function GET(request: Request) {
           COUNT(DISTINCT s.거래처코드) as client_count
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE ${teamSalesWhere}
@@ -1455,7 +1502,7 @@ export async function GET(request: Request) {
           COUNT(DISTINCT s.거래처코드) as client_count
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE ${teamSalesWhere}

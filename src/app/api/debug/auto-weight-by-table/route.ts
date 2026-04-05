@@ -10,7 +10,7 @@ export async function GET() {
         COUNT(*) as record_count
       FROM sales s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       WHERE substr(s.일자, 1, 7) = '2026-02'
         AND i.품목그룹1코드 IN ('PVL', 'CVL')
@@ -24,7 +24,7 @@ export async function GET() {
         COUNT(*) as record_count
       FROM east_division_sales s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       WHERE substr(s.일자, 1, 7) = '2026-02'
         AND i.품목그룹1코드 IN ('PVL', 'CVL')
@@ -38,7 +38,7 @@ export async function GET() {
         COUNT(*) as record_count
       FROM west_division_sales s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       WHERE substr(s.일자, 1, 7) = '2026-02'
         AND i.품목그룹1코드 IN ('PVL', 'CVL')

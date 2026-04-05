@@ -65,7 +65,7 @@ export async function GET(request: Request) {
       FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
       WHERE s.일자 >= '${lastYear}-01-01'
@@ -91,7 +91,7 @@ export async function GET(request: Request) {
       FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -127,7 +127,7 @@ export async function GET(request: Request) {
       FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -152,7 +152,7 @@ export async function GET(request: Request) {
       FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -178,7 +178,7 @@ export async function GET(request: Request) {
       FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -203,7 +203,7 @@ export async function GET(request: Request) {
       FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -228,7 +228,7 @@ export async function GET(request: Request) {
       FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -253,7 +253,7 @@ export async function GET(request: Request) {
       FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
@@ -278,7 +278,7 @@ export async function GET(request: Request) {
       FROM (${salesUnion}) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'

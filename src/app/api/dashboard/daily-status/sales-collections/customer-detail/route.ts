@@ -61,7 +61,7 @@ export async function GET(request: Request) {
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE ${getSalesBranchFilter()} AND s.일자 >= '${startDate}' AND s.일자 <= '${date}'
         UNION

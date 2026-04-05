@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
         SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM west_division_sales
       ) s
       LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
       WHERE s.일자 BETWEEN '${startDate}' AND '${endDate}'

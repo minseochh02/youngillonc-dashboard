@@ -13,7 +13,8 @@ export async function GET() {
         SUM(s.합계) as total_amount
       FROM sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
         AND s.일자 LIKE '2026-02-%'
@@ -46,7 +47,8 @@ export async function GET() {
         i.품목명
       FROM sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
         AND s.일자 LIKE '2026-02-%'
@@ -65,7 +67,8 @@ export async function GET() {
         i.품목명
       FROM sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
         AND s.일자 LIKE '2026-02-%'

@@ -32,7 +32,7 @@ export async function GET(request: Request) {
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN warehouses w ON s.출하창고코드 = w.창고코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (ec.전체사업소 = '경남사업소' OR w.창고명 = '창원' OR c.거래처명 = '테크젠 주식회사')
           AND s.일자 >= '${startDate}' AND s.일자 <= '${date}'

@@ -46,7 +46,7 @@ export async function GET(request: Request) {
           ${branchMapping} as division
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE e.사원_담당_명 != '김도량' ${monthFilter}
       ) s
@@ -110,7 +110,7 @@ export async function GET(request: Request) {
         ${branchMapping} as division
       FROM ${baseSalesTable} s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE c.거래처그룹1명 IS NOT NULL
         AND e.사원_담당_명 != '김도량'

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, type ReactElement } from 'react';
 import Link from "next/link";
-import { LayoutDashboard, ClipboardList, Receipt, Package, ShoppingCart, AlertTriangle, Star, ChevronDown, ChevronRight, X, Clock, Calendar, Users, FileText, BarChart3, DollarSign, UserX, TrendingUp, Database, Settings, Cloud, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Receipt, Package, ShoppingCart, AlertTriangle, Star, ChevronDown, ChevronRight, X, Clock, Calendar, Users, FileText, BarChart3, DollarSign, UserX, TrendingUp, Database, Settings, Cloud, ChevronsLeft, ChevronsRight, Target } from "lucide-react";
 import { useStarredQueries } from '@/hooks/useStarredQueries';
 import { regenerateSQLDates } from '@/lib/date-regenerator';
 import { extractDatesFromSQL, formatDateRangeDisplay } from '@/lib/date-extractor';
@@ -167,6 +167,16 @@ const Navigation = () => {
           name: "마감회의",
           href: "/dashboard/closing-meeting",
           icon: <FileText className="w-5 h-5" />,
+        },
+        {
+          name: "고객 배정 관리",
+          href: "/dashboard/client-assignments",
+          icon: <Users className="w-5 h-5" />,
+        },
+        {
+          name: "일괄 목표 설정",
+          href: "/dashboard/bulk-goal-setting",
+          icon: <Target className="w-5 h-5" />,
         },
         {
           name: "B2C 회의자료",
