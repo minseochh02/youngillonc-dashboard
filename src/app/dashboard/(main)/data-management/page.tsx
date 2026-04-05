@@ -36,9 +36,9 @@ const baselineTables = [
     id: 'employees',
     label: '사원 (Employees)',
     icon: Users,
-    description: '사원 마스터 - 팀 배정, 사업소 배정 정보 포함',
+    description: '사원 마스터 - 사원 코드 및 명 (팀·사업소 배정은 사원분류에서 관리)',
     rowCount: '~65',
-    keyColumns: ['사원_담당_코드', '사원_담당_명', 'b2b팀', 'b2b사업소', 'b2c_팀', '전체사업소'],
+    keyColumns: ['사원_담당_코드', '사원_담당_명'],
   },
   {
     id: 'employee_category',

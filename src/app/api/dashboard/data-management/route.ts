@@ -13,13 +13,7 @@ export async function GET(request: Request) {
 
     let result;
     if (tableName === 'employees') {
-      const query = `
-        SELECT e.사원_담당_코드, e.사원_담당_명, ec.b2b팀, ec.b2b사업소, ec.b2c_팀, ec.전체사업소
-        FROM employees e
-        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        ORDER BY e.사원_담당_명 ASC
-      `;
-      result = await executeSQL(query);
+      result = await queryTable('employees', { limit: 10000 });
     } else if (tableName === 'employee_category') {
       const query = `
         SELECT

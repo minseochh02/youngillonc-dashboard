@@ -1,13 +1,11 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Loader2, Package, TrendingUp, TrendingDown } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
-import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
-
 interface BusinessDataRow {
   branch: string;
   business_type: string;
@@ -16,6 +14,8 @@ interface BusinessDataRow {
   total_weight: number;
   total_amount: number;
   total_quantity: number;
+  goal_weight?: number;  // Goal amount for weight
+  goal_amount?: number;  // Goal amount for revenue
 }
 
 interface BusinessData {
@@ -24,6 +24,8 @@ interface BusinessData {
     total_weight: number;
     total_amount: number;
     total_quantity: number;
+    goal_weight?: number;
+    goal_amount?: number;
   }>;
   currentYear: string;
   lastYear: string;
@@ -234,89 +236,12 @@ export default function BusinessTab({ selectedMonth, onMonthsAvailable }: Busine
   const totalLastWeight = totalsByYear[lastYear]?.total_weight || 0;
   const totalWeightChange = calculateChange(totalCurrentWeight, totalLastWeight);
 
-  const totalCurrentAmount = totalsByYear[currentYear]?.total_amount || 0;
-  const totalLastAmount = totalsByYear[lastYear]?.total_amount || 0;
-  const totalAmountChange = calculateChange(totalCurrentAmount, totalLastAmount);
-
   // Format month display for cumulative period
   const displayMonth = parseInt(currentMonthNum);
   const cumulativePeriod = `1월~${displayMonth}월 누계`;
 
   return (
     <div className="space-y-6">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Performance Summary Card */}
-        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
-              <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 실적 요약</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{cumulativePeriod} · 전체 사업소 합계</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 중량</p>
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(totalCurrentWeight)} L</p>
-              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
-                전체 중량 대비 100%
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 금액</p>
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(totalCurrentAmount)} 원</p>
-              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
-                전체 금액 대비 100%
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Year-over-Year Change Card */}
-        <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
-              {totalWeightChange.isPositive ? (
-                <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-              ) : (
-                <TrendingDown className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-              )}
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">전년 대비 증감 (누계)</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear} vs {lastYear} · {cumulativePeriod}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">중량 변화</p>
-              <div className="flex items-baseline gap-2 mt-1">
-                <p className={`text-2xl font-bold ${totalWeightChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                  {totalWeightChange.isPositive ? '+' : ''}{(totalWeightChange.percent ?? 0).toFixed(1)}%
-                </p>
-              </div>
-              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
-                {totalWeightChange.isPositive ? '+' : ''}{formatNumber(totalCurrentWeight - totalLastWeight)} L
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">금액 변화</p>
-              <div className="flex items-baseline gap-2 mt-1">
-                <p className={`text-2xl font-bold ${totalAmountChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                  {totalAmountChange.isPositive ? '+' : ''}{(totalAmountChange.percent ?? 0).toFixed(1)}%
-                </p>
-              </div>
-              <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 mt-1">
-                {totalAmountChange.isPositive ? '+' : ''}{formatNumber(totalCurrentAmount - totalLastAmount)} 원
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Multi-year comparison table (10 years) */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
@@ -561,19 +486,6 @@ export default function BusinessTab({ selectedMonth, onMonthsAvailable }: Busine
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Filter Info */}
-      <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
-        <p className="font-semibold mb-1">필터 조건:</p>
-        <ul className="list-disc list-inside space-y-0.5">
-          <li>제품: (품목그룹1코드)</li>
-          <li>거래처: AUTO 업종분류기준 코드</li>
-          <li>
-            기간: 사업소 표는 {yearColumns[0]}~{yearColumns[yearColumns.length - 1]}년 {cumulativePeriod} · 월별 표는{' '}
-            {lastYear}년 vs {currentYear}년 동월
-          </li>
-        </ul>
       </div>
     </div>
   );

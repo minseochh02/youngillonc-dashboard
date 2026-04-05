@@ -21,6 +21,8 @@ interface SalesAnalysisData {
   channelData: ChannelDataRow[];
   currentYear: string;
   lastYear: string;
+  /** API 기준월 (YYYY-MM); 월 미선택 시에도 서버와 동일한 누계 기준 */
+  currentMonth?: string;
 }
 
 interface SalesAnalysisTabProps {
@@ -70,6 +72,34 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
     return { percent: change, isPositive: change >= 0 };
   };
 
+  /** 당해 중량(L) + 전년 중량 — ManagerSalesTab YoYValuesCell과 동일 패턴 */
+  const YoYWeightCell = ({
+    current,
+    last,
+    accentClass,
+    compact = false,
+  }: {
+    current: number;
+    last: number;
+    accentClass: string;
+    compact?: boolean;
+  }) => (
+    <div
+      className={`flex flex-col items-end justify-center leading-tight ${compact ? 'gap-0' : 'gap-0.5'}`}
+    >
+      <span
+        className={`font-mono font-semibold tabular-nums ${accentClass} ${compact ? 'text-xs' : 'text-sm'}`}
+      >
+        {formatNumber(current)}
+      </span>
+      <span
+        className={`font-mono text-zinc-500 dark:text-zinc-400 tabular-nums ${compact ? 'text-[9px]' : 'text-[10px]'}`}
+      >
+        전년 {formatNumber(last)}
+      </span>
+    </div>
+  );
+
   const handleReasonChange = (channel: string, value: string) => {
     setReasonAnalysis(prev => ({
       ...prev,
@@ -94,12 +124,12 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
     );
   }
 
-  const { currentYear, lastYear, channelData } = data;
+  const { currentYear, lastYear, channelData, currentMonth: apiCurrentMonth } = data;
 
-  // Calculate cumulative period labels
-  const currentMonthStr = selectedMonth || `${currentYear}-12`;
-  const [_, currentMonthNum] = currentMonthStr.split('-');
-  const lastYearMonthStr = `${lastYear}-${currentMonthNum}`;
+  // ManagerSalesTab과 동일: 선택 월 또는 API 기준월, 전년 동월 누계 비교 구간 표시
+  const targetMonth = selectedMonth || apiCurrentMonth || `${currentYear}-12`;
+  const lastYearMonth = targetMonth.replace(currentYear, lastYear);
+  const [, currentMonthNum] = targetMonth.split('-');
 
   // Get data by channel, product group and year
   const getChannelData = (channel: string, productGroup: string, year: string) => {
@@ -153,11 +183,17 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
       const totalLast = getChannelTotal(channel, lastYear);
       const weightChange = calculateChange(totalCurrent.total_weight, totalLast.total_weight);
 
+      const cvlPrev = getChannelData(channel, 'CVL', lastYear);
+      const pvlPrev = getChannelData(channel, 'PVL', lastYear);
+
       exportData.push({
         '채널': channel,
-        [`CVL 중량(L)`]: cvlCurrent.total_weight,
-        [`PVL 중량(L)`]: pvlCurrent.total_weight,
-        [`합계 중량(L)`]: totalCurrent.total_weight,
+        [`CVL 중량(L) 당해`]: cvlCurrent.total_weight,
+        [`CVL 중량(L) 전년`]: cvlPrev.total_weight,
+        [`PVL 중량(L) 당해`]: pvlCurrent.total_weight,
+        [`PVL 중량(L) 전년`]: pvlPrev.total_weight,
+        [`합계 중량(L) 당해`]: totalCurrent.total_weight,
+        [`합계 중량(L) 전년`]: totalLast.total_weight,
         '변화율(%)': weightChange.percent.toFixed(1),
         '원인분석': reasonAnalysis[channel] || '',
       });
@@ -169,9 +205,25 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
     const totalWeightChange = calculateChange(totalCurrent.total_weight, totalLast.total_weight);
 
     exportData.push({});
+    const cvlGrandLast = channelData
+      .filter((r) => r.product_group === 'CVL' && r.year === lastYear)
+      .reduce((acc, r) => acc + r.total_weight, 0);
+    const pvlGrandLast = channelData
+      .filter((r) => r.product_group === 'PVL' && r.year === lastYear)
+      .reduce((acc, r) => acc + r.total_weight, 0);
+
     exportData.push({
       '채널': '전체 합계',
-      [`합계 중량(L)`]: totalCurrent.total_weight,
+      [`CVL 중량(L) 당해`]: channelData
+        .filter((r) => r.product_group === 'CVL' && r.year === currentYear)
+        .reduce((acc, r) => acc + r.total_weight, 0),
+      [`CVL 중량(L) 전년`]: cvlGrandLast,
+      [`PVL 중량(L) 당해`]: channelData
+        .filter((r) => r.product_group === 'PVL' && r.year === currentYear)
+        .reduce((acc, r) => acc + r.total_weight, 0),
+      [`PVL 중량(L) 전년`]: pvlGrandLast,
+      [`합계 중량(L) 당해`]: totalCurrent.total_weight,
+      [`합계 중량(L) 전년`]: totalLast.total_weight,
       '변화율(%)': totalWeightChange.percent.toFixed(1),
     });
 
@@ -213,7 +265,10 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">PVL 실적</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">1월~{parseInt(currentMonthNum)}월 누계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                1월~{parseInt(currentMonthNum, 10)}월 누계{' '}
+                <span className="text-[10px] font-normal">({targetMonth} vs {lastYearMonth})</span>
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -246,7 +301,10 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
             </div>
             <div>
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">CVL 실적</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">1월~{parseInt(currentMonthNum)}월 누계</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                1월~{parseInt(currentMonthNum, 10)}월 누계{' '}
+                <span className="text-[10px] font-normal">({targetMonth} vs {lastYearMonth})</span>
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -275,14 +333,24 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
       {/* All Channels Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">AUTO 채널별 매출액 (1월~{parseInt(currentMonthNum)}월 누계)</h4>
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+            AUTO 채널별 중량 (1월~{parseInt(currentMonthNum, 10)}월 누계)
+            <span className="block text-[11px] font-normal text-zinc-500 dark:text-zinc-400 mt-0.5">
+              당해·전년 동기간 누계 비교 ({targetMonth} vs {lastYearMonth})
+            </span>
+          </h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
                 <th rowSpan={2} className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">채널</th>
-                <th colSpan={3} className="text-center py-2 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider border-l border-zinc-200 dark:border-zinc-700">중량 (L) - {currentYear}년 누계</th>
+                <th colSpan={3} className="text-center py-2 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider border-l border-zinc-200 dark:border-zinc-700">
+                  중량 (L) — 당해 누계 + 전년
+                  <span className="block font-normal text-[10px] text-zinc-500 normal-case tracking-normal">
+                    ({currentYear} vs {lastYear} · 동일 누계 구간)
+                  </span>
+                </th>
                 <th rowSpan={2} className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider border-l border-zinc-200 dark:border-zinc-700 border-b border-zinc-200 dark:border-zinc-800">변화율<br/>(전체)</th>
                 <th rowSpan={2} className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider border-l border-zinc-200 dark:border-zinc-700 border-b border-zinc-200 dark:border-zinc-800">원인분석</th>
               </tr>
@@ -294,13 +362,13 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
             </thead>
             <tbody>
               {allChannels.map((channel) => {
-                const pvlCurrent = getChannelData(channel, 'PVL', currentYear);
-                const cvlCurrent = getChannelData(channel, 'CVL', currentYear);
+                const pvlCur = getChannelData(channel, 'PVL', currentYear);
+                const cvlCur = getChannelData(channel, 'CVL', currentYear);
+                const pvlPrev = getChannelData(channel, 'PVL', lastYear);
+                const cvlPrev = getChannelData(channel, 'CVL', lastYear);
                 const totalCurrent = getChannelTotal(channel, currentYear);
                 const totalLast = getChannelTotal(channel, lastYear);
-                const totalChange = calculateChange(totalCurrent.total_amount, totalLast.total_amount);
 
-                // Calculate change based on weight instead of amount
                 const weightChange = calculateChange(totalCurrent.total_weight, totalLast.total_weight);
 
                 return (
@@ -311,15 +379,29 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
                     <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
                       {channel}
                     </td>
-                    {/* Weight Columns - CVL, PVL, Total */}
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs border-l border-zinc-100 dark:border-zinc-800/50">
-                      {formatNumber(cvlCurrent.total_weight)}
+                    <td className="py-3 px-4 text-right border-l border-zinc-100 dark:border-zinc-800/50 align-middle">
+                      <YoYWeightCell
+                        current={cvlCur.total_weight}
+                        last={cvlPrev.total_weight}
+                        accentClass="text-zinc-600 dark:text-zinc-400"
+                        compact
+                      />
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-600 dark:text-zinc-400 text-xs">
-                      {formatNumber(pvlCurrent.total_weight)}
+                    <td className="py-3 px-4 text-right align-middle">
+                      <YoYWeightCell
+                        current={pvlCur.total_weight}
+                        last={pvlPrev.total_weight}
+                        accentClass="text-zinc-600 dark:text-zinc-400"
+                        compact
+                      />
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold bg-blue-50/20">
-                      {formatNumber(totalCurrent.total_weight)}
+                    <td className="py-3 px-4 text-right bg-blue-50/20 align-middle">
+                      <YoYWeightCell
+                        current={totalCurrent.total_weight}
+                        last={totalLast.total_weight}
+                        accentClass="text-blue-700 dark:text-blue-300"
+                        compact
+                      />
                     </td>
                     {/* Change Column */}
                     <td className="py-3 px-4 text-right border-l border-zinc-100 dark:border-zinc-800/50">
@@ -348,6 +430,8 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
               {(() => {
                 const cvlGrand = channelData.filter(r => r.product_group === 'CVL' && r.year === currentYear).reduce((acc, r) => acc + r.total_weight, 0);
                 const pvlGrand = channelData.filter(r => r.product_group === 'PVL' && r.year === currentYear).reduce((acc, r) => acc + r.total_weight, 0);
+                const cvlGrandLast = channelData.filter(r => r.product_group === 'CVL' && r.year === lastYear).reduce((acc, r) => acc + r.total_weight, 0);
+                const pvlGrandLast = channelData.filter(r => r.product_group === 'PVL' && r.year === lastYear).reduce((acc, r) => acc + r.total_weight, 0);
 
                 const totalCurrent = getTotalByYear(currentYear);
                 const totalLast = getTotalByYear(lastYear);
@@ -356,9 +440,20 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
                 return (
                   <tr className="border-t-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 font-bold">
                     <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100 uppercase">전체 합계</td>
-                    <td className="py-3 px-4 text-right font-mono text-xs border-l border-zinc-200 dark:border-zinc-700">{formatNumber(cvlGrand)}</td>
-                    <td className="py-3 px-4 text-right font-mono text-xs">{formatNumber(pvlGrand)}</td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 bg-blue-50/30">{formatNumber(totalCurrent.total_weight)}</td>
+                    <td className="py-3 px-4 text-right border-l border-zinc-200 dark:border-zinc-700 align-middle">
+                      <YoYWeightCell current={cvlGrand} last={cvlGrandLast} accentClass="text-zinc-700 dark:text-zinc-200" compact />
+                    </td>
+                    <td className="py-3 px-4 text-right align-middle">
+                      <YoYWeightCell current={pvlGrand} last={pvlGrandLast} accentClass="text-zinc-700 dark:text-zinc-200" compact />
+                    </td>
+                    <td className="py-3 px-4 text-right bg-blue-50/30 align-middle">
+                      <YoYWeightCell
+                        current={totalCurrent.total_weight}
+                        last={totalLast.total_weight}
+                        accentClass="text-blue-800 dark:text-blue-200"
+                        compact
+                      />
+                    </td>
                     <td className="py-3 px-4 text-right border-l border-zinc-200 dark:border-zinc-700">
                       <span className={`inline-flex items-center gap-1 ${totalWeightChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
                         {totalWeightChange.isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
@@ -381,7 +476,7 @@ export default function SalesAnalysisTab({ selectedMonth }: SalesAnalysisTabProp
           <li>제품: (품목그룹1코드)</li>
           <li>거래처: AUTO 채널만 (company_type_auto 테이블)</li>
           <li>채널 분류: company_type_auto.거래처그룹2 기준</li>
-          <li>기간: {lastYear}년 vs {currentYear}년</li>
+          <li>기간: 동일 누계 구간 — {targetMonth}까지 vs {lastYearMonth}까지 (전년 동월 말 누계)</li>
         </ul>
       </div>
     </div>

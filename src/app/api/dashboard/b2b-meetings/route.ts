@@ -15,6 +15,24 @@ function sqlSalesYtdThroughMonth(
   )`;
 }
 
+/** Generate SQL condition for 3 years of data through the same month */
+function sqlSales3YearsThroughMonth(
+  alias: string,
+  currentYear: number,
+  currentMonthStr: string
+) {
+  const startYear = currentYear - 2; // 3 years total including current year
+  const [_, monthPart] = currentMonthStr.split('-');
+
+  const conditions = [];
+  for (let year = startYear; year <= currentYear; year++) {
+    const yearMonth = `${year}-${monthPart}`;
+    conditions.push(`(strftime('%Y', ${alias}.일자) = '${year}' AND strftime('%Y-%m', ${alias}.일자) <= '${yearMonth}')`);
+  }
+
+  return `(${conditions.join(' OR ')})`;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -185,8 +203,37 @@ export async function GET(request: Request) {
         ORDER BY product_group, year, year_month
       `;
 
+      // 3-year trend query
+      const trendQuery = `
+        SELECT
+          CASE
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') AND i.품목그룹3코드 = 'STA' THEN 'Standard'
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') AND i.품목그룹3코드 = 'PRE' THEN 'Premium'
+            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') AND i.품목그룹3코드 = 'FLA' THEN 'Flagship'
+            WHEN i.품목그룹1코드 NOT IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN 'Alliance'
+            ELSE 'Others'
+          END as product_group,
+          strftime('%Y', s.일자) as year,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+        FROM ${baseSalesSubquery} s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
+        WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
+          AND ca.업종분류코드 IS NULL
+          AND (COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) NOT IN (SELECT 거래처코드 FROM clients WHERE 담당자코드 IN (SELECT 사원_담당_코드 FROM employees WHERE 사원_담당_명 = '김도량')) OR COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) IS NULL)
+        GROUP BY product_group, year
+        HAVING product_group IN ('Standard', 'Premium', 'Flagship', 'Alliance')
+        ORDER BY product_group, year
+      `;
+
       const productGroupDataRaw = await executeSQL(query);
       const productGroupDataArray = Array.isArray(productGroupDataRaw) ? productGroupDataRaw : (productGroupDataRaw?.rows || []);
+
+      const trendDataRaw = await executeSQL(trendQuery);
+      const trendDataArray = Array.isArray(trendDataRaw) ? trendDataRaw : (trendDataRaw?.rows || []);
 
       const productGroupData = productGroupDataArray.map((row: any) => ({
         product_group: row.product_group,
@@ -197,10 +244,19 @@ export async function GET(request: Request) {
         total_quantity: Number(row.total_quantity || 0),
       }));
 
+      const yearlyTrendData = trendDataArray.map((row: any) => ({
+        product_group: row.product_group,
+        year: row.year,
+        total_weight: Number(row.total_weight || 0),
+        total_amount: Number(row.total_amount || 0),
+        total_quantity: Number(row.total_quantity || 0),
+      }));
+
       return NextResponse.json({
         success: true,
         data: {
           productGroupData,
+          yearlyTrendData,
           currentYear: String(currentYear),
           lastYear: String(lastYear),
           ...monthMeta,
@@ -297,8 +353,38 @@ export async function GET(request: Request) {
         ORDER BY fps_category, year, year_month
       `;
 
+      // 3-year trend query
+      const trendQuery = `
+        SELECT
+          CASE
+            WHEN i.품목그룹3코드 = 'FLA' THEN 'Flagship'
+            WHEN i.품목그룹3코드 = 'PRE' THEN 'Premium'
+            WHEN i.품목그룹3코드 = 'STA' THEN 'Standard'
+            ELSE 'Others'
+          END as fps_category,
+          strftime('%Y', s.일자) as year,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+        FROM ${baseSalesSubquery} s
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
+          AND ca.업종분류코드 IS NULL
+          AND i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
+          AND e.사원_담당_명 != '김도량'
+        GROUP BY fps_category, year
+        HAVING fps_category IN ('Flagship', 'Premium', 'Standard')
+        ORDER BY fps_category, year
+      `;
+
       const fpsDataRaw = await executeSQL(query);
       const fpsDataArray = Array.isArray(fpsDataRaw) ? fpsDataRaw : (fpsDataRaw?.rows || []);
+
+      const trendDataRaw = await executeSQL(trendQuery);
+      const trendDataArray = Array.isArray(trendDataRaw) ? trendDataRaw : (trendDataRaw?.rows || []);
 
       const fpsData = fpsDataArray.map((row: any) => ({
         fps_category: row.fps_category,
@@ -309,10 +395,19 @@ export async function GET(request: Request) {
         total_quantity: Number(row.total_quantity || 0),
       }));
 
+      const yearlyTrendData = trendDataArray.map((row: any) => ({
+        fps_category: row.fps_category,
+        year: row.year,
+        total_weight: Number(row.total_weight || 0),
+        total_amount: Number(row.total_amount || 0),
+        total_quantity: Number(row.total_quantity || 0),
+      }));
+
       return NextResponse.json({
         success: true,
         data: {
           fpsData,
+          yearlyTrendData,
           currentYear: String(currentYear),
           lastYear: String(lastYear),
           ...monthMeta,
@@ -349,8 +444,38 @@ export async function GET(request: Request) {
         ORDER BY region, year, year_month
       `;
 
+      // 3-year trend query
+      const trendQuery = `
+        SELECT
+          CASE
+            WHEN c.지역코드 LIKE '%서울%' OR c.지역코드 LIKE '%경기%' THEN '서울경기'
+            WHEN c.지역코드 LIKE '%충청%' OR c.지역코드 LIKE '%대전%' OR c.지역코드 LIKE '%세종%' THEN '충청'
+            WHEN c.지역코드 LIKE '%경남%' OR c.지역코드 LIKE '%부산%' OR c.지역코드 LIKE '%울산%' THEN '경남'
+            ELSE '기타'
+          END as region,
+          strftime('%Y', s.일자) as year,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+        FROM ${baseSalesSubquery} s
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
+          AND ca.업종분류코드 IS NULL
+          AND i.품목그룹1코드 IN ('PVL', 'CVL')
+          AND e.사원_담당_명 != '김도량'
+        GROUP BY region, year
+        HAVING region != '기타'
+        ORDER BY region, year
+      `;
+
       const regionDataRaw = await executeSQL(query);
       const regionDataArray = Array.isArray(regionDataRaw) ? regionDataRaw : (regionDataRaw?.rows || []);
+
+      const trendDataRaw = await executeSQL(trendQuery);
+      const trendDataArray = Array.isArray(trendDataRaw) ? trendDataRaw : (trendDataRaw?.rows || []);
 
       const regionData = regionDataArray.map((row: any) => ({
         region: row.region,
@@ -361,10 +486,19 @@ export async function GET(request: Request) {
         total_quantity: Number(row.total_quantity || 0),
       }));
 
+      const yearlyTrendData = trendDataArray.map((row: any) => ({
+        region: row.region,
+        year: row.year,
+        total_weight: Number(row.total_weight || 0),
+        total_amount: Number(row.total_amount || 0),
+        total_quantity: Number(row.total_quantity || 0),
+      }));
+
       return NextResponse.json({
         success: true,
         data: {
           regionData,
+          yearlyTrendData,
           currentYear: String(currentYear),
           lastYear: String(lastYear),
           ...monthMeta,
@@ -522,8 +656,34 @@ export async function GET(request: Request) {
         ORDER BY team, year, year_month
       `;
 
+      // 3-year trend query
+      const trendQuery = `
+        SELECT
+          CASE
+            WHEN ca.업종분류코드 IS NOT NULL THEN 'AUTO'
+            ELSE COALESCE(ec.b2b팀, '미분류')
+          END as team,
+          strftime('%Y', s.일자) as year,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
+          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
+        FROM ${baseSalesSubquery} s
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
+        WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
+          AND e.사원_담당_명 != '김도량'
+        GROUP BY team, year
+        HAVING team != '미분류'
+        ORDER BY team, year
+      `;
+
       const allProductsDataRaw = await executeSQL(query);
       const allProductsDataArray = Array.isArray(allProductsDataRaw) ? allProductsDataRaw : (allProductsDataRaw?.rows || []);
+
+      const trendDataRaw = await executeSQL(trendQuery);
+      const trendDataArray = Array.isArray(trendDataRaw) ? trendDataRaw : (trendDataRaw?.rows || []);
 
       const allProductsData = allProductsDataArray.map((row: any) => ({
         team: row.team,
@@ -534,10 +694,19 @@ export async function GET(request: Request) {
         total_quantity: Number(row.total_quantity || 0),
       }));
 
+      const yearlyTrendData = trendDataArray.map((row: any) => ({
+        team: row.team,
+        year: row.year,
+        total_weight: Number(row.total_weight || 0),
+        total_amount: Number(row.total_amount || 0),
+        total_quantity: Number(row.total_quantity || 0),
+      }));
+
       return NextResponse.json({
         success: true,
         data: {
           allProductsData,
+          yearlyTrendData,
           currentYear: String(currentYear),
           lastYear: String(lastYear),
           ...monthMeta,

@@ -17,8 +17,17 @@ interface ProductGroupData {
   total_quantity: number;
 }
 
+interface YearlyTrendData {
+  product_group: string;
+  year: string;
+  total_weight: number;
+  total_amount: number;
+  total_quantity: number;
+}
+
 interface ProductGroupResponse {
   productGroupData: ProductGroupData[];
+  yearlyTrendData?: YearlyTrendData[];
   currentYear: string;
   lastYear: string;
   availableMonths?: string[];
@@ -400,6 +409,123 @@ export default function ProductGroupTab({ selectedMonth, onMonthsAvailable }: Pr
           </table>
         </div>
       </div>
+
+      {/* 3-Year Trend Table */}
+      {data.yearlyTrendData && data.yearlyTrendData.length > 0 && (() => {
+        // Get unique years and sort them
+        const years = Array.from(new Set(data.yearlyTrendData!.map(d => d.year))).sort();
+
+        // Calculate totals by product group and year
+        const getTrendData = (productGroup: string, year: string) => {
+          return data.yearlyTrendData!.find(d => d.product_group === productGroup && d.year === year);
+        };
+
+        // Calculate year totals
+        const getYearTotal = (year: string) => {
+          return data.yearlyTrendData!
+            .filter(d => d.year === year)
+            .reduce((sum, d) => sum + d.total_weight, 0);
+        };
+
+        return (
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+              <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">3개년 제품군별 판매 추이 (연도별 누계)</h4>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                  <tr>
+                    <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">제품군</th>
+                    {years.map(year => (
+                      <th key={year} className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                        {year}년
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {productGroups.map(productGroup => (
+                    <tr
+                      key={productGroup}
+                      className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
+                    >
+                      <td className="py-3 px-4 font-semibold text-zinc-900 dark:text-zinc-100">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${getProductGroupColor(productGroup)}`} />
+                          {productGroup}
+                        </div>
+                      </td>
+                      {years.map((year, yearIndex) => {
+                        const trendData = getTrendData(productGroup, year);
+                        const weight = trendData?.total_weight || 0;
+
+                        // Calculate YoY change
+                        let changePercent: number | null = null;
+                        if (yearIndex > 0) {
+                          const prevYear = years[yearIndex - 1];
+                          const prevData = getTrendData(productGroup, prevYear);
+                          const prevWeight = prevData?.total_weight || 0;
+                          if (prevWeight > 0) {
+                            changePercent = ((weight - prevWeight) / prevWeight) * 100;
+                          }
+                        }
+
+                        return (
+                          <td key={year} className="py-3 px-4 text-right">
+                            <div className="font-mono text-zinc-900 dark:text-zinc-100">
+                              {formatNumber(weight)}
+                            </div>
+                            {changePercent !== null && (
+                              <div className={`text-xs font-medium ${
+                                changePercent >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(1)}%
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                  {/* Total row */}
+                  <tr className="bg-zinc-100 dark:bg-zinc-800/70 font-bold">
+                    <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100">총계</td>
+                    {years.map((year, yearIndex) => {
+                      const total = getYearTotal(year);
+
+                      // Calculate YoY change
+                      let changePercent: number | null = null;
+                      if (yearIndex > 0) {
+                        const prevYear = years[yearIndex - 1];
+                        const prevTotal = getYearTotal(prevYear);
+                        if (prevTotal > 0) {
+                          changePercent = ((total - prevTotal) / prevTotal) * 100;
+                        }
+                      }
+
+                      return (
+                        <td key={year} className="py-3 px-4 text-right">
+                          <div className="font-mono text-zinc-900 dark:text-zinc-100">
+                            {formatNumber(total)}
+                          </div>
+                          {changePercent !== null && (
+                            <div className={`text-xs font-medium ${
+                              changePercent >= 0 ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(1)}%
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Product Group Definitions */}
       <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">

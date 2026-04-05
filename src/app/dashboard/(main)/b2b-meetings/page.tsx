@@ -37,6 +37,7 @@ export default function B2BMeetingsPage() {
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [showAllYears, setShowAllYears] = useState(false);
 
   const handleMonthsAvailable = (months: string[], currentMonth: string) => {
     setAvailableMonths(months);
@@ -44,6 +45,12 @@ export default function B2BMeetingsPage() {
       setSelectedMonth(currentMonth);
     }
   };
+
+  // Filter months to show only current year by default
+  const currentYear = new Date().getFullYear();
+  const displayedMonths = showAllYears
+    ? availableMonths
+    : availableMonths.filter(month => month.startsWith(String(currentYear)));
 
   const handleExcelDownload = async () => {
     if (!selectedMonth) return;
@@ -300,13 +307,29 @@ export default function B2BMeetingsPage() {
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="bg-transparent text-sm font-medium focus:outline-none cursor-pointer pr-4"
             >
-              {availableMonths.map((month) => (
+              {displayedMonths.map((month) => (
                 <option key={month} value={month}>
                   {month.split('-')[0]}년 {month.split('-')[1]}월
                 </option>
               ))}
             </select>
           </div>
+          {!showAllYears && availableMonths.length > displayedMonths.length && (
+            <button
+              onClick={() => setShowAllYears(true)}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors whitespace-nowrap"
+            >
+              전체 년도 보기
+            </button>
+          )}
+          {showAllYears && (
+            <button
+              onClick={() => setShowAllYears(false)}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors whitespace-nowrap"
+            >
+              {currentYear}년만 보기
+            </button>
+          )}
           <ExcelDownloadButton onClick={handleExcelDownload} disabled={isExporting || !selectedMonth} />
         </div>
       </div>

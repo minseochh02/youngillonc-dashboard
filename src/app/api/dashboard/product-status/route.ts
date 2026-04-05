@@ -131,7 +131,7 @@ export async function GET(request: Request) {
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
-        AND i.제품군 = 'Mobil 1'
+        AND i.제품군 = 'MOBIL 1'
         AND ec.전체사업소 IS NOT NULL
         AND e.사원_담당_명 != '김도량'
       GROUP BY category, year, quarter
@@ -156,7 +156,7 @@ export async function GET(request: Request) {
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
-        AND i.제품군 = 'Mobil 1'
+        AND i.제품군 = 'MOBIL 1'
         AND ec.b2c_팀 IS NOT NULL
         AND ec.b2c_팀 != 'B2B'
         AND e.사원_담당_명 != '김도량'
@@ -208,6 +208,31 @@ export async function GET(request: Request) {
       WHERE s.일자 >= '${lastYear}-01-01'
         AND s.일자 <= '${currentYear}-12-31'
         AND i.제품군 = 'TP'
+        AND ec.b2c_팀 IS NOT NULL
+        AND e.사원_담당_명 != '김도량'
+      GROUP BY ec.b2c_팀, year, quarter
+    `;
+
+    // Section 7: Special P by teams
+    const specialPlusQuery = `
+      SELECT
+        ec.b2c_팀 as category,
+        strftime('%Y', s.일자) as year,
+        CASE
+          WHEN CAST(strftime('%m', s.일자) AS INTEGER) BETWEEN 1 AND 3 THEN 'Q1'
+          WHEN CAST(strftime('%m', s.일자) AS INTEGER) BETWEEN 4 AND 6 THEN 'Q2'
+          WHEN CAST(strftime('%m', s.일자) AS INTEGER) BETWEEN 7 AND 9 THEN 'Q3'
+          ELSE 'Q4'
+        END as quarter,
+        SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight
+      FROM (${salesUnion}) s
+      LEFT JOIN items i ON s.품목코드 = i.품목코드
+      LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+      LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+      LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+      WHERE s.일자 >= '${lastYear}-01-01'
+        AND s.일자 <= '${currentYear}-12-31'
+        AND i.제품군 = 'SPECIAL P'
         AND ec.b2c_팀 IS NOT NULL
         AND e.사원_담당_명 != '김도량'
       GROUP BY ec.b2c_팀, year, quarter
@@ -265,7 +290,7 @@ export async function GET(request: Request) {
     `;
 
     // Execute all queries in parallel
-    const [auto, b2cTeams, mobil1Branch, mobil1Teams, aiop, tp, cvl, legend] =
+    const [auto, b2cTeams, mobil1Branch, mobil1Teams, aiop, tp, specialPlus, cvl, legend] =
       await Promise.all([
         executeSQL(autoQuery),
         executeSQL(b2cTeamsQuery),
@@ -273,6 +298,7 @@ export async function GET(request: Request) {
         executeSQL(mobil1TeamsQuery),
         executeSQL(aiopQuery),
         executeSQL(tpQuery),
+        executeSQL(specialPlusQuery),
         executeSQL(cvlQuery),
         executeSQL(legendQuery)
       ]);
@@ -315,7 +341,7 @@ export async function GET(request: Request) {
       { id: 'mobil1-teams', title: 'Mobil 1 by B2C teams', data: transformData(mobil1Teams) },
       { id: 'aiop-teams', title: 'AIOP by teams', data: transformData(aiop) },
       { id: 'tp-teams', title: 'TP by teams', data: transformData(tp) },
-      { id: 'special-plus', title: 'Special plus by teams', data: [] },
+      { id: 'special-plus', title: 'Special Plus by teams', data: transformData(specialPlus) },
       { id: 'cvl-teams', title: 'CVL by teams', data: transformData(cvl) },
       { id: 'legend-teams', title: 'LEGEND by teams', data: transformData(legend) }
     ];
