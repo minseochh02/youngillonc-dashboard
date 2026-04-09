@@ -8,7 +8,12 @@ import { useVatInclude } from "@/contexts/VatIncludeContext";
 import VatToggle from "@/components/VatToggle";
 import { apiFetch } from "@/lib/api";
 import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
-import { exportToExcel, exportIslandTables, type IslandTable } from "@/lib/excel-export";
+import {
+  exportToExcel,
+  exportIslandTables,
+  type IslandSheetData,
+  type IslandTable,
+} from "@/lib/excel-export";
 
 const divisions = [
   { id: "all", label: "합계", icon: Building2 },

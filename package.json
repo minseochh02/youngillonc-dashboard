@@ -9,7 +9,9 @@
     "lint": "eslint",
     "rebuild-ledger": "tsx scripts/rebuild-ledger.ts",
     "rebuild-sales": "tsx scripts/rebuild-sales.ts",
-    "create-summary-table": "tsx scripts/create-summary-table.ts"
+    "create-summary-table": "tsx scripts/create-summary-table.ts",
+    "create-office-display-order-table": "tsx scripts/create-office-display-order-table.ts",
+    "seed-office-display-order": "tsx scripts/seed-office-display-order-from-employee-category.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -27,7 +29,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@egdesk/next-api-plugin": "^1.2.0",
+    "@egdesk/next-api-plugin": "^1.2.3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/node-cron": "^3.0.11",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Send, Loader2, ChevronDown, ChevronUp, Clock, Star, Calendar } from 'lucide-react';
 import GenericResultTable from '@/components/GenericResultTable';
@@ -150,7 +150,7 @@ function ResultSection({ result, index }: { result: SingleResult; index: number 
 
         {/* Render appropriate table component */}
         {componentConfig.component === 'SalesTable' ? (
-          <SalesTable data={transformedData} queryKey={result.intent} />
+          <SalesTable key={result.intent} data={transformedData} />
         ) : (
           <GenericResultTable rows={result.rows} columns={result.columns} queryKey={result.intent} />
         )}
@@ -168,7 +168,7 @@ const EXAMPLE_QUERIES = [
   "미구매 현황"
 ];
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const searchParams = useSearchParams();
   const { saveQuery, updateExecutionStats, getQuery } = useStarredQueries();
 
@@ -568,5 +568,19 @@ export default function DashboardPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[240px] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+        </div>
+      }
+    >
+      <DashboardPageContent />
+    </Suspense>
   );
 }

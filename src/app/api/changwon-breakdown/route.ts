@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '../../../../egdesk-helpers';
 
+type ChangwonEmployeeRow = {
+  사원_담당_코드?: string;
+  사원_담당_명?: string;
+  전체사업소?: string;
+  b2c_팀?: string;
+  total_weight: number | null;
+  total_amount?: number | null;
+  row_count?: number;
+};
+
 export async function GET() {
   try {
     // Get employees assigned to 창원
@@ -25,15 +35,24 @@ export async function GET() {
       ORDER BY total_weight DESC
     `;
 
-    const result = await executeSQL(employeesQuery);
+    const result = (await executeSQL(employeesQuery)) as {
+      rows: ChangwonEmployeeRow[];
+    };
 
     // Calculate total for percentage
-    const total = result.rows.reduce((sum, row) => sum + (row.total_weight || 0), 0);
+    const total = result.rows.reduce(
+      (sum: number, row: ChangwonEmployeeRow) =>
+        sum + (row.total_weight ?? 0),
+      0
+    );
 
     // Add percentage to each row
-    const withPercentage = result.rows.map(row => ({
+    const withPercentage = result.rows.map((row: ChangwonEmployeeRow) => ({
       ...row,
-      percentage: ((row.total_weight / total) * 100).toFixed(2)
+      percentage:
+        total === 0
+          ? '0.00'
+          : (((row.total_weight ?? 0) / total) * 100).toFixed(2)
     }));
 
     return NextResponse.json({

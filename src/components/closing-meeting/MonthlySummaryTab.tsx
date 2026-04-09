@@ -1,18 +1,18 @@
 "use client";
 
 import { useState, useEffect, useRef, Fragment } from 'react';
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Package, ShoppingCart, Archive, ChevronDown, ChevronRight, Pencil } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Package, ChevronDown, ChevronRight } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
-import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
-import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
 interface CategoryBreakdown {
   category: string;
   purchase_weight: number;
   sales_weight: number;
   inventory_weight: number;
+  target_weight?: number;
+  achievement_rate?: number;
 }
 
 interface MonthlyData {
@@ -44,6 +44,11 @@ interface MonthlySummary {
     inventory_amount: number;
     target_weight: number;
     achievement_rate: number;
+    categoryBreakdown?: CategoryBreakdown[];
+    autoBreakdown?: {
+      PVL: { sales_weight: number; purchase_weight: number };
+      CVL: { sales_weight: number; purchase_weight: number };
+    };
   };
   lastYearToDate: {
     purchase_weight: number;
@@ -58,6 +63,10 @@ interface MonthlySummary {
       sales_weight: number;
       inventory_weight: number;
     }>;
+    autoBreakdown?: {
+      PVL: { sales_weight: number; purchase_weight: number };
+      CVL: { sales_weight: number; purchase_weight: number };
+    };
   };
 }
 
@@ -70,6 +79,7 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<MonthlySummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [expandedYears, setExpandedYears] = useState<number[]>([]);
   const hasReportedMonths = useRef(false);
 
   useEffect(() => {
@@ -111,42 +121,30 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
     return { percent: change, isPositive: change >= 0 };
   };
 
-  const handleExcelDownload = () => {
-    if (!data) {
-      alert('다운로드할 데이터가 없습니다.');
-      return;
-    }
-
-    const exportData: any[] = [];
-    const categories = ['MB', 'AVI + MAR', 'AUTO', 'IL'];
-
-    // Get cumulative breakdown by category for both years
-    const currentMonthData = data.currentMonthData;
-
-    categories.forEach(category => {
-      const breakdown = currentMonthData.breakdown.find(b => b.category === category);
-      if (breakdown) {
-        const weightChange = calculateChange(breakdown.sales_weight, 0); // We don't have last year breakdown in current data
-        exportData.push({
-          '카테고리': category,
-          [`${data.currentYear}년 판매(L)`]: breakdown.sales_weight,
-          [`${data.currentYear}년 구매(L)`]: breakdown.purchase_weight,
-          [`${data.currentYear}년 재고(L)`]: breakdown.inventory_weight,
-        });
-      }
-    });
-
-    // Add totals
-    exportData.push({
-      '카테고리': '합계',
-      [`${data.currentYear}년 판매(L)`]: data.yearToDate.sales_weight,
-      [`${data.currentYear}년 구매(L)`]: data.yearToDate.purchase_weight,
-      [`${data.currentYear}년 재고(L)`]: data.yearToDate.inventory_weight,
-    });
-
-    const filename = generateFilename('마감회의_월간총괄');
-    exportToExcel(exportData, filename, { referenceDate: selectedMonth });
+  const getCategoryLabel = (category: string) => {
+    if (category === 'AUTO') return 'AUTO(PVL+CVL)';
+    return category;
   };
+
+  useEffect(() => {
+    if (!data || expandedYears.length > 0) return;
+    const cutoffMonth = Number(data.currentMonth.split('-')[1]);
+    const years = Array.from(
+      new Set(
+        data.monthlyData
+          .map((row) => {
+            const [yearStr, monthStr] = row.month.split('-');
+            const year = Number(yearStr);
+            const month = Number(monthStr);
+            return year && month && month <= cutoffMonth ? year : null;
+          })
+          .filter((year): year is number => year !== null)
+      )
+    ).sort((a, b) => b - a);
+    if (years.length > 0) {
+      setExpandedYears([years[0]]);
+    }
+  }, [data, expandedYears.length]);
 
   if (isLoading) {
     return (
@@ -168,154 +166,252 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
   const { currentYear, lastYear, yearToDate, lastYearToDate } = data;
   const displayMonth = parseInt(data.currentMonth.split('-')[1]);
   const cumulativePeriod = `1월~${displayMonth}월 누계`;
+  const cutoffMonth = displayMonth;
 
-  // Calculate category-level year-over-year comparisons
-  const categories = ['MB', 'AVI + MAR', 'AUTO', 'IL'];
-  const currentMonthData = data.currentMonthData;
+  const cumulativeMetricsByYear = data.monthlyData.reduce((acc, row) => {
+    const [yearStr, monthStr] = row.month.split('-');
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    if (!year || !month || month > cutoffMonth) return acc;
+    const prev = acc.get(year) || { purchase: 0, sales: 0 };
+    acc.set(year, {
+      purchase: prev.purchase + row.purchase_weight,
+      sales: prev.sales + row.sales_weight,
+    });
+    return acc;
+  }, new Map<number, { purchase: number; sales: number }>());
 
-  const salesChange = calculateChange(yearToDate.sales_weight, lastYearToDate.sales_weight);
-  const purchaseChange = calculateChange(yearToDate.purchase_weight, lastYearToDate.purchase_weight);
+  const yearlyPurchaseCards = Array.from(cumulativeMetricsByYear.entries())
+    .sort((a, b) => b[0] - a[0])
+    .map(([year, metrics]) => {
+      const prevMetrics = cumulativeMetricsByYear.get(year - 1);
+      const purchaseChange = prevMetrics ? calculateChange(metrics.purchase, prevMetrics.purchase) : null;
+      const salesChange = prevMetrics ? calculateChange(metrics.sales, prevMetrics.sales) : null;
+      return {
+        year,
+        purchase: Math.round(metrics.purchase),
+        sales: Math.round(metrics.sales),
+        prevPurchase: prevMetrics ? Math.round(prevMetrics.purchase) : null,
+        prevSales: prevMetrics ? Math.round(prevMetrics.sales) : null,
+        purchaseChange,
+        salesChange,
+      };
+    });
+  const categories = ['MB', 'AVI', 'MAR', 'AUTO', 'IL', '기타'];
+  const yearlyCategoryMap = data.monthlyData.reduce((acc, row) => {
+    const [yearStr, monthStr] = row.month.split('-');
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    if (!year || !month || month > cutoffMonth) return acc;
+    if (!acc.has(year)) {
+      const init = new Map<string, { sales: number; purchase: number; target: number }>();
+      categories.forEach((cat) => init.set(cat, { sales: 0, purchase: 0, target: 0 }));
+      acc.set(year, init);
+    }
+    const yearAgg = acc.get(year)!;
+    row.breakdown.forEach((b) => {
+      const agg = yearAgg.get(b.category);
+      if (!agg) return;
+      agg.sales += b.sales_weight || 0;
+      agg.purchase += b.purchase_weight || 0;
+      agg.target += b.target_weight || 0;
+    });
+    return acc;
+  }, new Map<number, Map<string, { sales: number; purchase: number; target: number }>>());
+  const yearlyMonthlyBreakdownMap = data.monthlyData.reduce((acc, row) => {
+    const [yearStr, monthStr] = row.month.split('-');
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    if (!year || !month || month > cutoffMonth) return acc;
+    if (!acc.has(year)) acc.set(year, []);
+    acc.get(year)!.push(row);
+    return acc;
+  }, new Map<number, MonthlyData[]>());
+  yearlyMonthlyBreakdownMap.forEach((rows) => {
+    rows.sort((a, b) => b.month.localeCompare(a.month));
+  });
+
+  const toggleYear = (year: number) => {
+    setExpandedYears((prev) =>
+      prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]
+    );
+  };
 
   return (
     <div className="space-y-6">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Performance Summary Card */}
-        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
-              <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentYear}년 실적 요약</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{cumulativePeriod}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 판매</p>
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(yearToDate.sales_weight)} L</p>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{formatNumber(yearToDate.sales_amount)} 원</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">총 구매</p>
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{formatNumber(yearToDate.purchase_weight)} L</p>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{formatNumber(yearToDate.purchase_amount)} 원</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Year-over-Year Change Card */}
-        <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
-              {salesChange.isPositive ? (
-                <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-              ) : (
-                <TrendingDown className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-              )}
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">전년 대비 증감</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">{currentYear} vs {lastYear} · {cumulativePeriod}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">판매 변화</p>
-              <div className="flex items-baseline gap-2 mt-1">
-                <p className={`text-2xl font-bold ${salesChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                  {salesChange.isPositive ? '+' : ''}{salesChange.percent.toFixed(1)}%
-                </p>
-              </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                {salesChange.isPositive ? '+' : ''}{formatNumber(yearToDate.sales_weight - lastYearToDate.sales_weight)} L
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">구매 변화</p>
-              <div className="flex items-baseline gap-2 mt-1">
-                <p className={`text-2xl font-bold ${purchaseChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                  {purchaseChange.isPositive ? '+' : ''}{purchaseChange.percent.toFixed(1)}%
-                </p>
-              </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                {purchaseChange.isPositive ? '+' : ''}{formatNumber(yearToDate.purchase_weight - lastYearToDate.purchase_weight)} L
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Year-over-Year Comparison Table */}
+      {/* Unified accordion table by year */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
-          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">카테고리별 연도 비교 ({cumulativePeriod})</h4>
-          <ExcelDownloadButton onClick={handleExcelDownload} />
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center gap-2">
+          <Package className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">연도별 누계 / 카테고리 비교 ({cumulativePeriod})</h4>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">카테고리</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">{currentYear}년 판매(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{lastYear}년 판매(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">변화율</th>
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">연도</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">구매(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">구매 증감율</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">구매 증감량(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">판매(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">판매 증감율</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">판매 증감량(L)</th>
               </tr>
             </thead>
             <tbody>
-              {categories.map((category) => {
-                const breakdown = currentMonthData.breakdown.find(b => b.category === category);
-                const lastYearBreakdown = lastYearToDate.categoryBreakdown.find(b => b.category === category);
-                if (!breakdown) return null;
-
-                const lastYearSales = lastYearBreakdown?.sales_weight || 0;
-                const change = calculateChange(breakdown.sales_weight, lastYearSales);
-
+              {yearlyPurchaseCards.map((item) => {
+                const isExpanded = expandedYears.includes(item.year);
+                const yearDetail = yearlyCategoryMap.get(item.year);
+                const prevYearDetail = yearlyCategoryMap.get(item.year - 1);
                 return (
-                  <tr
-                    key={category}
-                    className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
-                  >
-                    <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
-                      {category}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">
-                      {formatNumber(breakdown.sales_weight)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                      {formatNumber(lastYearSales)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 font-medium ${
-                        change.isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {change.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(change.percent).toFixed(1)}%
+                <Fragment key={item.year}>
+                <tr
+                  className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                  onClick={() => toggleYear(item.year)}
+                >
+                  <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
+                    <span className="inline-flex items-center gap-1">
+                      {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      {item.year}년
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">{formatNumber(item.purchase)}</td>
+                  <td className="py-3 px-4 text-right">
+                    {item.purchaseChange ? (
+                      <span className={`inline-flex items-center gap-1 font-medium ${item.purchaseChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                        {item.purchaseChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {item.purchaseChange.isPositive ? '+' : ''}{item.purchaseChange.percent.toFixed(1)}%
                       </span>
+                    ) : <span className="text-zinc-400">N/A</span>}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                    {item.prevPurchase !== null ? `${item.purchase - item.prevPurchase >= 0 ? '+' : ''}${formatNumber(item.purchase - item.prevPurchase)}` : 'N/A'}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">{formatNumber(item.sales)}</td>
+                  <td className="py-3 px-4 text-right">
+                    {item.salesChange ? (
+                      <span className={`inline-flex items-center gap-1 font-medium ${item.salesChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                        {item.salesChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {item.salesChange.isPositive ? '+' : ''}{item.salesChange.percent.toFixed(1)}%
+                      </span>
+                    ) : <span className="text-zinc-400">N/A</span>}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                    {item.prevSales !== null ? `${item.sales - item.prevSales >= 0 ? '+' : ''}${formatNumber(item.sales - item.prevSales)}` : 'N/A'}
+                  </td>
+                </tr>
+                {isExpanded && (
+                  <tr className="bg-zinc-50/40 dark:bg-zinc-900/30">
+                    <td colSpan={7} className="p-0">
+                      <div className="px-4 py-3 space-y-3">
+                        <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-900">
+                          <table className="w-full text-xs">
+                            <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                              <tr>
+                                <th className="text-left py-2 px-3 font-bold text-zinc-500">월</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">구매(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">판매(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">재고변동(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">목표(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">달성율</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">전년동월비</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(yearlyMonthlyBreakdownMap.get(item.year) || []).map((row) => (
+                                <tr key={`monthly_${row.month}`} className="border-b border-zinc-100 dark:border-zinc-800/60">
+                                  <td className="py-2 px-3 font-medium text-zinc-800 dark:text-zinc-200">
+                                    {Number(row.month.split('-')[1])}월
+                                  </td>
+                                  <td className="py-2 px-3 text-right font-mono">{formatNumber(row.purchase_weight)}</td>
+                                  <td className="py-2 px-3 text-right font-mono">{formatNumber(row.sales_weight)}</td>
+                                  <td className="py-2 px-3 text-right font-mono">{formatNumber(row.inventory_weight)}</td>
+                                  <td className="py-2 px-3 text-right font-mono">{formatNumber(row.target_weight)}</td>
+                                  <td className="py-2 px-3 text-right">
+                                    <span className={`font-medium ${
+                                      row.achievement_rate >= 100 ? 'text-green-600' :
+                                      row.achievement_rate >= 80 ? 'text-yellow-600' : 'text-red-600'
+                                    }`}>
+                                      {row.achievement_rate.toFixed(1)}%
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-3 text-right">
+                                    <span className={`inline-flex items-center gap-1 font-medium ${
+                                      row.yoy_growth_rate >= 0 ? 'text-green-600' : 'text-red-600'
+                                    }`}>
+                                      {row.yoy_growth_rate >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                      {Math.abs(row.yoy_growth_rate).toFixed(1)}%
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-900">
+                          <table className="w-full text-xs">
+                            <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                              <tr>
+                                <th className="text-left py-2 px-3 font-bold text-zinc-500">카테고리</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">{item.year} 판매(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">{item.year - 1} 판매(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">달성율</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">전년대비</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">{item.year} 구매(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">{item.year - 1} 구매(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500">전년대비</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {categories.map((category) => {
+                                const curr = yearDetail?.get(category) || { sales: 0, purchase: 0, target: 0 };
+                                const prev = prevYearDetail?.get(category) || { sales: 0, purchase: 0, target: 0 };
+                                const salesRowChange = calculateChange(curr.sales, prev.sales);
+                                const purchaseRowChange = calculateChange(curr.purchase, prev.purchase);
+                                const rowAchievementRate = curr.target > 0 ? (curr.sales / curr.target) * 100 : 0;
+                                return (
+                                  <tr key={`${item.year}_${category}`} className="border-b border-zinc-100 dark:border-zinc-800/60">
+                                    <td className="py-2 px-3 font-medium text-zinc-800 dark:text-zinc-200">{getCategoryLabel(category)}</td>
+                                    <td className="py-2 px-3 text-right font-mono">{formatNumber(Math.round(curr.sales))}</td>
+                                    <td className="py-2 px-3 text-right font-mono">{formatNumber(Math.round(prev.sales))}</td>
+                                    <td className="py-2 px-3 text-right">
+                                      <span className={`font-medium ${
+                                        rowAchievementRate >= 100 ? 'text-green-600' :
+                                        rowAchievementRate >= 80 ? 'text-yellow-600' : 'text-red-600'
+                                      }`}>
+                                        {rowAchievementRate.toFixed(1)}%
+                                      </span>
+                                    </td>
+                                    <td className="py-2 px-3 text-right">
+                                      <span className={`inline-flex items-center gap-1 font-medium ${
+                                        salesRowChange.isPositive ? 'text-green-600' : 'text-red-600'
+                                      }`}>
+                                        {salesRowChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                        {Math.abs(salesRowChange.percent).toFixed(1)}%
+                                      </span>
+                                    </td>
+                                    <td className="py-2 px-3 text-right font-mono">{formatNumber(Math.round(curr.purchase))}</td>
+                                    <td className="py-2 px-3 text-right font-mono">{formatNumber(Math.round(prev.purchase))}</td>
+                                    <td className="py-2 px-3 text-right">
+                                      <span className={`inline-flex items-center gap-1 font-medium ${
+                                        purchaseRowChange.isPositive ? 'text-green-600' : 'text-red-600'
+                                      }`}>
+                                        {purchaseRowChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                        {Math.abs(purchaseRowChange.percent).toFixed(1)}%
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </td>
                   </tr>
-                );
-              })}
-              <tr className="bg-blue-50 dark:bg-blue-950/20 border-t-2 border-blue-200 dark:border-blue-800 font-bold">
-                <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100">
-                  합계
-                </td>
-                <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300">
-                  {formatNumber(yearToDate.sales_weight)}
-                </td>
-                <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                  {formatNumber(lastYearToDate.sales_weight)}
-                </td>
-                <td className="py-3 px-4 text-right">
-                  <span className={`inline-flex items-center gap-1 font-medium ${
-                    salesChange.isPositive ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {salesChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {Math.abs(salesChange.percent).toFixed(1)}%
-                  </span>
-                </td>
-              </tr>
+                )}
+                </Fragment>
+              )})}
             </tbody>
           </table>
         </div>

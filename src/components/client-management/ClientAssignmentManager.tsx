@@ -17,11 +17,11 @@ function categoryTypeUiLabel(type: CategoryType): string {
     case 'tier':
       return '등급 (품목1·3코드 CASE 조합)';
     case 'division':
-      return '부문 (품목그룹1코드)';
+      return '모빌제품 (품목그룹1코드)';
     case 'family':
       return '제품군 (제품군·품목1코드)';
     case 'business_type':
-      return '사업 유형 (Fleet/LCC)';
+      return 'AUTO 제품 (Fleet/LCC)';
   }
 }
 
@@ -640,22 +640,13 @@ export default function ClientAssignmentManager() {
                   className="px-2 py-1 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-0"
                   title="매출 한 줄마다 SQL CASE로 분류합니다. 등급은 품목1·3코드를 함께 사용합니다."
                 >
-                  <option value="tier">{categoryTypeUiLabel('tier')}</option>
-                  <option value="division">{categoryTypeUiLabel('division')}</option>
-                  <option value="family">{categoryTypeUiLabel('family')}</option>
                   <option value="business_type">{categoryTypeUiLabel('business_type')}</option>
+                  <option value="division">{categoryTypeUiLabel('division')}</option>
+                  <option value="tier">{categoryTypeUiLabel('tier')}</option>
+                  <option value="family">{categoryTypeUiLabel('family')}</option>
                 </select>
               </div>
-              {categoryType === 'tier' && (
-                <p className="text-[11px] text-indigo-600/90 dark:text-indigo-400/90 sm:pl-7 max-w-xl leading-snug">
-                  등급은 품목그룹1코드와 품목그룹3코드를 <strong className="font-semibold">같이</strong> 보는 하나의 CASE입니다 (예: 1코드 범위 AND 3코드=STA → Standard). 컬럼 두 개를 따로 필터하는 방식이 아닙니다.
-                </p>
-              )}
-              {categoryType === 'business_type' && (
-                <p className="text-[11px] text-indigo-600/90 dark:text-indigo-400/90 sm:pl-7 max-w-xl leading-snug">
-                  사업 유형은 업종분류코드로 분류합니다: Fleet (28600, 28610, 28710) 또는 LCC (기타 AUTO 업종).
-                </p>
-              )}
+
             </div>
             <button
               onClick={handleRefreshProducts}
@@ -891,10 +882,9 @@ export default function ClientAssignmentManager() {
                               const isEmployeeExpanded = expandedEmployees.has(emp.employee_name);
 
                               return (
-                                <>
+                                <Fragment key={`${branch.branch_name}_${pairKey}_${emp.employee_code}`}>
                                   {/* Employee Row */}
                                   <tr
-                                    key={`${branch.branch_name}_${pairKey}_${emp.employee_code}`}
                                     className="bg-blue-50/20 dark:bg-blue-900/5 hover:bg-blue-50/40 dark:hover:bg-blue-900/15 cursor-pointer transition-colors"
                                     onClick={() => toggleEmployee(emp.employee_name)}
                                   >
@@ -930,10 +920,9 @@ export default function ClientAssignmentManager() {
                                       const isCategoryExpanded = expandedProductCategories.has(categoryKey);
 
                                       return (
-                                        <>
+                                        <Fragment key={categoryKey}>
                                           {/* Product Category Row */}
                                           <tr
-                                            key={categoryKey}
                                             className="bg-emerald-50/20 dark:bg-emerald-900/5 hover:bg-emerald-50/40 dark:hover:bg-emerald-900/15 cursor-pointer transition-colors"
                                             onClick={() => toggleProductCategory(emp.employee_name, prodCat.category)}
                                           >
@@ -988,7 +977,7 @@ export default function ClientAssignmentManager() {
                                               <td className="py-2 px-4"></td>
                                             </tr>
                                           ))}
-                                        </>
+                                        </Fragment>
                                       );
                                     })
                                   ) : isEmployeeExpanded && emp.clients.map((client, clientIdx) => {
@@ -1029,7 +1018,7 @@ export default function ClientAssignmentManager() {
                                       </tr>
                                     );
                                   })}
-                                </>
+                                </Fragment>
                               );
                             })}
                           </Fragment>
@@ -1066,7 +1055,7 @@ export default function ClientAssignmentManager() {
         <p className="font-semibold mb-2">💡 사용 팁:</p>
         <ul className="list-disc list-inside space-y-1 ml-2">
           <li><strong>계층 구조:</strong> 사업소 → 팀 → 담당자 → 집계 기준별 분류 → 고객처</li>
-          <li><strong>집계 기준:</strong> 등급은 품목1·3코드를 <strong>한 CASE에서 함께</strong> 사용합니다. 부문은 품목그룹1코드, 제품군은 제품군·품목1코드 기준으로 전환합니다.</li>
+          <li><strong>집계 기준:</strong> 등급은 품목1·3코드를 <strong>한 CASE에서 함께</strong> 사용합니다. 모빌제품은 품목그룹1코드, 제품군은 제품군·품목1코드 기준으로 전환합니다.</li>
           <li><strong>분류 행 클릭:</strong> 해당 분류를 구매하는 고객 목록 펼치기/접기</li>
           <li><strong>고객 재배정:</strong> 재배정 버튼 클릭 → 고객 선택 → 새 담당자 지정 → 재배정 실행</li>
           <li><strong>DB 새로고침:</strong> 제품 데이터 업데이트 (첫 실행: 전체 이력, 이후: 최근 연도만)</li>

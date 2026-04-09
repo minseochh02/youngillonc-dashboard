@@ -16,7 +16,7 @@ export default function BulkGoalSettingPage() {
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white shadow-lg">
           <div className="flex items-center gap-3 mb-2">
             <Link
-              href="/dashboard/closing-meeting?tab=goal-setting"
+              href="/dashboard/closing-meeting"
               className="p-2 hover:bg-white/10 rounded-lg transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />

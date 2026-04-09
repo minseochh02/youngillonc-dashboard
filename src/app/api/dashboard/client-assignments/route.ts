@@ -56,7 +56,7 @@ async function getClientProductTypes(currentYear: number, categoryType: Category
         if (products.length < 5) {
           products.push({
             category: row.category,
-            product_family: null,
+            product_family: undefined,
             total_weight: Number(row.total_weight || 0),
             total_amount: Number(row.total_amount || 0)
           });

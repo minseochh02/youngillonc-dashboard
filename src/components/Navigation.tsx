@@ -169,7 +169,7 @@ const Navigation = () => {
           icon: <FileText className="w-5 h-5" />,
         },
         {
-          name: "고객 배정 관리",
+          name: "담당자 배정 관리",
           href: "/dashboard/client-assignments",
           icon: <Users className="w-5 h-5" />,
         },

@@ -34,7 +34,10 @@ export async function POST(request: NextRequest) {
       { name: '신규일', type: 'TEXT' },
       { name: '적요', type: 'TEXT' },
       { name: '적요2', type: 'TEXT' }
-    ];
+    ] satisfies Array<{
+      name: string;
+      type: 'TEXT' | 'INTEGER' | 'REAL' | 'DATE';
+    }>;
 
     try {
       await createTable('판매현황', salesSchema, {

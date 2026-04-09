@@ -57,9 +57,13 @@ interface SalesAmountData {
 
 interface SalesAmountTabProps {
   selectedMonth?: string;
+  onMonthsAvailable?: (months: string[], currentMonth: string) => void;
 }
 
-export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
+export default function SalesAmountTab({
+  selectedMonth,
+  onMonthsAvailable,
+}: SalesAmountTabProps) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<SalesAmountData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -79,6 +83,9 @@ export default function SalesAmountTab({ selectedMonth }: SalesAmountTabProps) {
       const result = await response.json();
       if (result.success) {
         setData(result.data);
+        if (onMonthsAvailable && result.data.availableMonths) {
+          onMonthsAvailable(result.data.availableMonths, result.data.currentMonth);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch sales amount data:', error);

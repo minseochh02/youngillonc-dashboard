@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Database, Users, Building2, Package, Tags, MapPin, Settings, Loader2, Save, CheckCircle2, AlertCircle, X, ArrowRight, Info } from 'lucide-react';
+import { Database, Users, Building2, Package, Tags, MapPin, Settings, Loader2, Save, CheckCircle2, AlertCircle, X, Info, ArrowUp, ArrowDown } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { ExcelUploadButton } from '@/components/ExcelUploadButton';
@@ -72,6 +72,14 @@ const baselineTables = [
     rowCount: '~35',
     keyColumns: ['업종분류코드', '오토_대분류', '모빌_대시보드채널', '거래처그룹2'],
   },
+  {
+    id: 'office_display_order',
+    label: '사업소 노출 순서',
+    icon: MapPin,
+    description: '대시보드 내 사업소 표시 순서 관리 테이블',
+    rowCount: 'new',
+    keyColumns: ['사업소'],
+  },
 ];
 
 export default function DataManagementPage() {
@@ -81,6 +89,7 @@ export default function DataManagementPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [stagedDiffs, setStagedDiffs] = useState<StagedDiff[] | null>(null);
+  const isOfficeDisplayOrderTable = activeTable === 'office_display_order';
 
   useEffect(() => {
     cancelStaging();
@@ -93,7 +102,12 @@ export default function DataManagementPage() {
       const response = await apiFetch(`/api/dashboard/data-management?table=${activeTable}`);
       const result = await response.json();
       if (result.success) {
-        setTableData(result.data);
+        if (activeTable === 'office_display_order') {
+          const sorted = [...(result.data || [])].sort((a, b) => Number(a?.노출순서 ?? 0) - Number(b?.노출순서 ?? 0));
+          setTableData(sorted);
+        } else {
+          setTableData(result.data);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch table data:', error);
@@ -107,6 +121,8 @@ export default function DataManagementPage() {
   };
 
   const activeTableInfo = baselineTables.find(t => t.id === activeTable);
+  const getVisibleColumns = (row?: Record<string, any>) =>
+    Object.keys(row || {}).filter((key) => key !== 'id');
 
   const handleDownload = async () => {
     if (tableData.length === 0) {
@@ -262,6 +278,51 @@ export default function DataManagementPage() {
       fetchTableData(); // Refresh data
     } catch (error) {
       setMessage({ type: 'error', text: '저장 중 오류가 발생했습니다.' });
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const handleMoveOfficeRow = async (index: number, direction: 'up' | 'down') => {
+    if (!isOfficeDisplayOrderTable || isSaving || stagedDiffs || tableData.length === 0) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= tableData.length) return;
+
+    const reordered = [...tableData];
+    [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+
+    const normalizedRows = reordered.map((row, idx) => ({
+      ...row,
+      노출순서: idx + 1,
+    }));
+
+    setTableData(normalizedRows);
+    setIsSaving(true);
+    setMessage(null);
+
+    try {
+      const rowsToSave = normalizedRows.map((row) => ({
+        사업소: row.사업소,
+        노출순서: row.노출순서,
+      }));
+
+      const response = await apiFetch('/api/dashboard/data-management', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tableName: 'office_display_order', rows: rowsToSave }),
+      });
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || '순서 저장 실패');
+      }
+
+      setMessage({ type: 'success', text: '노출 순서가 업데이트되었습니다.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: '노출 순서 저장 중 오류가 발생했습니다.' });
+      await fetchTableData();
     } finally {
       setIsSaving(false);
       setTimeout(() => setMessage(null), 3000);
@@ -443,7 +504,7 @@ export default function DataManagementPage() {
                   <thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800">
                     <tr>
                       <th className="px-4 py-3 font-bold text-zinc-600 dark:text-zinc-400 w-16">상태</th>
-                      {Object.keys(stagedDiffs[0].data).map(key => (
+                      {getVisibleColumns(stagedDiffs[0].data).map(key => (
                         <th key={key} className="px-4 py-3 font-bold text-zinc-600 dark:text-zinc-400">
                           {key}
                         </th>
@@ -465,7 +526,9 @@ export default function DataManagementPage() {
                           {diff.type === 'deleted' && <span className="text-red-600 dark:text-red-400">삭제</span>}
                           {diff.type === 'unchanged' && <span className="text-zinc-400">-</span>}
                         </td>
-                        {Object.entries(diff.data).map(([key, val], i) => {
+                        {Object.entries(diff.data)
+                          .filter(([key]) => key !== 'id')
+                          .map(([key, val], i) => {
                           const isChanged = diff.type === 'modified' && diff.changes?.includes(key);
                           return (
                             <td key={i} className={`px-4 py-2.5 whitespace-nowrap ${isChanged ? 'font-bold text-blue-700 dark:text-blue-300' : 'text-zinc-700 dark:text-zinc-300'}`}>
@@ -489,21 +552,62 @@ export default function DataManagementPage() {
               <table className="w-full text-xs text-left">
                 <thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800">
                   <tr>
-                    {Object.keys(tableData[0]).map(key => (
-                      <th key={key} className="px-4 py-3 font-bold text-zinc-600 dark:text-zinc-400">
-                        {key}
-                      </th>
-                    ))}
+                    {isOfficeDisplayOrderTable ? (
+                      <>
+                        <th className="px-4 py-3 font-bold text-zinc-600 dark:text-zinc-400">노출순서</th>
+                        <th className="px-4 py-3 font-bold text-zinc-600 dark:text-zinc-400">사업소</th>
+                        <th className="px-4 py-3 font-bold text-zinc-600 dark:text-zinc-400 w-36">순서 이동</th>
+                      </>
+                    ) : (
+                      getVisibleColumns(tableData[0]).map(key => (
+                        <th key={key} className="px-4 py-3 font-bold text-zinc-600 dark:text-zinc-400">
+                          {key}
+                        </th>
+                      ))
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                   {tableData.slice(0, 50).map((row, idx) => (
                     <tr key={idx} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
-                      {Object.values(row).map((val: any, i) => (
-                        <td key={i} className="px-4 py-2.5 text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
-                          {val?.toString() || '-'}
-                        </td>
-                      ))}
+                      {isOfficeDisplayOrderTable ? (
+                        <>
+                          <td className="px-4 py-2.5 text-zinc-700 dark:text-zinc-300 whitespace-nowrap font-semibold">
+                            {row?.노출순서 ?? '-'}
+                          </td>
+                          <td className="px-4 py-2.5 text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
+                            {row?.사업소?.toString() || '-'}
+                          </td>
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleMoveOfficeRow(idx, 'up')}
+                                disabled={isSaving || idx === 0}
+                                className="inline-flex items-center justify-center p-1.5 rounded border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
+                                title="위로 이동"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleMoveOfficeRow(idx, 'down')}
+                                disabled={isSaving || idx === tableData.length - 1}
+                                className="inline-flex items-center justify-center p-1.5 rounded border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
+                                title="아래로 이동"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        Object.entries(row)
+                          .filter(([key]) => key !== 'id')
+                          .map(([, val], i) => (
+                          <td key={i} className="px-4 py-2.5 text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
+                            {val?.toString() || '-'}
+                          </td>
+                        ))
+                      )}
                     </tr>
                   ))}
                 </tbody>

@@ -3,7 +3,7 @@ import ClientAssignmentManager from '@/components/client-management/ClientAssign
 import { Users, Target, TrendingUp, RefreshCw } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: '고객 배정 관리 | 영일온씨',
+  title: '담당자 배정 관리 | 영일온씨',
   description: '담당자별 고객 배정을 확인하고 관리합니다',
 };
 
@@ -15,7 +15,7 @@ export default function ClientAssignmentsPage() {
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-lg">
           <div className="flex items-center gap-3 mb-2">
             <Users className="w-8 h-8" />
-            <h1 className="text-3xl font-bold">고객 배정 관리</h1>
+            <h1 className="text-3xl font-bold">담당자 배정 관리</h1>
           </div>
           <p className="text-indigo-100">
             담당자별 고객 배정 현황을 확인하고, 고객을 재배정하여 목표 설정의 기반을 마련하세요

@@ -7,7 +7,6 @@ import B2BILAnalysisTab from '@/components/closing-meeting/B2BILAnalysisTab';
 import TargetAchievementTab from '@/components/closing-meeting/TargetAchievementTab';
 import YearOverYearTab from '@/components/closing-meeting/YearOverYearTab';
 import BranchPerformanceTab from '@/components/closing-meeting/BranchPerformanceTab';
-import GoalSettingTab from '@/components/closing-meeting/GoalSettingTab';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import VatToggle from '@/components/VatToggle';
 import { apiFetch } from '@/lib/api';
@@ -23,7 +22,6 @@ const tabs = [
   { id: 'target-achievement', label: '목표 달성율' },
   { id: 'yoy-comparison', label: '전년 대비' },
   { id: 'branch-performance', label: '사업소별 실적' },
-  { id: 'goal-setting', label: '목표 설정' },
 ];
 
 export default function ClosingMeetingPage() {
@@ -305,8 +303,6 @@ export default function ClosingMeetingPage() {
           <YearOverYearTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'branch-performance' ? (
           <BranchPerformanceTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
-        ) : activeTab === 'goal-setting' ? (
-          <GoalSettingTab />
         ) : null}
       </div>
     </div>

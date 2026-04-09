@@ -8,7 +8,13 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { ExcelDownloadButton } from "@/components/ExcelDownloadButton";
-import { exportToExcel, generateFilename, flattenObject } from "@/lib/excel-export";
+import {
+  exportToExcel,
+  generateFilename,
+  flattenObject,
+  type IslandSheetData,
+  type IslandTable,
+} from "@/lib/excel-export";
 import React from "react";
 
 // ── Types ──
@@ -395,12 +401,17 @@ export default function InventoryStatusPage() {
           item.total += Number(r.stock_qty);
         });
 
-        const headers = ['품목코드', '품목명', '총재고', ...whList.map(w => `${w} 재고`)];
+        const headers = [
+          '품목코드',
+          '품목명',
+          '총재고',
+          ...whList.map((w: string) => `${w} 재고`),
+        ];
         const data = Array.from(map.values()).map(item => [
-          item.code, 
-          item.name, 
-          item.total, 
-          ...whList.map(w => item.stock[w] || 0)
+          item.code,
+          item.name,
+          item.total,
+          ...whList.map((w: string) => item.stock[w] || 0),
         ]);
 
         sheets.push({
@@ -419,7 +430,7 @@ export default function InventoryStatusPage() {
         METRICS.forEach(metric => {
           const headers = ['산업군', '티어', ...bToShow.flatMap(b => metric.id === 'inventoryDM' ? [b] : [`${b}(Qty)`, `${b}(L)`])];
           const data = CATEGORIES.map(cat => {
-            const row = [cat.label, cat.subLabel];
+            const row: (string | number)[] = [cat.label, cat.subLabel];
             bToShow.forEach(branch => {
               let q = 0, w = 0;
               if (branch === "합계") {

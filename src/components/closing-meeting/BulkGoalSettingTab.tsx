@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { Loader2, Save, Download, Upload, Calendar, CheckCircle2, AlertCircle, TrendingUp, Percent, Copy, ChevronDown, ChevronRight } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
@@ -68,13 +68,13 @@ function categoryTypeLabel(type: CategoryType): string {
     case 'tier':
       return '등급';
     case 'division':
-      return '부문';
+      return '모빌제품';
     case 'family':
       return '제품군';
     case 'business_type':
-      return '사업 유형';
+      return 'AUTO 제품';
     case 'industry_sector':
-      return '산업/영일분류';
+      return '산업별';
   }
 }
 
@@ -407,63 +407,141 @@ export default function BulkGoalSettingTab() {
   const handleTemplateDownload = async () => {
     try {
       const wb = XLSX.utils.book_new();
+
+      // Fetch year-round data for all 12 months
+      const response = await apiFetch(
+        withIncludeVat(`/api/dashboard/closing-meeting?tab=goal-setting&year=${year}&categoryType=${categoryType}`, includeVat)
+      );
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error('Failed to fetch data');
+      }
+
+      // Build employee-category data for ALL months
+      const employeeCategoryMap = new Map<string, {
+        employee_name: string;
+        branch: string;
+        team: string;
+        category: string;
+        industry: string;
+        sector: string;
+        monthlyData: { [month: string]: { last_year_weight: number; last_year_amount: number; target_weight?: number; target_amount?: number } };
+      }>();
+
+      // Process all months
+      result.data.employeeCategoryActual?.forEach((a: any) => {
+        const monthPart = a.month?.split('-')[1] || a.month;
+        if (a.employee_name) {
+          const baseKey = `${a.employee_name}_${a.category}_${a.industry}_${a.sector}`;
+
+          if (!employeeCategoryMap.has(baseKey)) {
+            employeeCategoryMap.set(baseKey, {
+              employee_name: a.employee_name,
+              branch: a.branch || '미분류',
+              team: a.team || '미분류',
+              category: a.category,
+              industry: a.industry || '미분류',
+              sector: a.sector || '미분류',
+              monthlyData: {}
+            });
+          }
+
+          const entry = employeeCategoryMap.get(baseKey)!;
+          if (!entry.monthlyData[monthPart]) {
+            entry.monthlyData[monthPart] = {
+              last_year_weight: 0,
+              last_year_amount: 0
+            };
+          }
+          entry.monthlyData[monthPart].last_year_weight = a.weight || 0;
+          entry.monthlyData[monthPart].last_year_amount = a.amount || 0;
+        }
+      });
+
+      // Merge goals data
+      result.data.goals?.forEach((g: any) => {
+        const monthPart = g.month?.split('-')[1] || g.month;
+        const baseKey = `${g.employee_name}_${g.category}_${g.industry}_${g.sector}`;
+        const existing = employeeCategoryMap.get(baseKey);
+        if (existing && existing.monthlyData[monthPart]) {
+          existing.monthlyData[monthPart].target_weight = g.target_weight;
+          existing.monthlyData[monthPart].target_amount = g.target_amount;
+        }
+      });
+
       const sheetData: any[] = [];
 
-      // Header for employee-category structure
-      sheetData.push([
-        '사업소',
-        '팀',
-        '담당자',
-        '카테고리',
-        `${selectedMonth}월 작년실적(중량L)`,
-        `${selectedMonth}월 작년실적(금액원)`,
-        `${selectedMonth}월 목표(중량L)`,
-        `${selectedMonth}월 목표(금액원)`,
-        '성장률(%)',
-        '비고'
-      ]);
+      // Header - one row for all 12 months
+      const headerRow = ['사업소', '팀', '담당자', '카테고리', '산업분류', '영일분류'];
+      for (let m = 1; m <= 12; m++) {
+        const month = m.toString().padStart(2, '0');
+        headerRow.push(`${m}월 목표(중량L)`, `${m}월 목표(금액원)`);
+      }
+      sheetData.push(headerRow);
 
       // Data rows
-      branches.forEach(branch => {
-        branch.teams.forEach(team => {
-          team.employees.forEach(entry => {
-            sheetData.push([
-              branch.branch,
-              team.team,
-              entry.employee_name,
-              entry.category,
-              entry.last_year_weight,
-              entry.last_year_amount,
-              entry.current_goal_weight || entry.last_year_weight,
-              entry.current_goal_amount || entry.last_year_amount,
-              entry.growth_rate_weight?.toFixed(1) || '0.0',
-              entry.has_goal ? '목표설정완료' : '목표미설정'
-            ]);
-          });
-        });
+      const sortedEntries = Array.from(employeeCategoryMap.values()).sort((a, b) => {
+        const branchCompare = a.branch.localeCompare(b.branch);
+        if (branchCompare !== 0) return branchCompare;
+        const teamCompare = a.team.localeCompare(b.team);
+        if (teamCompare !== 0) return teamCompare;
+        const nameCompare = a.employee_name.localeCompare(b.employee_name);
+        if (nameCompare !== 0) return nameCompare;
+        return a.category.localeCompare(b.category);
+      });
+
+      sortedEntries.forEach(entry => {
+        const row = [
+          entry.branch,
+          entry.team,
+          entry.employee_name,
+          entry.category,
+          entry.industry,
+          entry.sector
+        ];
+
+        for (let m = 1; m <= 12; m++) {
+          const month = m.toString().padStart(2, '0');
+          const monthData = entry.monthlyData[month];
+          if (monthData) {
+            row.push(
+              monthData.target_weight || 0,
+              monthData.target_amount || 0
+            );
+          } else {
+            row.push(0, 0);
+          }
+        }
+
+        sheetData.push(row);
       });
 
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
-      ws['!cols'] = [
-        { wch: 12 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 20 },
-        { wch: 20 },
-        { wch: 20 },
-        { wch: 12 },
-        { wch: 15 }
+
+      // Set column widths
+      const colWidths = [
+        { wch: 12 }, // 사업소
+        { wch: 15 }, // 팀
+        { wch: 15 }, // 담당자
+        { wch: 15 }, // 카테고리
+        { wch: 15 }, // 산업분류
+        { wch: 15 }  // 영일분류
       ];
+      // Add column widths for 12 months x 2 columns each
+      for (let m = 0; m < 12; m++) {
+        colWidths.push({ wch: 15 }, { wch: 15 });
+      }
+      ws['!cols'] = colWidths;
 
       const categoryTypeLabel = categoryType === 'tier' ? '등급' :
-                                 categoryType === 'division' ? '부문' :
-                                 categoryType === 'family' ? '제품군' : '사업유형';
+                                 categoryType === 'division' ? '모빌제품' :
+                                 categoryType === 'family' ? '제품군' :
+                                 categoryType === 'business_type' ? 'AUTO 제품' : '산업별';
       XLSX.utils.book_append_sheet(wb, ws, `${categoryTypeLabel} 목표설정`);
-      XLSX.writeFile(wb, generateFilename(`${year}년_${selectedMonth}월_${categoryTypeLabel}_목표설정_템플릿`));
+      XLSX.writeFile(wb, generateFilename(`${year}년_${categoryTypeLabel}_목표설정_템플릿`));
 
-      setMessage({ type: 'success', text: '템플릿 다운로드 완료. 작년 실적이 포함되어 있습니다.' });
+      setMessage({ type: 'success', text: '템플릿 다운로드 완료. 연간 데이터가 포함되어 있습니다.' });
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
       console.error('Template download error:', error);
@@ -489,24 +567,61 @@ export default function BulkGoalSettingTab() {
       // Skip header row (row 0), process data rows (row 1+)
       for (let i = 1; i < sheet.data.length; i++) {
         const row = sheet.data[i];
-        if (!row || row.length < 8) continue;
+        // Need at least 6 base columns + 2 columns per month (24 for 12 months) = 30 columns minimum
+        if (!row || row.length < 30) continue;
 
         const employeeName = row[2]; // Column 2: 담당자
         const category = row[3]; // Column 3: 카테고리
-        const goalWeight = parseFloat(row[6]) || 0; // Column 6: 목표중량
-        const goalAmount = parseFloat(row[7]) || 0; // Column 7: 목표금액
+        const industry = row[4]; // Column 4: 산업분류
+        const sector = row[5]; // Column 5: 영일분류
 
-        if (employeeName && category) {
-          const key = `${employeeName}_${category}_${selectedMonth}`;
-          newEditing.set(key, {
-            weight: goalWeight,
-            amount: goalAmount
-          });
-          updateCount++;
+        if (!employeeName || !category) continue;
+
+        // Process all 12 months
+        for (let m = 1; m <= 12; m++) {
+          const month = m.toString().padStart(2, '0');
+          const weightColIndex = 6 + (m - 1) * 2; // Column for weight
+          const amountColIndex = 7 + (m - 1) * 2; // Column for amount
+
+          const goalWeight = parseFloat(row[weightColIndex]) || 0;
+          const goalAmount = parseFloat(row[amountColIndex]) || 0;
+
+          // Only set goal if at least one value is non-zero
+          if (goalWeight > 0 || goalAmount > 0) {
+            const key = `${employeeName}_${category}_${industry}_${sector}_${month}`;
+            newEditing.set(key, {
+              weight: goalWeight,
+              amount: goalAmount
+            });
+            updateCount++;
+          }
         }
       }
 
       setEditingGoals(newEditing);
+
+      // Update the branches state to reflect uploaded goals
+      setBranches(prevBranches => {
+        return prevBranches.map(branch => ({
+          ...branch,
+          teams: branch.teams.map(team => ({
+            ...team,
+            employees: team.employees.map(emp => {
+              const key = goalEditKey(emp);
+              const uploaded = newEditing.get(key);
+              if (uploaded) {
+                return {
+                  ...emp,
+                  target_weight: uploaded.weight,
+                  target_amount: uploaded.amount
+                };
+              }
+              return emp;
+            })
+          }))
+        }));
+      });
+
       setMessage({
         type: 'success',
         text: `${updateCount}개 목표가 반영되었습니다. "전체 저장"을 눌러 확정하세요.`
@@ -602,6 +717,36 @@ export default function BulkGoalSettingTab() {
 
             <div className="flex gap-2 flex-wrap">
               <button
+                onClick={() => setCategoryType('industry_sector')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
+                  categoryType === 'industry_sector'
+                    ? 'bg-orange-600 text-white shadow-sm'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                }`}
+              >
+                산업별
+              </button>
+              <button
+                onClick={() => setCategoryType('business_type')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
+                  categoryType === 'business_type'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                }`}
+              >
+                AUTO 제품
+              </button>
+              <button
+                onClick={() => setCategoryType('division')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
+                  categoryType === 'division'
+                    ? 'bg-green-600 text-white shadow-sm'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                }`}
+              >
+                모빌제품
+              </button>
+              <button
                 onClick={() => setCategoryType('tier')}
                 className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
                   categoryType === 'tier'
@@ -612,16 +757,6 @@ export default function BulkGoalSettingTab() {
                 등급
               </button>
               <button
-                onClick={() => setCategoryType('division')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                  categoryType === 'division'
-                    ? 'bg-green-600 text-white shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                부문
-              </button>
-              <button
                 onClick={() => setCategoryType('family')}
                 className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
                   categoryType === 'family'
@@ -630,26 +765,6 @@ export default function BulkGoalSettingTab() {
                 }`}
               >
                 제품군
-              </button>
-              <button
-                onClick={() => setCategoryType('business_type')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                  categoryType === 'business_type'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                사업 유형
-              </button>
-              <button
-                onClick={() => setCategoryType('industry_sector')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                  categoryType === 'industry_sector'
-                    ? 'bg-orange-600 text-white shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                산업/영일분류
               </button>
             </div>
           </div>
@@ -785,10 +900,9 @@ export default function BulkGoalSettingTab() {
                 const totalBranchEntries = branch.teams.reduce((sum, t) => sum + t.employees.length, 0);
 
                 return (
-                  <>
+                  <Fragment key={`branch-${branch.branch}`}>
                     {/* Branch Header Row */}
                     <tr
-                      key={`branch-${branch.branch}`}
                       className="bg-blue-50/30 dark:bg-blue-900/10 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 cursor-pointer transition-colors"
                       onClick={() => toggleBranch(branch.branch)}
                     >
@@ -821,10 +935,9 @@ export default function BulkGoalSettingTab() {
                       const isTeamExpanded = expandedTeams.has(teamKey);
 
                       return (
-                        <>
+                        <Fragment key={`team-${teamKey}`}>
                           {/* Team Header Row */}
                           <tr
-                            key={`team-${teamKey}`}
                             className="bg-green-50/20 dark:bg-green-900/5 hover:bg-green-50/40 dark:hover:bg-green-900/10 cursor-pointer transition-colors"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -910,10 +1023,10 @@ export default function BulkGoalSettingTab() {
                               </tr>
                             );
                           })}
-                        </>
+                        </Fragment>
                       );
                     })}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

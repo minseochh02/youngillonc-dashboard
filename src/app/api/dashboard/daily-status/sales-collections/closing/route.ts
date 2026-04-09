@@ -372,7 +372,9 @@ export async function GET(request: Request) {
           remarks: isCard ? '카드' : '현금'
         };
       })
-      .sort((a, b) => b.amount - a.amount)
+      .sort(
+        (a: { amount: number }, b: { amount: number }) => b.amount - a.amount
+      )
       .slice(0, 20);
 
     // Map New Customers

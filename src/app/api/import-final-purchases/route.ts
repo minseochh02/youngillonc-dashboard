@@ -42,7 +42,10 @@ export async function POST(request: NextRequest) {
       { name: '품목그룹1코드', type: 'TEXT' },
       { name: '품목그룹2명', type: 'TEXT' },
       { name: '품목그룹3코드', type: 'TEXT' }
-    ];
+    ] satisfies Array<{
+      name: string;
+      type: 'TEXT' | 'INTEGER' | 'REAL' | 'DATE';
+    }>;
 
     // Create tables with purchases schema
     console.log('\nCreating tables...');

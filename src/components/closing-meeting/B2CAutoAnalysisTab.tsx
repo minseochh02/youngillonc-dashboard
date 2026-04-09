@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, Fragment } from 'react';
-import { Loader2, TrendingUp, TrendingDown, Database, ChevronDown, ChevronRight, Pencil, Save } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Database, ChevronDown, ChevronRight, Pencil, Save, X } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
@@ -68,6 +68,48 @@ interface B2CAnalysis {
     target_weight: number;
     achievement_rate: number;
   };
+  yearlySummary?: Array<{
+    year: string;
+    sales_weight: number;
+    last_year_sales_weight: number;
+    purchase_weight: number;
+    yoy_growth_rate: number;
+    target_weight: number;
+    achievement_rate: number;
+  }>;
+  yearlyCategoryBreakdown?: Array<{
+    year: string;
+    categories: Array<{
+      category: string;
+      sales_weight: number;
+      last_year_sales_weight: number;
+      purchase_weight: number;
+      yoy_growth_rate: number;
+      target_weight: number;
+      achievement_rate: number;
+      b2b_total?: {
+        sales_weight: number;
+        last_year_sales_weight: number;
+        yoy_growth_rate: number;
+      };
+      branches: Array<{
+        branch: string;
+        sales_weight: number;
+        last_year_sales_weight: number;
+        yoy_growth_rate: number;
+        target_weight: number;
+        achievement_rate: number;
+        teams: Array<{
+          team_name: string;
+          sales_weight: number;
+          last_year_sales_weight: number;
+          yoy_growth_rate: number;
+          target_weight: number;
+          achievement_rate: number;
+        }>;
+      }>;
+    }>;
+  }>;
 }
 
 interface B2CAnalysisProps {
@@ -81,6 +123,27 @@ export default function B2CAutoAnalysisTab({ selectedMonth, onMonthsAvailable }:
   const [isLoading, setIsLoading] = useState(true);
   const [expandedBranches, setExpandedBranches] = useState<Set<string>>(new Set());
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+  const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
+  const [teamDrawer, setTeamDrawer] = useState<{
+    isOpen: boolean;
+    year: string;
+    category: string;
+    branch: string;
+    teams: Array<{
+      team_name: string;
+      sales_weight: number;
+      last_year_sales_weight: number;
+      yoy_growth_rate: number;
+      target_weight: number;
+      achievement_rate: number;
+    }>;
+  }>({
+    isOpen: false,
+    year: '',
+    category: '',
+    branch: '',
+    teams: [],
+  });
   const [editingTargets, setEditingTargets] = useState<Map<string, number>>(new Map());
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const hasReportedMonths = useRef(false);
@@ -106,8 +169,10 @@ export default function B2CAutoAnalysisTab({ selectedMonth, onMonthsAvailable }:
           onMonthsAvailable(result.data.availableMonths, result.data.currentMonth);
         }
         // Expand all branches by default
-        const allBranches = new Set(result.data.branches.map((b: BranchData) => b.branch));
+        const allBranches = new Set<string>(result.data.branches.map((b: BranchData) => b.branch));
         setExpandedBranches(allBranches);
+        const firstYear = result.data.yearlySummary?.[0]?.year;
+        if (firstYear) setExpandedYears(new Set([firstYear]));
         setEditingTargets(new Map());
       }
     } catch (error) {
@@ -346,6 +411,251 @@ export default function B2CAutoAnalysisTab({ selectedMonth, onMonthsAvailable }:
     return (
       <div className="text-center text-zinc-500 dark:text-zinc-400 p-8">
         <p>데이터를 불러올 수 없습니다</p>
+      </div>
+    );
+  }
+
+  if (data.yearlySummary && data.yearlySummary.length > 0 && data.yearlyCategoryBreakdown) {
+    const displayMonth = parseInt(data.currentMonth.split('-')[1]);
+    const cumulativePeriod = `1월~${displayMonth}월 누계`;
+    const headerYear = data.yearlySummary[0]?.year || data.currentMonth.slice(0, 4);
+    const headerPrevYear = String(Number(headerYear) - 1);
+    const toggleYear = (year: string) => {
+      const next = new Set(expandedYears);
+      if (next.has(year)) next.delete(year);
+      else next.add(year);
+      setExpandedYears(next);
+    };
+    const getYearDetails = (year: string) =>
+      data.yearlyCategoryBreakdown?.find((y) => y.year === year)?.categories || [];
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+            <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">B2C 연도  ({cumulativePeriod})</h4>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm table-fixed">
+              <colgroup>
+                <col className="w-[18%]" />
+                <col className="w-[20%]" />
+                <col className="w-[20%]" />
+                <col className="w-[14%]" />
+                <col className="w-[14%]" />
+                <col className="w-[14%]" />
+              </colgroup>
+              <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                <tr>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">연도</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{headerYear} 판매(L)</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{headerPrevYear} 판매(L)</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">달성율</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">전년대비</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{headerYear} 구매(L)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.yearlySummary.map((yearRow) => {
+                  const yearDetails = getYearDetails(yearRow.year);
+                  const autoCategories = yearDetails.filter((c) => c.category === 'PVL' || c.category === 'CVL');
+                  const autoSummary = autoCategories.length > 0
+                    ? autoCategories.reduce(
+                        (acc, c) => ({
+                          sales_weight: acc.sales_weight + (c.sales_weight || 0),
+                          last_year_sales_weight: acc.last_year_sales_weight + (c.last_year_sales_weight || 0),
+                          target_weight: acc.target_weight + (c.target_weight || 0),
+                          b2b_sales_weight: acc.b2b_sales_weight + (c.b2b_total?.sales_weight || 0),
+                          b2b_last_year_sales_weight: acc.b2b_last_year_sales_weight + (c.b2b_total?.last_year_sales_weight || 0),
+                        }),
+                        { sales_weight: 0, last_year_sales_weight: 0, target_weight: 0, b2b_sales_weight: 0, b2b_last_year_sales_weight: 0 }
+                      )
+                    : null;
+                  const autoYoy = autoSummary && autoSummary.last_year_sales_weight > 0
+                    ? ((autoSummary.sales_weight - autoSummary.last_year_sales_weight) / autoSummary.last_year_sales_weight) * 100
+                    : 0;
+                  const autoAchievement = autoSummary && autoSummary.target_weight > 0
+                    ? (autoSummary.sales_weight / autoSummary.target_weight) * 100
+                    : 0;
+
+                  return (
+                  <Fragment key={yearRow.year}>
+                    <tr className="border-b border-zinc-100 dark:border-zinc-800/60 cursor-pointer hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30" onClick={() => toggleYear(yearRow.year)}>
+                      <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
+                        <span className="inline-flex items-center gap-1">
+                          {expandedYears.has(yearRow.year) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                          {yearRow.year}년
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono">{formatNumber(yearRow.sales_weight)}</td>
+                      <td className="py-3 px-4 text-right font-mono">{formatNumber(yearRow.last_year_sales_weight)}</td>
+                      <td className="py-3 px-4 text-right">{yearRow.achievement_rate.toFixed(1)}%</td>
+                      <td className="py-3 px-4 text-right">{yearRow.yoy_growth_rate.toFixed(1)}%</td>
+                      <td className="py-3 px-4 text-right font-mono">{formatNumber(yearRow.purchase_weight)}</td>
+                    </tr>
+                    {expandedYears.has(yearRow.year) && (
+                      <tr className="bg-zinc-50/40 dark:bg-zinc-900/30">
+                        <td colSpan={6} className="p-0">
+                          <div className="py-2">
+                            <table className="w-full text-xs table-fixed border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
+                              <colgroup>
+                                <col className="w-[8%]" />
+                                <col className="w-[10%]" />
+                                <col className="w-[20%]" />
+                                <col className="w-[20%]" />
+                                <col className="w-[14%]" />
+                                <col className="w-[14%]" />
+                                <col className="w-[14%]" />
+                              </colgroup>
+                              <thead className="bg-zinc-100 dark:bg-zinc-800">
+                                <tr>
+                                  <th className="text-left py-2 px-3">제품품목</th>
+                                  <th className="text-left py-2 px-3">사업소</th>
+                                  <th className="text-right py-2 px-3">{headerYear} 판매(L)</th>
+                                  <th className="text-right py-2 px-3">{headerPrevYear} 판매(L)</th>
+                                  <th className="text-right py-2 px-3">달성율</th>
+                                  <th className="text-right py-2 px-3">전년대비</th>
+                                  <th className="text-right py-2 px-3"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {yearDetails.map((cat) => (
+                                  <Fragment key={`${yearRow.year}_${cat.category}`}>
+                                    {cat.category === 'PVL' && autoSummary && (
+                                      <tr className="border-b border-zinc-200 dark:border-zinc-700 bg-blue-50/60 dark:bg-blue-900/20">
+                                        <td className="py-2 px-3 font-semibold text-blue-700 dark:text-blue-300">AUTO 합계</td>
+                                        <td className="py-2 px-3">-</td>
+                                        <td className="py-2 px-3 text-right font-mono font-semibold">{formatNumber(autoSummary.sales_weight)}</td>
+                                        <td className="py-2 px-3 text-right font-mono font-semibold">{formatNumber(autoSummary.last_year_sales_weight)}</td>
+                                        <td className={`py-2 px-3 text-right font-semibold ${autoAchievement >= 100 ? 'text-green-600' : 'text-red-600'}`}>
+                                          {autoAchievement.toFixed(1)}%
+                                        </td>
+                                        <td className={`py-2 px-3 text-right font-semibold ${autoYoy >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                          {autoYoy.toFixed(1)}%
+                                        </td>
+                                        <td className="py-2 px-3"></td>
+                                      </tr>
+                                    )}
+                                    <tr className="border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/30 dark:bg-zinc-800/20">
+                                      <td className="py-2 px-3 font-medium">{cat.category}</td>
+                                      <td className="py-2 px-3">-</td>
+                                      <td className="py-2 px-3 text-right font-mono">{formatNumber(cat.sales_weight)}</td>
+                                      <td className="py-2 px-3 text-right font-mono">{formatNumber(cat.last_year_sales_weight)}</td>
+                                      <td className="py-2 px-3 text-right">{(cat.achievement_rate ?? 0).toFixed(1)}%</td>
+                                      <td className="py-2 px-3 text-right">{(cat.yoy_growth_rate ?? 0).toFixed(1)}%</td>
+                                      <td className="py-2 px-3"></td>
+                                    </tr>
+                                    {cat.branches.map((branch) => (
+                                      <Fragment key={`${yearRow.year}_${cat.category}_${branch.branch}`}>
+                                        <tr
+                                          className="border-b border-zinc-100/70 dark:border-zinc-800/40 cursor-pointer hover:bg-zinc-100/60 dark:hover:bg-zinc-800/40"
+                                          onClick={() =>
+                                            setTeamDrawer({
+                                              isOpen: true,
+                                              year: yearRow.year,
+                                              category: cat.category,
+                                              branch: branch.branch,
+                                              teams: branch.teams,
+                                            })
+                                          }
+                                        >
+                                          <td className="py-1.5 px-3"></td>
+                                          <td className="py-1.5 px-3 font-medium">
+                                            <span className="inline-flex items-center gap-1">
+                                              {branch.branch}
+                                              <ChevronRight className="w-3 h-3 text-zinc-400" />
+                                            </span>
+                                          </td>
+                                          <td className="py-1.5 px-3 text-right font-mono">{formatNumber(branch.sales_weight)}</td>
+                                          <td className="py-1.5 px-3 text-right font-mono">{formatNumber(branch.last_year_sales_weight)}</td>
+                                          <td className={`py-1.5 px-3 text-right font-medium ${(branch.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {(branch.achievement_rate ?? 0).toFixed(1)}%
+                                          </td>
+                                          <td className={`py-1.5 px-3 text-right font-medium ${(branch.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {(branch.yoy_growth_rate ?? 0).toFixed(1)}%
+                                          </td>
+                                          <td className="py-1.5 px-3"></td>
+                                        </tr>
+                                      </Fragment>
+                                    ))}
+                                    <tr className="border-b border-zinc-100/70 dark:border-zinc-800/40 bg-zinc-50/70 dark:bg-zinc-800/30">
+                                      <td className="py-1.5 px-3"></td>
+                                      <td className="py-1.5 px-3 font-semibold text-zinc-700 dark:text-zinc-200">B2B</td>
+                                      <td className="py-1.5 px-3 text-right font-mono">{formatNumber(cat.b2b_total?.sales_weight ?? 0)}</td>
+                                      <td className="py-1.5 px-3 text-right font-mono">{formatNumber(cat.b2b_total?.last_year_sales_weight ?? 0)}</td>
+                                      <td className="py-1.5 px-3 text-right">-</td>
+                                      <td className={`py-1.5 px-3 text-right font-medium ${(cat.b2b_total?.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {(cat.b2b_total?.yoy_growth_rate ?? 0).toFixed(1)}%
+                                      </td>
+                                      <td className="py-1.5 px-3"></td>
+                                    </tr>
+                                  </Fragment>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )})}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {teamDrawer.isOpen && (
+          <>
+            <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setTeamDrawer((prev) => ({ ...prev, isOpen: false }))} />
+            <div className="fixed top-0 right-0 h-full w-full sm:w-[560px] bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 shadow-2xl z-50">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
+                <div>
+                  <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                    {teamDrawer.year}년 {teamDrawer.category} / {teamDrawer.branch}
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">팀별 상세</p>
+                </div>
+                <button
+                  type="button"
+                  className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  onClick={() => setTeamDrawer((prev) => ({ ...prev, isOpen: false }))}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto h-[calc(100%-61px)]">
+                <table className="w-full text-xs border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
+                  <thead className="bg-zinc-100 dark:bg-zinc-800">
+                    <tr>
+                      <th className="text-left py-2 px-3">팀</th>
+                      <th className="text-right py-2 px-3">{teamDrawer.year} 판매(L)</th>
+                      <th className="text-right py-2 px-3">{String(Number(teamDrawer.year) - 1)} 판매(L)</th>
+                      <th className="text-right py-2 px-3">달성율</th>
+                      <th className="text-right py-2 px-3">전년대비</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamDrawer.teams.map((team) => (
+                      <tr key={`${teamDrawer.year}_${teamDrawer.category}_${teamDrawer.branch}_${team.team_name}`} className="border-b border-zinc-100 dark:border-zinc-800/50">
+                        <td className="py-2 px-3">{team.team_name}</td>
+                        <td className="py-2 px-3 text-right font-mono">{formatNumber(team.sales_weight)}</td>
+                        <td className="py-2 px-3 text-right font-mono">{formatNumber(team.last_year_sales_weight)}</td>
+                        <td className={`py-2 px-3 text-right font-medium ${(team.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-red-600'}`}>
+                          {(team.achievement_rate ?? 0).toFixed(1)}%
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <span className={`inline-flex items-center gap-1 justify-end font-medium ${(team.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {(team.yoy_growth_rate ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                            {(team.yoy_growth_rate ?? 0).toFixed(1)}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   }

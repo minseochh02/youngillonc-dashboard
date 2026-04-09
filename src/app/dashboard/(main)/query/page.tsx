@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Search, Loader2, ChevronDown, ChevronUp, Clock, Star } from 'lucide-react';
 import GenericResultTable from '@/components/GenericResultTable';
@@ -160,7 +160,7 @@ function ResultSection({ result, index }: { result: SingleResult; index: number 
   );
 }
 
-export default function QueryPage() {
+function QueryPageContent() {
   const searchParams = useSearchParams();
   const { saveQuery, updateExecutionStats, getQuery } = useStarredQueries();
 
@@ -414,5 +414,19 @@ export default function QueryPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function QueryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[240px] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+        </div>
+      }
+    >
+      <QueryPageContent />
+    </Suspense>
   );
 }

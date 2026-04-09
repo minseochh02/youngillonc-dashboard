@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactElement } from 'react';
 import { Calendar, Users, Building, Package, Filter, Loader2, TrendingUp, DollarSign, ShoppingCart, BarChart3, ChevronRight, ChevronDown, GripVertical, Target } from 'lucide-react';
 import VatToggle from '@/components/VatToggle';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
@@ -442,8 +442,11 @@ export default function SalesAnalysisPage() {
     setHierarchicalData(collapse(hierarchicalData));
   };
 
-  const renderHierarchicalRows = (nodes: HierarchicalNode[], path: number[] = []): JSX.Element[] => {
-    const rows: JSX.Element[] = [];
+  const renderHierarchicalRows = (
+    nodes: HierarchicalNode[],
+    path: number[] = []
+  ): ReactElement[] => {
+    const rows: ReactElement[] = [];
 
     nodes.forEach((node, index) => {
       const currentPath = [...path, index];
@@ -765,7 +768,7 @@ export default function SalesAnalysisPage() {
   };
 
   const getActiveGroupingLabel = () => {
-    const labels = [];
+    const labels: string[] = [];
 
     employeeGroupings.forEach(group => {
       const label = group === 'individual' ? '개인별' : group === 'team' ? '팀별' : '사업소별';
