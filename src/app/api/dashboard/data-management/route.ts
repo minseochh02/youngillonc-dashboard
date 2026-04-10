@@ -144,7 +144,17 @@ export async function POST(request: Request) {
     });
 
     if (tableName === 'employee_category' && replaceAll === true) {
-      await executeSQL('DELETE FROM employee_category');
+      // user_data_sql_query is SELECT-only; use delete_rows by id instead of raw DELETE.
+      const existing = await queryTable('employee_category', { limit: 100000 });
+      const ids = (existing?.rows || [])
+        .map((r: Record<string, unknown>) => r.id)
+        .filter((id): id is number | string => id != null && id !== '')
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id));
+      const DELETE_CHUNK = 500;
+      for (let i = 0; i < ids.length; i += DELETE_CHUNK) {
+        await deleteRows('employee_category', { ids: ids.slice(i, i + DELETE_CHUNK) });
+      }
       const inserts = filteredRows.map(({ id: _id, ...rest }) => rest);
       if (inserts.length > 0) {
         await insertRows('employee_category', inserts);

@@ -124,7 +124,8 @@ export async function aggregateTable(
 }
 
 /**
- * Execute raw SQL query (read-only, SELECT only)
+ * Execute raw SQL via user_data_sql_query (read-only: SELECT only).
+ * Do not use for DELETE/UPDATE/INSERT — use deleteRows / updateRows / insertRows.
  */
 export async function executeSQL(query: string) {
   return callUserDataTool('user_data_sql_query', { query });
