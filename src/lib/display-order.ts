@@ -1,5 +1,5 @@
 import { queryTable } from '@/egdesk-helpers';
-import { DISPLAY_ORDER_FALLBACK } from './display-order-core';
+import { DISPLAY_ORDER_FALLBACK, normalizeBranchFromEmployeeCategory } from './display-order-core';
 import type { DisplayOrderScope } from './display-order-core';
 
 export * from './display-order-core';
@@ -14,7 +14,12 @@ export async function loadOfficeOrderMap(): Promise<Map<string, number>> {
   for (const row of r?.rows || []) {
     const name = String(row?.사업소 ?? '').trim();
     if (!name) continue;
-    m.set(name, Number(row?.노출순서 ?? DISPLAY_ORDER_FALLBACK));
+    const ord = Number(row?.노출순서 ?? DISPLAY_ORDER_FALLBACK);
+    m.set(name, ord);
+    const normalized = normalizeBranchFromEmployeeCategory(name);
+    if (normalized && normalized !== name) {
+      m.set(normalized, ord);
+    }
   }
   return m;
 }
