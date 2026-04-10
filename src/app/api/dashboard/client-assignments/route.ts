@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeSQL, updateRows } from '@/egdesk-helpers';
+import { compareEmployees, compareOffices, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
 
 type CategoryType = 'tier' | 'division' | 'family' | 'business_type';
 
@@ -175,6 +176,8 @@ export async function GET(request: NextRequest) {
     const includeProducts = searchParams.get('includeProducts') === 'true';
     const categoryType = (searchParams.get('categoryType') || 'tier') as CategoryType;
 
+    const orderCtx = await loadFullDisplayOrderContext();
+
     // Get CURRENT client assignments (who manages which clients right now)
     const query = `
       SELECT
@@ -283,6 +286,19 @@ export async function GET(request: NextRequest) {
     }
 
     const employeeAssignments = Array.from(employeeMap.values());
+
+    const sortAssignmentRow = (a: any, b: any) => {
+      const o = compareOffices(String(a.branch ?? ''), String(b.branch ?? ''), orderCtx.office);
+      if (o !== 0) return o;
+      const ta = String(a.b2c_team || a.b2b_team || '').trim();
+      const tb = String(b.b2c_team || b.b2b_team || '').trim();
+      const tc = compareTeams(ta, tb, orderCtx.teamB2c, orderCtx.teamB2b);
+      if (tc !== 0) return tc;
+      return compareEmployees(ta, String(a.employee_name ?? ''), String(b.employee_name ?? ''), orderCtx.empB2c, orderCtx.empB2b);
+    };
+
+    employeeAssignments.sort(sortAssignmentRow);
+    employeesResult.sort(sortAssignmentRow);
 
     return NextResponse.json({
       success: true,

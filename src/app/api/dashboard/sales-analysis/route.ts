@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { compareOffices, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
 
 /**
  * API Endpoint for Sales Analysis with Three-Way Filtering
@@ -215,6 +216,8 @@ export async function GET(request: Request) {
     const resultData = await executeSQL(query);
     const data = resultData?.rows || [];
 
+    const orderCtx = await loadFullDisplayOrderContext();
+
     // Get filter options for dropdowns
     const filterOptionsQueries = {
       employees: `
@@ -285,6 +288,13 @@ export async function GET(request: Request) {
       const result = await executeSQL(query);
       filterOptions[key] = result?.rows || [];
     }
+
+    filterOptions.teams?.sort((a: { name: string }, b: { name: string }) =>
+      compareTeams(a.name, b.name, orderCtx.teamB2c, orderCtx.teamB2b)
+    );
+    filterOptions.branches?.sort((a: { name: string }, b: { name: string }) =>
+      compareOffices(a.name, b.name, orderCtx.office)
+    );
 
     return NextResponse.json({
       success: true,

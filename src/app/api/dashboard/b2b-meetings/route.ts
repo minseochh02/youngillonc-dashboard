@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
 
 /** YTD through the same calendar month for current and prior year (alias must be the sales table alias, e.g. s). */
 function sqlSalesYtdThroughMonth(
@@ -62,6 +63,8 @@ export async function GET(request: Request) {
     const lastYear = currentYear - 1;
     const lastYearMonthStr = `${lastYear}-${refMonthPart}`;
     const monthMeta = { availableMonths, currentMonth: currentMonthStr };
+
+    const orderCtx = await loadFullDisplayOrderContext();
 
     // 0. Base table for sales (unioned across all three tables and using 실납업체 logic)
     const baseSalesSubquery = `(
@@ -701,6 +704,20 @@ export async function GET(request: Request) {
         total_amount: Number(row.total_amount || 0),
         total_quantity: Number(row.total_quantity || 0),
       }));
+
+      allProductsData.sort((a: (typeof allProductsData)[0], b: (typeof allProductsData)[0]) => {
+        const tc = compareTeams(a.team, b.team, orderCtx.teamB2c, orderCtx.teamB2b);
+        if (tc !== 0) return tc;
+        const yc = String(a.year).localeCompare(String(b.year), 'ko');
+        if (yc !== 0) return yc;
+        return String(a.year_month || '').localeCompare(String(b.year_month || ''), 'ko');
+      });
+
+      yearlyTrendData.sort((a: (typeof yearlyTrendData)[0], b: (typeof yearlyTrendData)[0]) => {
+        const tc = compareTeams(a.team, b.team, orderCtx.teamB2c, orderCtx.teamB2b);
+        if (tc !== 0) return tc;
+        return String(a.year).localeCompare(String(b.year), 'ko');
+      });
 
       return NextResponse.json({
         success: true,

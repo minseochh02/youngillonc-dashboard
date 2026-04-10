@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { compareOffices, loadOfficeOrderMap } from '@/lib/display-order';
 
 /**
  * API Endpoint for Daily Inventory Status Sheet (일일재고파악시트)
@@ -15,7 +16,9 @@ export async function GET(request: Request) {
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const isFebruary = date.startsWith('2026-02');
     const isFeb1st = date === '2026-02-01';
-    
+
+    const officeOrder = await loadOfficeOrderMap();
+
     // Helpers
     const branchCase = (column: string) => `
       CASE
@@ -303,7 +306,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       data: {
-        branches: Array.from(branches).sort(),
+        branches: Array.from(branches).sort((a, b) => compareOffices(a, b, officeOrder)),
         stats,
         date
       }

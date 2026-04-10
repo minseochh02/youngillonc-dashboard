@@ -3,6 +3,8 @@
 import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
+import { useDisplayOrderBootstrap } from '@/hooks/useDisplayOrderBootstrap';
+import { compareTeams } from '@/lib/display-order-core';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -65,6 +67,7 @@ export default function SalesAmountTab({
   onMonthsAvailable,
 }: SalesAmountTabProps) {
   const { includeVat } = useVatInclude();
+  const displayOrder = useDisplayOrderBootstrap();
   const [data, setData] = useState<SalesAmountData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -198,7 +201,9 @@ export default function SalesAmountTab({
   });
 
   // Sort teams and employees by cumulative sales
-  employeeMonthGroups.sort((a, b) => a.team.localeCompare(b.team));
+  employeeMonthGroups.sort((a, b) =>
+    compareTeams(a.team, b.team, displayOrder.teamB2c, displayOrder.teamB2b)
+  );
   employeeMonthGroups.forEach(group => {
     group.employees.sort((a, b) => {
       const aCumulative = getEmployeeCumulativeData(a.name, currentYear, currentMonthStr);
@@ -252,7 +257,9 @@ export default function SalesAmountTab({
   });
 
   // Sort teams and employees within each team
-  teamGroups.sort((a, b) => a.team.localeCompare(b.team));
+  teamGroups.sort((a, b) =>
+    compareTeams(a.team, b.team, displayOrder.teamB2c, displayOrder.teamB2b)
+  );
   teamGroups.forEach(group => {
     group.employees.sort((a, b) => {
       const aCurrent = getEmployeeData(group.team, a.name, currentYear);

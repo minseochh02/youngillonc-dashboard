@@ -3,6 +3,8 @@
 import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
+import { useDisplayOrderBootstrap } from '@/hooks/useDisplayOrderBootstrap';
+import { compareOffices, compareTeams } from '@/lib/display-order-core';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
 interface SummaryDataRow {
@@ -106,6 +108,7 @@ type ViewMode = 'yoy' | 'goal';
 
 export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: ManagerSalesTabProps) {
   const { includeVat } = useVatInclude();
+  const displayOrder = useDisplayOrderBootstrap();
   const [data, setData] = useState<ManagerSalesData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('yoy');
@@ -522,9 +525,8 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
 
   // Sort by team, then by total weight
   const employeeList = Object.values(employeeChannelMap).sort((a, b) => {
-    if (a.team !== b.team) {
-      return a.team.localeCompare(b.team);
-    }
+    const tc = compareTeams(a.team, b.team, displayOrder.teamB2c, displayOrder.teamB2b);
+    if (tc !== 0) return tc;
     return b.total_current - a.total_current;
   });
 
@@ -535,7 +537,7 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
 
   const branchesSorted = Array.from(
     new Set(employeeList.map((e) => normalizeBranch(e.branch)))
-  ).sort((a, b) => a.localeCompare(b, 'ko'));
+  ).sort((a, b) => compareOffices(a, b, displayOrder.office));
 
   const filteredEmployeeList =
     branchFilter === null
@@ -729,9 +731,8 @@ export default function ManagerSalesTab({ selectedMonth, onMonthsAvailable }: Ma
   }
 
   const employeeMonthList = Object.values(employeeMonthMap).sort((a, b) => {
-    if (a.team !== b.team) {
-      return a.team.localeCompare(b.team);
-    }
+    const tc = compareTeams(a.team, b.team, displayOrder.teamB2c, displayOrder.teamB2b);
+    if (tc !== 0) return tc;
     return b.cumulative_total_current - a.cumulative_total_current;
   });
 

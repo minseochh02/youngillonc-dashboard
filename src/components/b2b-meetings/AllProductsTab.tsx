@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, TrendingDown, Package } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
+import { useDisplayOrderBootstrap } from '@/hooks/useDisplayOrderBootstrap';
+import { compareTeams } from '@/lib/display-order-core';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -41,6 +43,7 @@ interface AllProductsTabProps {
 
 export default function AllProductsTab({ selectedMonth, onMonthsAvailable }: AllProductsTabProps) {
   const { includeVat } = useVatInclude();
+  const displayOrder = useDisplayOrderBootstrap();
   const [data, setData] = useState<AllProductsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -101,10 +104,9 @@ export default function AllProductsTab({ selectedMonth, onMonthsAvailable }: All
 
   // Get unique teams and sort them
   const teams = Array.from(new Set(allProductsData.map(d => d.team))).sort((a, b) => {
-    // Put AUTO last
-    if (a === 'AUTO') return 1;
-    if (b === 'AUTO') return -1;
-    return a.localeCompare(b);
+    if (a === 'AUTO' && b !== 'AUTO') return 1;
+    if (b === 'AUTO' && a !== 'AUTO') return -1;
+    return compareTeams(a, b, displayOrder.teamB2c, displayOrder.teamB2b);
   });
 
   const refYm = selectedMonth || apiMonth || `${currentYear}-12`;

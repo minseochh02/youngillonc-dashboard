@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '../../../../egdesk-helpers';
+import { compareEmployees, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
 
 type ChangwonEmployeeRow = {
   사원_담당_코드?: string;
@@ -13,6 +14,8 @@ type ChangwonEmployeeRow = {
 
 export async function GET() {
   try {
+    const orderCtx = await loadFullDisplayOrderContext();
+
     // Get employees assigned to 창원
     const employeesQuery = `
       SELECT
@@ -54,6 +57,18 @@ export async function GET() {
           ? '0.00'
           : (((row.total_weight ?? 0) / total) * 100).toFixed(2)
     }));
+
+    withPercentage.sort((a, b) => {
+      const tc = compareTeams(String(a.b2c_팀 ?? ''), String(b.b2c_팀 ?? ''), orderCtx.teamB2c, orderCtx.teamB2b);
+      if (tc !== 0) return tc;
+      return compareEmployees(
+        String(a.b2c_팀 ?? ''),
+        String(a.사원_담당_명 ?? ''),
+        String(b.사원_담당_명 ?? ''),
+        orderCtx.empB2c,
+        orderCtx.empB2b
+      );
+    });
 
     return NextResponse.json({
       success: true,

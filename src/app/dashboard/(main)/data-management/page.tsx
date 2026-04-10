@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Database, Users, Building2, Package, Tags, MapPin, Settings, Loader2, Save, CheckCircle2, AlertCircle, X, Info, ArrowUp, ArrowDown } from 'lucide-react';
+import { Database, Users, Building2, Package, Tags, MapPin, Settings, Loader2, Save, CheckCircle2, AlertCircle, X, Info, ArrowUp, ArrowDown, ListOrdered } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { ExcelUploadButton } from '@/components/ExcelUploadButton';
@@ -80,6 +80,22 @@ const baselineTables = [
     rowCount: 'new',
     keyColumns: ['사업소'],
   },
+  {
+    id: 'display_order_b2c',
+    label: 'B2C 팀·사원 노출 순서',
+    icon: ListOrdered,
+    description: 'b2c_팀 및 팀 내 담당자 표시 순서 (사원분류 기준)',
+    rowCount: '—',
+    keyColumns: ['scope', '팀', '담당자'],
+  },
+  {
+    id: 'display_order_b2b',
+    label: 'B2B 팀·사원 노출 순서',
+    icon: ListOrdered,
+    description: 'b2b팀 및 팀 내 담당자 표시 순서 (사원분류 기준)',
+    rowCount: '—',
+    keyColumns: ['scope', '팀', '담당자'],
+  },
 ];
 
 export default function DataManagementPage() {
@@ -90,6 +106,14 @@ export default function DataManagementPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [stagedDiffs, setStagedDiffs] = useState<StagedDiff[] | null>(null);
   const isOfficeDisplayOrderTable = activeTable === 'office_display_order';
+  const isChannelDisplayOrderTable =
+    activeTable === 'display_order_b2c' || activeTable === 'display_order_b2b';
+
+  const [channelTeams, setChannelTeams] = useState<Array<{ 팀: string; 노출순서: number }>>([]);
+  const [channelEmployeesByTeam, setChannelEmployeesByTeam] = useState<
+    Record<string, Array<{ 담당자: string; 팀내_노출순서: number }>>
+  >({});
+  const [selectedChannelTeam, setSelectedChannelTeam] = useState<string>('');
 
   useEffect(() => {
     cancelStaging();
@@ -99,14 +123,34 @@ export default function DataManagementPage() {
   const fetchTableData = async () => {
     setIsLoading(true);
     try {
-      const response = await apiFetch(`/api/dashboard/data-management?table=${activeTable}`);
-      const result = await response.json();
-      if (result.success) {
-        if (activeTable === 'office_display_order') {
-          const sorted = [...(result.data || [])].sort((a, b) => Number(a?.노출순서 ?? 0) - Number(b?.노출순서 ?? 0));
-          setTableData(sorted);
-        } else {
-          setTableData(result.data);
+      if (activeTable === 'display_order_b2c' || activeTable === 'display_order_b2b') {
+        const scope = activeTable === 'display_order_b2c' ? 'b2c' : 'b2b';
+        const response = await apiFetch(`/api/dashboard/display-order?scope=${scope}`);
+        const result = await response.json();
+        if (result.success) {
+          const teams = (result.teams || []) as Array<{ 팀: string; 노출순서: number }>;
+          const byTeam = (result.employeesByTeam || {}) as Record<
+            string,
+            Array<{ 담당자: string; 팀내_노출순서: number }>
+          >;
+          setChannelTeams(teams);
+          setChannelEmployeesByTeam(byTeam);
+          setSelectedChannelTeam((prev) => {
+            if (prev && byTeam[prev]) return prev;
+            return teams[0]?.팀 ?? '';
+          });
+        }
+        setTableData([]);
+      } else {
+        const response = await apiFetch(`/api/dashboard/data-management?table=${activeTable}`);
+        const result = await response.json();
+        if (result.success) {
+          if (activeTable === 'office_display_order') {
+            const sorted = [...(result.data || [])].sort((a, b) => Number(a?.노출순서 ?? 0) - Number(b?.노출순서 ?? 0));
+            setTableData(sorted);
+          } else {
+            setTableData(result.data);
+          }
         }
       }
     } catch (error) {
@@ -329,6 +373,78 @@ export default function DataManagementPage() {
     }
   };
 
+  const channelScope = activeTable === 'display_order_b2b' ? 'b2b' : 'b2c';
+
+  const handleMoveChannelTeam = async (index: number, direction: 'up' | 'down') => {
+    if (!isChannelDisplayOrderTable || isSaving || channelTeams.length === 0) return;
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= channelTeams.length) return;
+    const next = [...channelTeams];
+    [next[index], next[target]] = [next[target], next[index]];
+    const normalized = next.map((row, idx) => ({ ...row, 노출순서: idx + 1 }));
+    setChannelTeams(normalized);
+    setIsSaving(true);
+    setMessage(null);
+    try {
+      const res = await apiFetch('/api/dashboard/display-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'replaceTeams',
+          scope: channelScope,
+          rows: normalized.map((r) => ({ 팀: r.팀, 노출순서: r.노출순서 })),
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || '저장 실패');
+      setMessage({ type: 'success', text: '팀 노출 순서가 저장되었습니다.' });
+    } catch {
+      setMessage({ type: 'error', text: '팀 순서 저장 중 오류가 발생했습니다.' });
+      fetchTableData();
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const handleMoveChannelEmployee = async (index: number, direction: 'up' | 'down') => {
+    if (!isChannelDisplayOrderTable || isSaving || !selectedChannelTeam) return;
+    const list = [...(channelEmployeesByTeam[selectedChannelTeam] || [])].sort(
+      (a, b) => a.팀내_노출순서 - b.팀내_노출순서
+    );
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= list.length) return;
+    [list[index], list[target]] = [list[target], list[index]];
+    const normalized = list.map((row, idx) => ({ ...row, 팀내_노출순서: idx + 1 }));
+    setChannelEmployeesByTeam((prev) => ({
+      ...prev,
+      [selectedChannelTeam]: normalized,
+    }));
+    setIsSaving(true);
+    setMessage(null);
+    try {
+      const res = await apiFetch('/api/dashboard/display-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'replaceTeamEmployees',
+          scope: channelScope,
+          팀: selectedChannelTeam,
+          rows: normalized.map((r) => ({ 담당자: r.담당자, 팀내_노출순서: r.팀내_노출순서 })),
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || '저장 실패');
+      setMessage({ type: 'success', text: '사원 노출 순서가 저장되었습니다.' });
+    } catch {
+      setMessage({ type: 'error', text: '사원 순서 저장 중 오류가 발생했습니다.' });
+      fetchTableData();
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
   return (
     <div className="space-y-6 min-w-0 w-full max-w-full">
       {/* Header */}
@@ -380,7 +496,7 @@ export default function DataManagementPage() {
       </div>
 
       {/* Table Selection Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-2.5">
         {baselineTables.map((table) => {
           const Icon = table.icon;
           const isActive = activeTable === table.id;
@@ -390,25 +506,25 @@ export default function DataManagementPage() {
               key={table.id}
               onClick={() => setActiveTable(table.id)}
               className={`
-                p-4 rounded-xl border-2 transition-all text-left
+                p-2.5 rounded-lg border transition-all text-left
                 ${isActive
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20'
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20 ring-1 ring-blue-500/20'
                   : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-blue-300 dark:hover:border-blue-700'
                 }
               `}
             >
-              <div className="flex items-start gap-3">
-                <div className={`p-2 rounded-lg ${isActive ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-zinc-100 dark:bg-zinc-800'}`}>
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-400'}`} />
+              <div className="flex items-start gap-2">
+                <div className={`p-1.5 rounded-md shrink-0 ${isActive ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-zinc-100 dark:bg-zinc-800'}`}>
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-400'}`} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className={`text-sm font-semibold mb-1 ${isActive ? 'text-blue-900 dark:text-blue-100' : 'text-zinc-900 dark:text-zinc-100'}`}>
+                  <h3 className={`text-xs font-semibold leading-tight mb-0.5 ${isActive ? 'text-blue-900 dark:text-blue-100' : 'text-zinc-900 dark:text-zinc-100'}`}>
                     {table.label}
                   </h3>
-                  <p className={`text-xs mb-2 ${isActive ? 'text-blue-700 dark:text-blue-300' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                  <p className={`text-[11px] leading-snug line-clamp-2 mb-1 ${isActive ? 'text-blue-700 dark:text-blue-300' : 'text-zinc-500 dark:text-zinc-400'}`}>
                     {table.description}
                   </p>
-                  <div className={`text-xs font-medium ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-400'}`}>
+                  <div className={`text-[10px] font-medium tabular-nums ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-400'}`}>
                     {table.rowCount} rows
                   </div>
                 </div>
@@ -431,17 +547,16 @@ export default function DataManagementPage() {
                   {activeTableInfo.description}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <ExcelDownloadButton 
-                  label="내보내기" 
-                  onClick={handleDownload}
-                  variant="secondary"
-                />
-                <ExcelUploadButton 
-                  label="가져오기"
-                  onUpload={handleUpload}
-                />
-              </div>
+              {!isChannelDisplayOrderTable && (
+                <div className="flex items-center gap-2">
+                  <ExcelDownloadButton
+                    label="내보내기"
+                    onClick={handleDownload}
+                    variant="secondary"
+                  />
+                  <ExcelUploadButton label="가져오기" onUpload={handleUpload} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -548,6 +663,115 @@ export default function DataManagementPage() {
                   </tbody>
                 </table>
               </div>
+            ) : isChannelDisplayOrderTable ? (
+              <div className="p-6 space-y-8">
+                <div>
+                  <h5 className="text-sm font-bold text-zinc-800 dark:text-zinc-100 mb-3">팀 노출 순서</h5>
+                  {channelTeams.length === 0 ? (
+                    <p className="text-sm text-zinc-500">사원분류에 해당 채널 팀 데이터가 없습니다.</p>
+                  ) : (
+                    <table className="w-full text-xs text-left border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                      <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                        <tr>
+                          <th className="px-4 py-2 font-bold text-zinc-600 dark:text-zinc-400">노출순서</th>
+                          <th className="px-4 py-2 font-bold text-zinc-600 dark:text-zinc-400">팀</th>
+                          <th className="px-4 py-2 w-36">순서 이동</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        {channelTeams.map((row, idx) => (
+                          <tr key={row.팀}>
+                            <td className="px-4 py-2 font-semibold">{row.노출순서}</td>
+                            <td className="px-4 py-2">{row.팀}</td>
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveChannelTeam(idx, 'up')}
+                                  disabled={isSaving || idx === 0}
+                                  className="inline-flex items-center justify-center p-1.5 rounded border border-zinc-300 dark:border-zinc-700 disabled:opacity-40"
+                                  title="위로"
+                                >
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveChannelTeam(idx, 'down')}
+                                  disabled={isSaving || idx === channelTeams.length - 1}
+                                  className="inline-flex items-center justify-center p-1.5 rounded border border-zinc-300 dark:border-zinc-700 disabled:opacity-40"
+                                  title="아래로"
+                                >
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div>
+                  <h5 className="text-sm font-bold text-zinc-800 dark:text-zinc-100 mb-3">팀 내 사원 순서</h5>
+                  <div className="flex flex-wrap items-center gap-3 mb-3">
+                    <label className="text-xs text-zinc-500">팀 선택</label>
+                    <select
+                      className="text-sm border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-1.5 bg-white dark:bg-zinc-800"
+                      value={selectedChannelTeam}
+                      onChange={(e) => setSelectedChannelTeam(e.target.value)}
+                    >
+                      {channelTeams.map((t) => (
+                        <option key={t.팀} value={t.팀}>
+                          {t.팀}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {!selectedChannelTeam ? (
+                    <p className="text-sm text-zinc-500">팀을 선택하세요.</p>
+                  ) : (
+                    <table className="w-full text-xs text-left border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                      <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                        <tr>
+                          <th className="px-4 py-2 font-bold text-zinc-600 dark:text-zinc-400">팀내 순서</th>
+                          <th className="px-4 py-2 font-bold text-zinc-600 dark:text-zinc-400">담당자</th>
+                          <th className="px-4 py-2 w-36">순서 이동</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        {([...(channelEmployeesByTeam[selectedChannelTeam] || [])].sort(
+                          (a, b) => a.팀내_노출순서 - b.팀내_노출순서
+                        )).map((row, idx, arr) => (
+                          <tr key={row.담당자}>
+                            <td className="px-4 py-2 font-semibold">{row.팀내_노출순서}</td>
+                            <td className="px-4 py-2">{row.담당자}</td>
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveChannelEmployee(idx, 'up')}
+                                  disabled={isSaving || idx === 0}
+                                  className="inline-flex items-center justify-center p-1.5 rounded border border-zinc-300 dark:border-zinc-700 disabled:opacity-40"
+                                >
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveChannelEmployee(idx, 'down')}
+                                  disabled={isSaving || idx === arr.length - 1}
+                                  className="inline-flex items-center justify-center p-1.5 rounded border border-zinc-300 dark:border-zinc-700 disabled:opacity-40"
+                                >
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
             ) : tableData.length > 0 ? (
               <table className="w-full text-xs text-left">
                 <thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800">
@@ -619,7 +843,7 @@ export default function DataManagementPage() {
                 <p className="text-sm">엑셀 가져오기를 통해 데이터를 추가해 보세요.</p>
               </div>
             )}
-            {!isLoading && tableData.length > 50 && (
+            {!isLoading && !isChannelDisplayOrderTable && tableData.length > 50 && (
               <div className="px-6 py-4 bg-zinc-50 dark:bg-zinc-800/30 border-t border-zinc-200 dark:border-zinc-800 text-center">
                 <p className="text-xs text-zinc-500">
                   전체 {tableData.length.toLocaleString()}개 행 중 상위 50개만 표시됩니다. 전체 데이터는 내보내기를 통해 확인하세요.

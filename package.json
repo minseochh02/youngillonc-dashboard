@@ -11,7 +11,10 @@
     "rebuild-sales": "tsx scripts/rebuild-sales.ts",
     "create-summary-table": "tsx scripts/create-summary-table.ts",
     "create-office-display-order-table": "tsx scripts/create-office-display-order-table.ts",
-    "seed-office-display-order": "tsx scripts/seed-office-display-order-from-employee-category.ts"
+    "create-team-display-order-table": "tsx scripts/create-team-display-order-table.ts",
+    "create-employee-display-order-table": "tsx scripts/create-employee-display-order-table.ts",
+    "seed-office-display-order": "tsx scripts/seed-office-display-order-from-employee-category.ts",
+    "seed-display-order": "tsx scripts/seed-display-order.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

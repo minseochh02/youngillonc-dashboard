@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { compareOffices, loadFullDisplayOrderContext } from '@/lib/display-order';
 
 /**
  * API Endpoint to fetch Daily Sales and Purchase Status data
@@ -28,6 +29,9 @@ export async function GET(request: Request) {
     const purchaseEditedCondition = `${purchaseEditedExpr} != '' AND ${purchaseEditedExpr} > p.일자`;
     const editedOnlySalesWhere = editedOnly ? ` AND ${salesEditedCondition}` : '';
     const editedOnlyPurchaseWhere = editedOnly ? ` AND ${purchaseEditedCondition}` : '';
+
+    const orderCtx = await loadFullDisplayOrderContext();
+
     const officeMapping = `
       CASE
         WHEN COALESCE(c2.거래처그룹1명, c1.거래처그룹1명) LIKE '%MB%' THEN 'MB'
@@ -136,12 +140,17 @@ export async function GET(request: Request) {
       executeSQL(purchaseByWarehouseQuery)
     ]);
 
+    const sortBranchRows = (rows: any[]) =>
+      [...rows].sort((a, b) =>
+        compareOffices(String(a.branch ?? ''), String(b.branch ?? ''), orderCtx.office)
+      );
+
     return NextResponse.json({
       success: true,
-      salesData: salesOffice?.rows || [],
-      salesByWarehouse: salesWarehouse?.rows || [],
-      purchaseData: purchaseWarehouse?.rows || [],
-      purchaseByOffice: purchaseOffice?.rows || [],
+      salesData: sortBranchRows(salesOffice?.rows || []),
+      salesByWarehouse: sortBranchRows(salesWarehouse?.rows || []),
+      purchaseData: sortBranchRows(purchaseWarehouse?.rows || []),
+      purchaseByOffice: sortBranchRows(purchaseOffice?.rows || []),
       date,
       editedOnly
     });

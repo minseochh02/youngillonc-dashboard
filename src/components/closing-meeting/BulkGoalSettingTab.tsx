@@ -3,6 +3,8 @@
 import { useState, useEffect, Fragment } from 'react';
 import { Loader2, Save, Download, Upload, Calendar, CheckCircle2, AlertCircle, TrendingUp, Percent, Copy, ChevronDown, ChevronRight } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
+import { useDisplayOrderBootstrap } from '@/hooks/useDisplayOrderBootstrap';
+import { compareEmployees, compareOffices, compareTeams } from '@/lib/display-order-core';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -80,6 +82,7 @@ function categoryTypeLabel(type: CategoryType): string {
 
 export default function BulkGoalSettingTab() {
   const { includeVat } = useVatInclude();
+  const displayOrder = useDisplayOrderBootstrap();
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [selectedMonth, setSelectedMonth] = useState((new Date().getMonth() + 1).toString().padStart(2, '0'));
   const [categoryType, setCategoryType] = useState<CategoryType>('tier');
@@ -99,7 +102,7 @@ export default function BulkGoalSettingTab() {
 
   useEffect(() => {
     fetchBulkGoalData();
-  }, [year, selectedMonth, categoryType, includeVat]);
+  }, [year, selectedMonth, categoryType, includeVat, displayOrder.ready]);
 
   const fetchBulkGoalData = async () => {
     setIsLoading(true);
@@ -171,8 +174,14 @@ export default function BulkGoalSettingTab() {
 
           teamMap.forEach((employees, team) => {
             const sortedEmployees = employees.sort((a, b) => {
-              const nameCompare = a.employee_name.localeCompare(b.employee_name);
-              if (nameCompare !== 0) return nameCompare;
+              const ec = compareEmployees(
+                team,
+                a.employee_name,
+                b.employee_name,
+                displayOrder.empB2c,
+                displayOrder.empB2b
+              );
+              if (ec !== 0) return ec;
               return a.category.localeCompare(b.category);
             });
 
@@ -192,13 +201,17 @@ export default function BulkGoalSettingTab() {
 
           branchGroups.push({
             branch,
-            teams: teams.sort((a, b) => a.team.localeCompare(b.team)),
+            teams: teams.sort((a, b) =>
+              compareTeams(a.team, b.team, displayOrder.teamB2c, displayOrder.teamB2b)
+            ),
             total_last_year_weight: branchTotalLastYearWeight,
             total_last_year_amount: branchTotalLastYearAmount
           });
         });
 
-        setBranches(branchGroups.sort((a, b) => a.branch.localeCompare(b.branch)));
+        setBranches(
+          branchGroups.sort((a, b) => compareOffices(a.branch, b.branch, displayOrder.office))
+        );
 
         // Auto-expand all branches and teams
         setExpandedBranches(new Set(branchGroups.map(b => b.branch)));
@@ -482,17 +495,23 @@ export default function BulkGoalSettingTab() {
 
       // Data rows
       const sortedEntries = Array.from(employeeCategoryMap.values()).sort((a, b) => {
-        const branchCompare = a.branch.localeCompare(b.branch);
-        if (branchCompare !== 0) return branchCompare;
-        const teamCompare = a.team.localeCompare(b.team);
-        if (teamCompare !== 0) return teamCompare;
-        const nameCompare = a.employee_name.localeCompare(b.employee_name);
-        if (nameCompare !== 0) return nameCompare;
+        const br = compareOffices(a.branch, b.branch, displayOrder.office);
+        if (br !== 0) return br;
+        const tc = compareTeams(a.team, b.team, displayOrder.teamB2c, displayOrder.teamB2b);
+        if (tc !== 0) return tc;
+        const ec = compareEmployees(
+          a.team,
+          a.employee_name,
+          b.employee_name,
+          displayOrder.empB2c,
+          displayOrder.empB2b
+        );
+        if (ec !== 0) return ec;
         return a.category.localeCompare(b.category);
       });
 
       sortedEntries.forEach(entry => {
-        const row = [
+        const row: (string | number)[] = [
           entry.branch,
           entry.team,
           entry.employee_name,

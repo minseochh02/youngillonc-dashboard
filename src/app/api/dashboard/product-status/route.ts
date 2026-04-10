@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { compareOffices, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
 
 /**
  * API Endpoint for Product Status
@@ -35,6 +36,8 @@ export async function GET(request: Request) {
     const [latestYear] = currentMonthStr.split('-').map(Number);
     const currentYear = latestYear;
     const lastYear = currentYear - 1;
+
+    const orderCtx = await loadFullDisplayOrderContext();
 
     // Base table for sales
     const baseSalesTable = 'sales';
@@ -304,7 +307,7 @@ export async function GET(request: Request) {
       ]);
 
     // Transform data helper function
-    const transformData = (rawData: any) => {
+    const transformData = (rawData: any, categorySort: 'none' | 'team' | 'office' = 'none') => {
       const rows = rawData?.rows || [];
       const categories = new Set<string>();
       const dataMap = new Map<string, any>();
@@ -317,7 +320,7 @@ export async function GET(request: Request) {
       });
 
       // Convert to array format
-      return Array.from(categories).map(category => {
+      const list = Array.from(categories).map(category => {
         const quarters = ['Q1', 'Q2', 'Q3', 'Q4'].map(quarter => {
           const currentKey = `${category}-${currentYear}-${quarter}`;
           const previousKey = `${category}-${lastYear}-${quarter}`;
@@ -331,19 +334,26 @@ export async function GET(request: Request) {
 
         return { category, quarters };
       });
+
+      if (categorySort === 'team') {
+        list.sort((a, b) => compareTeams(a.category, b.category, orderCtx.teamB2c, orderCtx.teamB2b));
+      } else if (categorySort === 'office') {
+        list.sort((a, b) => compareOffices(a.category, b.category, orderCtx.office));
+      }
+      return list;
     };
 
     // Transform all sections
     const sections = [
-      { id: 'auto-b2c-b2b', title: 'Auto by B2C vs B2B', data: transformData(auto) },
-      { id: 'b2c-teams', title: 'B2C by teams', data: transformData(b2cTeams) },
-      { id: 'mobil1-branch', title: 'Mobil 1 by 사업소', data: transformData(mobil1Branch) },
-      { id: 'mobil1-teams', title: 'Mobil 1 by B2C teams', data: transformData(mobil1Teams) },
-      { id: 'aiop-teams', title: 'AIOP by teams', data: transformData(aiop) },
-      { id: 'tp-teams', title: 'TP by teams', data: transformData(tp) },
-      { id: 'special-plus', title: 'Special Plus by teams', data: transformData(specialPlus) },
-      { id: 'cvl-teams', title: 'CVL by teams', data: transformData(cvl) },
-      { id: 'legend-teams', title: 'LEGEND by teams', data: transformData(legend) }
+      { id: 'auto-b2c-b2b', title: 'Auto by B2C vs B2B', data: transformData(auto, 'team') },
+      { id: 'b2c-teams', title: 'B2C by teams', data: transformData(b2cTeams, 'team') },
+      { id: 'mobil1-branch', title: 'Mobil 1 by 사업소', data: transformData(mobil1Branch, 'office') },
+      { id: 'mobil1-teams', title: 'Mobil 1 by B2C teams', data: transformData(mobil1Teams, 'team') },
+      { id: 'aiop-teams', title: 'AIOP by teams', data: transformData(aiop, 'team') },
+      { id: 'tp-teams', title: 'TP by teams', data: transformData(tp, 'team') },
+      { id: 'special-plus', title: 'Special Plus by teams', data: transformData(specialPlus, 'team') },
+      { id: 'cvl-teams', title: 'CVL by teams', data: transformData(cvl, 'team') },
+      { id: 'legend-teams', title: 'LEGEND by teams', data: transformData(legend, 'team') }
     ];
 
     return NextResponse.json({

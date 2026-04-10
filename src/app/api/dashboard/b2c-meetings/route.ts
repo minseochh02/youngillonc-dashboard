@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { compareEmployees, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
 
 export async function GET(request: Request) {
   try {
@@ -36,6 +37,8 @@ export async function GET(request: Request) {
     const lastYear = currentYear - 1;
     const businessYearWindow = 10;
     const businessMinYear = currentYear - (businessYearWindow - 1);
+
+    const orderCtx = await loadFullDisplayOrderContext();
 
     // Base table for sales
     const baseSalesTable = `(
@@ -1088,7 +1091,9 @@ export async function GET(request: Request) {
       }));
 
       // Get unique teams for the UI
-      const uniqueTeams = Array.from(new Set(salesData.map((d: any) => d.region))).sort();
+      const uniqueTeams = (Array.from(new Set(salesData.map((d: any) => d.region))) as string[]).sort(
+        (a, b) => compareTeams(a, b, orderCtx.teamB2c, orderCtx.teamB2b)
+      );
 
       return NextResponse.json({
         success: true,
@@ -1308,6 +1313,16 @@ export async function GET(request: Request) {
         total_quantity: Math.round(Number(row.total_quantity || 0)),
       }));
 
+      teamData.sort((a: (typeof teamData)[0], b: (typeof teamData)[0]) => {
+        const tc = compareTeams(a.team, b.team, orderCtx.teamB2c, orderCtx.teamB2b);
+        if (tc !== 0) return tc;
+        const pc = String(a.product_group).localeCompare(String(b.product_group), 'ko');
+        if (pc !== 0) return pc;
+        const yc = String(a.year).localeCompare(String(b.year), 'ko');
+        if (yc !== 0) return yc;
+        return String(a.year_month).localeCompare(String(b.year_month), 'ko');
+      });
+
       // Process 남부지사 data
       const nambujisaProcessed = nambujisaData.map((row: any) => ({
         type: row.type,
@@ -1402,6 +1417,18 @@ export async function GET(request: Request) {
         year_month: row.year_month,
         total_weight: Math.round(Number(row.total_weight || 0)),
       }));
+
+      volumeData.sort((a: (typeof volumeData)[0], b: (typeof volumeData)[0]) => {
+        const tc = compareTeams(a.team, b.team, orderCtx.teamB2c, orderCtx.teamB2b);
+        if (tc !== 0) return tc;
+        const ec = compareEmployees(a.team, a.employee_name, b.employee_name, orderCtx.empB2c, orderCtx.empB2b);
+        if (ec !== 0) return ec;
+        const pc = String(a.product_group).localeCompare(String(b.product_group), 'ko');
+        if (pc !== 0) return pc;
+        const yc = String(a.year).localeCompare(String(b.year), 'ko');
+        if (yc !== 0) return yc;
+        return String(a.year_month).localeCompare(String(b.year_month), 'ko');
+      });
 
       return NextResponse.json({
         success: true,
@@ -1552,6 +1579,31 @@ export async function GET(request: Request) {
         year_month: row.year_month,
         client_count: Number(row.client_count || 0),
       }));
+
+      const sortTeamSalesRow = (
+        a: {
+          team: string;
+          employee_name: string;
+          product_group: string;
+          year: string;
+          year_month: string;
+        },
+        b: typeof a
+      ) => {
+        const tc = compareTeams(a.team, b.team, orderCtx.teamB2c, orderCtx.teamB2b);
+        if (tc !== 0) return tc;
+        const ec = compareEmployees(a.team, a.employee_name, b.employee_name, orderCtx.empB2c, orderCtx.empB2b);
+        if (ec !== 0) return ec;
+        const pc = String(a.product_group).localeCompare(String(b.product_group), 'ko');
+        if (pc !== 0) return pc;
+        const yc = String(a.year).localeCompare(String(b.year), 'ko');
+        if (yc !== 0) return yc;
+        return String(a.year_month).localeCompare(String(b.year_month), 'ko');
+      };
+
+      salesData.sort(sortTeamSalesRow);
+      clientCountCumulative.sort(sortTeamSalesRow);
+      clientCountMonthly.sort(sortTeamSalesRow);
 
       return NextResponse.json({
         success: true,

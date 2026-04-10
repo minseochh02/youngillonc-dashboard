@@ -1,5 +1,37 @@
 import { NextResponse } from 'next/server';
 import { executeSQL, insertRows, updateRows } from '@/egdesk-helpers';
+import {
+  compareEmployees,
+  compareOffices,
+  compareTeams,
+  loadFullDisplayOrderContext,
+  loadOfficeOrderMap,
+} from '@/lib/display-order';
+
+/**
+ * 사업소 축: 고객 거래처그룹이 아니라 담당자의 사원분류(employee_category.전체사업소) 기준.
+ * clients / sales 쪽 JOIN 후 ec ON e.사원_담당_명 = ec.담당자 가 있어야 함.
+ */
+const BRANCH_FROM_EMPLOYEE_CATEGORY_SQL = `
+  CASE
+    WHEN ec.전체사업소 = '벤츠' THEN 'MB'
+    WHEN ec.전체사업소 = '경남사업소' THEN '창원'
+    WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
+    WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
+    WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
+    WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
+    WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
+    WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
+    WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
+    WHEN ec.전체사업소 LIKE '%본부%' THEN '본부'
+    ELSE REPLACE(REPLACE(COALESCE(ec.전체사업소, ''), '사업소', ''), '지사', '')
+  END
+`;
+
+const WHERE_EC_BRANCH_OK = `ec.전체사업소 IS NOT NULL AND TRIM(ec.전체사업소) != ''`;
+
+/** B2C 집계에서 B2B 전용(b2c_팀='B2B')만 제외. `!=`만 쓰면 b2c_팀이 NULL인 행이 SQL에서 통째로 빠짐. */
+const WHERE_B2C_CHANNEL = `(ec.b2c_팀 IS NULL OR ec.b2c_팀 != 'B2B')`;
 
 export async function GET(request: Request) {
   try {
@@ -93,7 +125,7 @@ export async function GET(request: Request) {
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}')
-          AND ec.b2c_팀 != 'B2B'
+          AND ${WHERE_B2C_CHANNEL}
           AND e.사원_담당_명 != '김도량'
       `;
 
@@ -571,23 +603,10 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'target-achievement') {
-      const branchMapping = `
-        CASE
-          WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
-          WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
-          WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
-          WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
-          WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
-          WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
-          WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
-          WHEN c.거래처그룹1명 LIKE '%본부%' THEN '본부'
-          ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
-        END
-      `;
-      // Query actual sales for latest available month by branch
+      // Query actual sales for latest available month by branch (담당자 사원분류 기준)
       const actualSalesQuery = `
         SELECT
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -595,34 +614,16 @@ export async function GET(request: Request) {
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND e.사원_담당_명 != '김도량'
-          AND c.거래처그룹1명 IS NOT NULL
-          AND c.거래처그룹1명 != ''
+          AND ${WHERE_EC_BRANCH_OK}
         GROUP BY branch
       `;
 
       const monthNum = currentMonthStr.split('-')[1];
 
-      // Branch mapping for employee_category (전체사업소 field)
-      const employeeBranchMapping = `
-        CASE
-          WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-          WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-          WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
-          WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-          WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-          WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-          WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-          WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-          WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
-          WHEN ec.전체사업소 LIKE '%본부%' THEN '본부'
-          ELSE REPLACE(REPLACE(COALESCE(ec.전체사업소, ''), '사업소', ''), '지사', '')
-        END
-      `;
-
       // Aggregate goals by branch using employee_category join
       const goalsQuery = `
         SELECT
-          ${employeeBranchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           SUM(sg.target_weight) as target_weight
         FROM sales_goals sg
         LEFT JOIN employee_category ec ON sg.employee_name = ec.담당자
@@ -655,7 +656,10 @@ export async function GET(request: Request) {
         };
       });
 
-      branchData.sort((a: any, b: any) => (a.branch as string).localeCompare(b.branch as string));
+      const officeMapTarget = await loadOfficeOrderMap();
+      branchData.sort((a: any, b: any) =>
+        compareOffices(String(a.branch), String(b.branch), officeMapTarget)
+      );
 
       const totalActual = branchData.reduce((sum: number, b: any) => sum + (b.actual_weight as number), 0);
       const totalTarget = branchData.reduce((sum: number, b: any) => sum + (b.target_weight as number), 0);
@@ -678,22 +682,9 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'yoy-comparison') {
-      const branchMapping = `
-        CASE
-          WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
-          WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
-          WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
-          WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
-          WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
-          WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
-          WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
-          WHEN c.거래처그룹1명 LIKE '%본부%' THEN '본부'
-          ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
-        END
-      `;
       const currentYearQuery = `
         SELECT
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -701,15 +692,14 @@ export async function GET(request: Request) {
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND e.사원_담당_명 != '김도량'
-          AND c.거래처그룹1명 IS NOT NULL
-          AND c.거래처그룹1명 != ''
+          AND ${WHERE_EC_BRANCH_OK}
         GROUP BY branch
       `;
 
       const lastYearMonthStr = `${lastYear}-${currentMonthStr.split('-')[1]}`;
       const lastYearQuery = `
         SELECT
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -717,8 +707,7 @@ export async function GET(request: Request) {
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${lastYearMonthStr}'
           AND e.사원_담당_명 != '김도량'
-          AND c.거래처그룹1명 IS NOT NULL
-          AND c.거래처그룹1명 != ''
+          AND ${WHERE_EC_BRANCH_OK}
         GROUP BY branch
       `;
 
@@ -751,7 +740,8 @@ export async function GET(request: Request) {
         };
       });
 
-      branchData.sort((a, b) => a.branch.localeCompare(b.branch));
+      const officeMapYoy = await loadOfficeOrderMap();
+      branchData.sort((a, b) => compareOffices(String(a.branch), String(b.branch), officeMapYoy));
 
       const totalCurrent = branchData.reduce((sum, b) => sum + b.current_year_weight, 0);
       const totalLast = branchData.reduce((sum, b) => sum + b.last_year_weight, 0);
@@ -776,26 +766,13 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'branch-performance') {
+      const displayOrderMaps = await loadFullDisplayOrderContext();
       const lastMonthIdx = availableMonths.indexOf(currentMonthStr) - 1;
       const lastMonthStr = lastMonthIdx >= 0 ? availableMonths[lastMonthIdx] : `${currentYear}-01`;
 
-      const branchMapping = `
-        CASE
-          WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
-          WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
-          WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
-          WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
-          WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
-          WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
-          WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
-          WHEN c.거래처그룹1명 LIKE '%본부%' THEN '본부'
-          ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
-        END
-      `;
-
       const currentMonthQuery = `
         SELECT
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           CASE
             WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
             ELSE COALESCE(ec.b2c_팀, '미분류')
@@ -809,14 +786,13 @@ export async function GET(request: Request) {
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
           AND e.사원_담당_명 != '김도량'
-          AND c.거래처그룹1명 IS NOT NULL
-          AND c.거래처그룹1명 != ''
+          AND ${WHERE_EC_BRANCH_OK}
         GROUP BY branch, team, employee
       `;
 
       const lastMonthQuery = `
         SELECT
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           CASE
             WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
             ELSE COALESCE(ec.b2c_팀, '미분류')
@@ -830,8 +806,7 @@ export async function GET(request: Request) {
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${lastMonthStr}'
           AND e.사원_담당_명 != '김도량'
-          AND c.거래처그룹1명 IS NOT NULL
-          AND c.거래처그룹1명 != ''
+          AND ${WHERE_EC_BRANCH_OK}
         GROUP BY branch, team, employee
       `;
 
@@ -878,7 +853,9 @@ export async function GET(request: Request) {
             last_month_amount: Math.round(data.last_amount),
           }));
 
-          employees.sort((a, b) => b.current_month_weight - a.current_month_weight);
+          employees.sort((a, b) =>
+            compareEmployees(team, a.employee, b.employee, displayOrderMaps.empB2c, displayOrderMaps.empB2b)
+          );
 
           const teamWeight = employees.reduce((sum, e) => sum + e.current_month_weight, 0);
           const teamAmount = employees.reduce((sum, e) => sum + e.current_month_amount, 0);
@@ -895,7 +872,9 @@ export async function GET(request: Request) {
           };
         });
 
-        teams.sort((a: any, b: any) => b.current_month_weight - a.current_month_weight);
+        teams.sort((a: any, b: any) =>
+          compareTeams(a.team_name, b.team_name, displayOrderMaps.teamB2c, displayOrderMaps.teamB2b)
+        );
 
         const branchWeight = teams.reduce((sum: number, t: any) => sum + t.current_month_weight, 0);
         const branchAmount = teams.reduce((sum: number, t: any) => sum + t.current_month_amount, 0);
@@ -912,7 +891,9 @@ export async function GET(request: Request) {
         };
       });
 
-      branchData.sort((a, b) => a.branch.localeCompare(b.branch));
+        branchData.sort((a, b) =>
+          compareOffices(String(a.branch), String(b.branch), displayOrderMaps.office)
+        );
 
       return NextResponse.json({
         success: true,
@@ -927,21 +908,13 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'b2c-auto') {
+      const displayOrderMaps = await loadFullDisplayOrderContext();
       const yoyMonthStr = `${lastYear}-${currentMonthStr.split('-')[1]}`;
       const lastMonthIdx = availableMonths.indexOf(currentMonthStr) - 1;
       const lastMonthStr = lastMonthIdx >= 0 ? availableMonths[lastMonthIdx] : `${currentYear}-01`;
       const monthNum = currentMonthStr.split('-')[1];
 
-      const branchMapping = `
-        CASE
-          WHEN ec.전체사업소 LIKE '%동부%' THEN '동부지사'
-          WHEN ec.전체사업소 LIKE '%서부%' THEN '서부지사'
-          WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-          WHEN ec.전체사업소 LIKE '%남부%' THEN '남부지사'
-          WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-          ELSE ec.전체사업소
-        END
-      `;
+      // 사업소 축: 담당자 사원분류(전체사업소) 기준으로 창원·화성·MB 등 통일 (동부지사 별칭 제거)
 
       // 1. Query B2C sales by product group
       const b2cCategoryQuery = `
@@ -965,7 +938,7 @@ export async function GET(request: Request) {
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) IN ('${currentMonthStr}', '${lastMonthStr}', '${yoyMonthStr}'))
-          AND ec.b2c_팀 != 'B2B'
+          AND ${WHERE_B2C_CHANNEL}
           AND e.사원_담당_명 != '김도량'
         GROUP BY category
       `;
@@ -973,7 +946,7 @@ export async function GET(request: Request) {
       // 2. Query B2C sales by branch, team, and category
       const b2cHierarchyQuery = `
         SELECT
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           ec.b2c_팀 as team,
           CASE
             WHEN s.품목그룹1코드 = 'MB' THEN 'MB'
@@ -993,7 +966,7 @@ export async function GET(request: Request) {
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) IN ('${currentMonthStr}', '${lastMonthStr}', '${yoyMonthStr}'))
-          AND ec.b2c_팀 != 'B2B'
+          AND ${WHERE_B2C_CHANNEL}
           AND e.사원_담당_명 != '김도량'
         GROUP BY branch, team, category
       `;
@@ -1011,20 +984,82 @@ export async function GET(request: Request) {
           AND sg.category_type = 'division'
           AND sg.category IN ('AUTO', 'PVL', 'CVL')
           AND ec.b2c_팀 IS NOT NULL
-          AND ec.b2c_팀 != 'B2B'
+          AND ${WHERE_B2C_CHANNEL}
         GROUP BY category, team
       `;
 
-      const [catResult, hierarchyResult, goalsResult, grandTotals] = await Promise.all([
+      // YTD monthly B2C sales (L) by calendar month and product group — same scope as b2cCategoryQuery
+      const b2cMonthlyCategoryQuery = `
+        SELECT
+          substr(s.일자, 1, 7) as month_key,
+          CASE
+            WHEN s.품목그룹1코드 = 'MB' THEN 'MB'
+            WHEN s.품목그룹1코드 = 'AVI' THEN 'AVI'
+            WHEN s.품목그룹1코드 = 'MAR' THEN 'MAR'
+            WHEN s.품목그룹1코드 = 'PVL' THEN 'PVL'
+            WHEN s.품목그룹1코드 = 'CVL' THEN 'CVL'
+            WHEN s.품목그룹1코드 = 'IL' THEN 'IL'
+            ELSE '기타'
+          END as category,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight
+        FROM (${baseSalesSubquery}) s
+        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE substr(s.일자, 1, 7) >= '${currentYear}-01'
+          AND substr(s.일자, 1, 7) <= '${currentMonthStr}'
+          AND ${WHERE_B2C_CHANNEL}
+          AND e.사원_담당_명 != '김도량'
+        GROUP BY 1, 2
+      `;
+
+      const [catResult, hierarchyResult, goalsResult, grandTotals, monthlyCategoryResult] = await Promise.all([
         executeSQL(b2cCategoryQuery),
         executeSQL(b2cHierarchyQuery),
         executeSQL(b2cGoalsQuery),
-        getGrandTotals()
+        getGrandTotals(),
+        executeSQL(b2cMonthlyCategoryQuery),
       ]);
 
       const catData = catResult?.rows || [];
       const hierarchyData = hierarchyResult?.rows || [];
       const goalsData = goalsResult?.rows || [];
+      const monthlyRowsRaw = monthlyCategoryResult?.rows || [];
+
+      const monthKeysForYtd: string[] = [];
+      const endMonthNum = parseInt(monthNum, 10);
+      for (let m = 1; m <= endMonthNum; m++) {
+        monthKeysForYtd.push(`${currentYear}-${String(m).padStart(2, '0')}`);
+      }
+      const monthCategoryWeightMap = new Map<string, Map<string, number>>();
+      monthlyRowsRaw.forEach((r: any) => {
+        const mk = String(r.month_key);
+        const cat = String(r.category);
+        const w = Number(r.sales_weight) || 0;
+        if (!monthCategoryWeightMap.has(mk)) monthCategoryWeightMap.set(mk, new Map());
+        const inner = monthCategoryWeightMap.get(mk)!;
+        inner.set(cat, (inner.get(cat) || 0) + w);
+      });
+      const categoryOrderMonthly = ['MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL', '기타'];
+      const monthlyCategoryRows = categoryOrderMonthly.map((category) => {
+        const byMonth: Record<string, number> = {};
+        let rowTotal = 0;
+        monthKeysForYtd.forEach((mk) => {
+          const w = Math.round(monthCategoryWeightMap.get(mk)?.get(category) || 0);
+          byMonth[mk] = w;
+          rowTotal += w;
+        });
+        return { category, byMonth, rowTotal };
+      });
+      const monthlyCategoryMonthTotals: Record<string, number> = {};
+      monthKeysForYtd.forEach((mk) => {
+        monthlyCategoryMonthTotals[mk] = Math.round(
+          monthlyCategoryRows.reduce((s, row) => s + (row.byMonth[mk] || 0), 0)
+        );
+      });
+      const monthlyCategoryGrandTotal = Math.round(
+        monthlyCategoryRows.reduce((s, row) => s + row.rowTotal, 0)
+      );
 
       // Build goalsMap for categories (aggregate all teams)
       const categoryGoalsMap = new Map<string, number>();
@@ -1045,7 +1080,7 @@ export async function GET(request: Request) {
       const yearlyHierarchyQuery = `
         SELECT
           substr(s.일자, 1, 4) as year,
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           ec.b2c_팀 as team,
           CASE
             WHEN s.품목그룹1코드 = 'MB' THEN 'MB'
@@ -1063,7 +1098,7 @@ export async function GET(request: Request) {
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 IS NOT NULL
-          AND ec.b2c_팀 != 'B2B'
+          AND ${WHERE_B2C_CHANNEL}
           AND e.사원_담당_명 != '김도량'
           AND substr(s.일자, 6, 2) <= '${monthNum}'
         GROUP BY 1, 2, 3, 4, 5
@@ -1071,7 +1106,7 @@ export async function GET(request: Request) {
       const yearlyGoalsQuery = `
         SELECT
           sg.year as year,
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           ec.b2c_팀 as team,
           CASE
             WHEN sg.category IN ('PVL', 'CVL') THEN sg.category
@@ -1083,7 +1118,7 @@ export async function GET(request: Request) {
         WHERE sg.category_type = 'division'
           AND sg.category IN ('PVL', 'CVL')
           AND ec.b2c_팀 IS NOT NULL
-          AND ec.b2c_팀 != 'B2B'
+          AND ${WHERE_B2C_CHANNEL}
           AND sg.month <= '${monthNum}'
         GROUP BY 1, 2, 3, 4
       `;
@@ -1105,7 +1140,7 @@ export async function GET(request: Request) {
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE p.일자 IS NOT NULL
-          AND ec.b2c_팀 != 'B2B'
+          AND ${WHERE_B2C_CHANNEL}
           AND substr(p.일자, 6, 2) <= '${monthNum}'
         GROUP BY 1, 2
       `;
@@ -1258,7 +1293,9 @@ export async function GET(request: Request) {
                 yoy_growth_rate: b2bPrev > 0 ? ((b2bCurrent - b2bPrev) / b2bPrev) * 100 : 0,
               },
               branches: Array.from(curr.branchesMap.values())
-                .sort((a: any, b: any) => String(a.branch).localeCompare(String(b.branch)))
+                .sort((a: any, b: any) =>
+                  compareOffices(String(a.branch), String(b.branch), displayOrderMaps.office)
+                )
                 .map((b: any) => ({
                   branch: b.branch,
                   sales_weight: Math.round(b.sales_weight),
@@ -1269,7 +1306,9 @@ export async function GET(request: Request) {
                   target_weight: Math.round(b.target_weight || 0),
                   achievement_rate: (b.target_weight || 0) > 0 ? (b.sales_weight / b.target_weight) * 100 : 0,
                   teams: Array.from(b.teamsMap.entries())
-                    .sort((a: any, b: any) => String(a[0]).localeCompare(String(b[0])))
+                    .sort((a: any, b: any) =>
+                      compareTeams(String(a[0]), String(b[0]), displayOrderMaps.teamB2c, displayOrderMaps.teamB2b)
+                    )
                     .map(([teamName, teamData]: any) => {
                       const prevTeamSales = Number(prev.branchesMap?.get(b.branch)?.teamsMap?.get(teamName)?.sales_weight || 0);
                       return {
@@ -1346,29 +1385,33 @@ export async function GET(request: Request) {
       });
 
       const branches = Array.from(branchMap.entries()).map(([branchName, branchObj]) => {
-        const teams = Array.from(branchObj.teams.entries()).map((entry: any) => {
-          const [teamName, teamObj] = entry;
-          const teamActual = teamObj.categories.reduce((sum: number, c: any) => sum + c.current_month_weight, 0);
-          const teamAmount = teamObj.categories.reduce((sum: number, c: any) => sum + c.current_month_amount, 0);
-          const teamLast = teamObj.categories.reduce((sum: number, c: any) => sum + c.last_month_weight, 0);
-          const teamYoy = teamObj.categories.reduce((sum: number, c: any) => sum + c.yoy_weight, 0);
-          const teamTarget = teamGoalsMap.get(teamName) || 0;
+        const teams = Array.from(branchObj.teams.entries())
+          .map((entry: any) => {
+            const [teamName, teamObj] = entry;
+            const teamActual = teamObj.categories.reduce((sum: number, c: any) => sum + c.current_month_weight, 0);
+            const teamAmount = teamObj.categories.reduce((sum: number, c: any) => sum + c.current_month_amount, 0);
+            const teamLast = teamObj.categories.reduce((sum: number, c: any) => sum + c.last_month_weight, 0);
+            const teamYoy = teamObj.categories.reduce((sum: number, c: any) => sum + c.yoy_weight, 0);
+            const teamTarget = teamGoalsMap.get(teamName) || 0;
 
-          // Sort categories within team
-          teamObj.categories.sort((a: any, b: any) => order.indexOf(a.category) - order.indexOf(b.category));
+            // Sort categories within team
+            teamObj.categories.sort((a: any, b: any) => order.indexOf(a.category) - order.indexOf(b.category));
 
-          return {
-            team_name: teamName,
-            current_month_weight: teamActual,
-            current_month_amount: teamAmount,
-            last_month_weight: teamLast,
-            yoy_weight: teamYoy,
-            yoy_growth_rate: teamYoy > 0 ? ((teamActual - teamYoy) / teamYoy) * 100 : 0,
-            target_weight: Math.round(teamTarget),
-            achievement_rate: teamTarget > 0 ? (teamActual / teamTarget) * 100 : 0,
-            categories: teamObj.categories
-          };
-        });
+            return {
+              team_name: teamName,
+              current_month_weight: teamActual,
+              current_month_amount: teamAmount,
+              last_month_weight: teamLast,
+              yoy_weight: teamYoy,
+              yoy_growth_rate: teamYoy > 0 ? ((teamActual - teamYoy) / teamYoy) * 100 : 0,
+              target_weight: Math.round(teamTarget),
+              achievement_rate: teamTarget > 0 ? (teamActual / teamTarget) * 100 : 0,
+              categories: teamObj.categories
+            };
+          })
+          .sort((a: any, b: any) =>
+            compareTeams(a.team_name, b.team_name, displayOrderMaps.teamB2c, displayOrderMaps.teamB2b)
+          );
 
         const branchActual = teams.reduce((sum: number, t: any) => sum + t.current_month_weight, 0);
         const branchAmount = teams.reduce((sum: number, t: any) => sum + t.current_month_amount, 0);
@@ -1388,7 +1431,9 @@ export async function GET(request: Request) {
           teams,
         };
       });
-      branches.sort((a, b) => a.branch.localeCompare(b.branch));
+      branches.sort((a, b) =>
+        compareOffices(String(a.branch), String(b.branch), displayOrderMaps.office)
+      );
 
       const totalActualWeight = categories.reduce((sum: number, c: any) => sum + c.current_month_weight, 0);
       const totalLastMonthWeight = categories.reduce((sum: number, c: any) => sum + c.last_month_weight, 0);
@@ -1406,6 +1451,13 @@ export async function GET(request: Request) {
           yearlySummary,
           yearlyCategoryBreakdown,
           yearlyAutoBreakdown,
+          monthlyCategoryBreakdown: {
+            year: String(currentYear),
+            months: monthKeysForYtd,
+            rows: monthlyCategoryRows,
+            monthTotals: monthlyCategoryMonthTotals,
+            grandTotal: monthlyCategoryGrandTotal,
+          },
           b2bTotal: grandTotals.b2b,
           total: {
             current_month_weight: totalActualWeight,
@@ -1424,26 +1476,11 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'b2b-il') {
+      const displayOrderMaps = await loadFullDisplayOrderContext();
       const yoyMonthStr = `${lastYear}-${currentMonthStr.split('-')[1]}`;
       const lastMonthIdx = availableMonths.indexOf(currentMonthStr) - 1;
       const lastMonthStr = lastMonthIdx >= 0 ? availableMonths[lastMonthIdx] : `${currentYear}-01`;
       const monthNum = currentMonthStr.split('-')[1];
-
-      // 사업소: employee_category 전체사업소 기준 (clients.거래처그룹1명 미존재 DB·yearlyGoals 등에서도 동작)
-      const branchMapping = `
-        CASE
-          WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-          WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-          WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
-          WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-          WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-          WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-          WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-          WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-          WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
-          ELSE REPLACE(REPLACE(COALESCE(ec.전체사업소, ''), '사업소', ''), '지사', '')
-        END
-      `;
 
       // 1. Query B2B sales by product group
       const b2bCategoryQuery = `
@@ -1473,7 +1510,7 @@ export async function GET(request: Request) {
       // 2. Query B2B sales by branch, team, and category
       const b2bHierarchyQuery = `
         SELECT
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           ec.b2b팀 as team,
           CASE
             WHEN s.품목그룹1코드 = 'MB' THEN 'MB'
@@ -1508,7 +1545,7 @@ export async function GET(request: Request) {
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}')
-          AND ec.b2c_팀 != 'B2B'
+          AND ${WHERE_B2C_CHANNEL}
           AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
           AND e.사원_담당_명 != '김도량'
       `;
@@ -1578,7 +1615,7 @@ export async function GET(request: Request) {
       const yearlyHierarchyQuery = `
         SELECT
           substr(s.일자, 1, 4) as year,
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           ec.b2b팀 as team,
           CASE
             WHEN s.품목그룹1코드 = 'MB' THEN 'MB'
@@ -1601,7 +1638,7 @@ export async function GET(request: Request) {
       const yearlyGoalsQuery = `
         SELECT
           sg.year as year,
-          ${branchMapping} as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           ec.b2b팀 as team,
           sg.category as category,
           SUM(sg.target_weight) as target_weight
@@ -1649,7 +1686,7 @@ export async function GET(request: Request) {
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 IS NOT NULL
-          AND ec.b2c_팀 != 'B2B'
+          AND ${WHERE_B2C_CHANNEL}
           AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
           AND e.사원_담당_명 != '김도량'
           AND substr(s.일자, 6, 2) <= '${monthNum}'
@@ -1768,7 +1805,9 @@ export async function GET(request: Request) {
                 yoy_growth_rate: b2cPrev > 0 ? ((b2cCurrent - b2cPrev) / b2cPrev) * 100 : 0,
               },
               branches: Array.from(curr.branchesMap.values())
-                .sort((a: any, b: any) => String(a.branch).localeCompare(String(b.branch)))
+                .sort((a: any, b: any) =>
+                  compareOffices(String(a.branch), String(b.branch), displayOrderMaps.office)
+                )
                 .map((b: any) => ({
                   branch: b.branch,
                   sales_weight: Math.round(b.sales_weight),
@@ -1779,7 +1818,9 @@ export async function GET(request: Request) {
                   target_weight: Math.round(b.target_weight || 0),
                   achievement_rate: (b.target_weight || 0) > 0 ? (b.sales_weight / b.target_weight) * 100 : 0,
                   teams: Array.from(b.teamsMap.entries())
-                    .sort((a: any, b: any) => String(a[0]).localeCompare(String(b[0])))
+                    .sort((a: any, b: any) =>
+                      compareTeams(String(a[0]), String(b[0]), displayOrderMaps.teamB2c, displayOrderMaps.teamB2b)
+                    )
                     .map(([teamName, teamData]: any) => {
                       const prevTeamSales = Number(prev.branchesMap?.get(b.branch)?.teamsMap?.get(teamName)?.sales_weight || 0);
                       return {
@@ -1864,28 +1905,32 @@ export async function GET(request: Request) {
       });
 
       const branches = Array.from(branchMap.entries()).map(([branchName, branchObj]) => {
-        const teams = Array.from(branchObj.teams.entries()).map((entry: any) => {
-          const [teamName, teamObj] = entry;
-          const teamActual = teamObj.categories.reduce((sum: number, c: any) => sum + c.current_month_weight, 0);
-          const teamAmount = teamObj.categories.reduce((sum: number, c: any) => sum + c.current_month_amount, 0);
-          const teamLast = teamObj.categories.reduce((sum: number, c: any) => sum + c.last_month_weight, 0);
-          const teamYoy = teamObj.categories.reduce((sum: number, c: any) => sum + c.yoy_weight, 0);
-          const teamTarget = teamGoalsMap.get(teamName) || 0;
+        const teams = Array.from(branchObj.teams.entries())
+          .map((entry: any) => {
+            const [teamName, teamObj] = entry;
+            const teamActual = teamObj.categories.reduce((sum: number, c: any) => sum + c.current_month_weight, 0);
+            const teamAmount = teamObj.categories.reduce((sum: number, c: any) => sum + c.current_month_amount, 0);
+            const teamLast = teamObj.categories.reduce((sum: number, c: any) => sum + c.last_month_weight, 0);
+            const teamYoy = teamObj.categories.reduce((sum: number, c: any) => sum + c.yoy_weight, 0);
+            const teamTarget = teamGoalsMap.get(teamName) || 0;
 
-          teamObj.categories.sort((a: any, b: any) => order.indexOf(a.category) - order.indexOf(b.category));
+            teamObj.categories.sort((a: any, b: any) => order.indexOf(a.category) - order.indexOf(b.category));
 
-          return {
-            team_name: teamName,
-            current_month_weight: teamActual,
-            current_month_amount: teamAmount,
-            last_month_weight: teamLast,
-            yoy_weight: teamYoy,
-            yoy_growth_rate: teamYoy > 0 ? ((teamActual - teamYoy) / teamYoy) * 100 : 0,
-            target_weight: Math.round(teamTarget),
-            achievement_rate: teamTarget > 0 ? (teamActual / teamTarget) * 100 : 0,
-            categories: teamObj.categories
-          };
-        });
+            return {
+              team_name: teamName,
+              current_month_weight: teamActual,
+              current_month_amount: teamAmount,
+              last_month_weight: teamLast,
+              yoy_weight: teamYoy,
+              yoy_growth_rate: teamYoy > 0 ? ((teamActual - teamYoy) / teamYoy) * 100 : 0,
+              target_weight: Math.round(teamTarget),
+              achievement_rate: teamTarget > 0 ? (teamActual / teamTarget) * 100 : 0,
+              categories: teamObj.categories
+            };
+          })
+          .sort((a: any, b: any) =>
+            compareTeams(a.team_name, b.team_name, displayOrderMaps.teamB2c, displayOrderMaps.teamB2b)
+          );
 
         const branchActual = teams.reduce((sum: number, t: any) => sum + t.current_month_weight, 0);
         const branchAmount = teams.reduce((sum: number, t: any) => sum + t.current_month_amount, 0);
@@ -1905,7 +1950,9 @@ export async function GET(request: Request) {
           teams,
         };
       });
-      branches.sort((a, b) => a.branch.localeCompare(b.branch));
+      branches.sort((a, b) =>
+        compareOffices(String(a.branch), String(b.branch), displayOrderMaps.office)
+      );
 
       const totalActualWeight = categories.reduce((sum: number, c: any) => sum + c.current_month_weight, 0);
       const totalLastMonthWeight = categories.reduce((sum: number, c: any) => sum + c.last_month_weight, 0);
@@ -1949,35 +1996,6 @@ export async function GET(request: Request) {
       const selectedYear = searchParams.get('year') || currentYear.toString();
       const prevYear = (Number(selectedYear) - 1).toString();
       const categoryType = searchParams.get('categoryType') || 'tier';
-
-      const branchMappingForGoal = `
-        CASE
-          WHEN ec.전체사업소 = '벤츠' THEN 'MB'
-          WHEN ec.전체사업소 = '경남사업소' THEN '창원'
-          WHEN ec.전체사업소 LIKE '%화성%' THEN '화성'
-          WHEN ec.전체사업소 LIKE '%남부%' THEN '남부'
-          WHEN ec.전체사업소 LIKE '%중부%' THEN '중부'
-          WHEN ec.전체사업소 LIKE '%서부%' THEN '서부'
-          WHEN ec.전체사업소 LIKE '%동부%' THEN '동부'
-          WHEN ec.전체사업소 LIKE '%제주%' THEN '제주'
-          WHEN ec.전체사업소 LIKE '%부산%' THEN '부산'
-          ELSE REPLACE(REPLACE(COALESCE(ec.전체사업소, ''), '사업소', ''), '지사', '')
-        END
-      `;
-
-      const branchMappingForClients = `
-        CASE
-          WHEN c.거래처그룹1명 = '벤츠' THEN 'MB'
-          WHEN c.거래처그룹1명 = '경남사업소' THEN '창원'
-          WHEN c.거래처그룹1명 LIKE '%동부%' THEN '동부'
-          WHEN c.거래처그룹1명 LIKE '%서부%' THEN '서부'
-          WHEN c.거래처그룹1명 LIKE '%중부%' THEN '중부'
-          WHEN c.거래처그룹1명 LIKE '%남부%' THEN '남부'
-          WHEN c.거래처그룹1명 LIKE '%제주%' THEN '제주'
-          WHEN c.거래처그룹1명 LIKE '%본부%' THEN '본부'
-          ELSE REPLACE(REPLACE(COALESCE(c.거래처그룹1명, ''), '사업소', ''), '지사', '')
-        END
-      `;
 
       // Build category CASE statement based on categoryType
       let categoryCaseStatement: string;
@@ -2036,7 +2054,7 @@ export async function GET(request: Request) {
         SELECT
           substr(s.일자, 1, 7) as month,
           e.사원_담당_명 as employee_name,
-          ec.전체사업소 as branch,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           CASE
             WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
             ELSE COALESCE(ec.b2c_팀, '미분류')
@@ -2056,6 +2074,7 @@ export async function GET(request: Request) {
         WHERE s.일자 LIKE '${prevYear}-%'
           AND e.사원_담당_명 IS NOT NULL
           AND e.사원_담당_명 != '김도량'
+          AND ${WHERE_EC_BRANCH_OK}
         GROUP BY month, employee_name, branch, team, category, industry, sector
         HAVING ${categoryHavingClause}
         ORDER BY branch, team, employee_name, category, industry, sector

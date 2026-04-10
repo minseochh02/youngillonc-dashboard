@@ -5,7 +5,6 @@ import { Loader2, TrendingUp, TrendingDown, Database, ChevronDown, ChevronRight,
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
-import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
 interface CategoryData {
@@ -110,6 +109,18 @@ interface B2CAnalysis {
       }>;
     }>;
   }>;
+  /** YTD through selected month: B2C sales (L) per calendar month × 품목그룹 */
+  monthlyCategoryBreakdown?: {
+    year: string;
+    months: string[];
+    rows: Array<{
+      category: string;
+      byMonth: Record<string, number>;
+      rowTotal: number;
+    }>;
+    monthTotals: Record<string, number>;
+    grandTotal: number;
+  };
 }
 
 interface B2CAnalysisProps {
@@ -329,6 +340,34 @@ export default function B2CAutoAnalysisTab({ selectedMonth, onMonthsAvailable }:
       });
     });
 
+    if (data.monthlyCategoryBreakdown?.months?.length) {
+      const m = data.monthlyCategoryBreakdown;
+      exportData.push({ '지사': '' });
+      exportData.push({ '지사': '--- 월별 품목그룹 B2C 판매 (L) ---' });
+      const sumRow: Record<string, string | number> = {
+        '지사': '',
+        '팀': '',
+        '구분': '합계',
+      };
+      m.rows.forEach((row) => {
+        sumRow[row.category] = row.rowTotal;
+      });
+      sumRow['행계(L)'] = m.grandTotal;
+      exportData.push(sumRow);
+      m.months.forEach((mk) => {
+        const monthRow: Record<string, string | number> = {
+          '지사': '',
+          '팀': '',
+          '구분': `${parseInt(mk.split('-')[1]!, 10)}월`,
+        };
+        m.rows.forEach((row) => {
+          monthRow[row.category] = row.byMonth[mk] ?? 0;
+        });
+        monthRow['행계(L)'] = m.monthTotals[mk] ?? 0;
+        exportData.push(monthRow);
+      });
+    }
+
     exportData.push({ '지사': '' });
     exportData.push({ '지사': '--- 계층별 B2C 분석 ---' });
 
@@ -414,6 +453,82 @@ export default function B2CAutoAnalysisTab({ selectedMonth, onMonthsAvailable }:
       </div>
     );
   }
+
+  const mcb = data.monthlyCategoryBreakdown;
+  const monthlyBreakdownSection =
+    mcb && mcb.months.length > 0 ? (
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+            월별 품목그룹 B2C 판매 (L)
+          </h4>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+            {mcb.year}년 1월~{parseInt(data.currentMonth.split('-')[1]!, 10)}월 누계 · 당월 기준 연도
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[720px]">
+            <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+              <tr>
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider sticky left-0 bg-zinc-50 dark:bg-zinc-800/50 z-10 border-r border-zinc-200 dark:border-zinc-800">
+                  월
+                </th>
+                {mcb.rows.map((row) => (
+                  <th
+                    key={row.category}
+                    className="text-right py-3 px-3 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap"
+                  >
+                    {row.category}
+                  </th>
+                ))}
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider whitespace-nowrap">
+                  행계
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-zinc-200 dark:border-zinc-700 bg-blue-50/50 dark:bg-blue-950/25 font-semibold">
+                <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100 sticky left-0 bg-blue-50/90 dark:bg-blue-950/40 border-r border-zinc-200 dark:border-zinc-800 z-10">
+                  합계
+                </td>
+                {mcb.rows.map((row) => (
+                  <td
+                    key={`합계-${row.category}`}
+                    className="py-3 px-3 text-right font-mono text-blue-900 dark:text-blue-100"
+                  >
+                    {formatNumber(row.rowTotal)}
+                  </td>
+                ))}
+                <td className="py-3 px-4 text-right font-mono text-blue-800 dark:text-blue-200">
+                  {formatNumber(mcb.grandTotal)}
+                </td>
+              </tr>
+              {mcb.months.map((mk) => (
+                <tr
+                  key={mk}
+                  className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30"
+                >
+                  <td className="py-2.5 px-4 font-medium text-zinc-900 dark:text-zinc-100 sticky left-0 bg-white dark:bg-zinc-900 border-r border-zinc-100 dark:border-zinc-800/80 z-10">
+                    {parseInt(mk.split('-')[1]!, 10)}월
+                  </td>
+                  {mcb.rows.map((row) => (
+                    <td
+                      key={`${mk}-${row.category}`}
+                      className="py-2.5 px-3 text-right font-mono text-zinc-700 dark:text-zinc-300"
+                    >
+                      {formatNumber(row.byMonth[mk] ?? 0)}
+                    </td>
+                  ))}
+                  <td className="py-2.5 px-4 text-right font-mono font-semibold text-blue-700 dark:text-blue-300">
+                    {formatNumber(mcb.monthTotals[mk] ?? 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ) : null;
 
   if (data.yearlySummary && data.yearlySummary.length > 0 && data.yearlyCategoryBreakdown) {
     const displayMonth = parseInt(data.currentMonth.split('-')[1]);
@@ -603,6 +718,7 @@ export default function B2CAutoAnalysisTab({ selectedMonth, onMonthsAvailable }:
             </table>
           </div>
         </div>
+        {monthlyBreakdownSection}
         {teamDrawer.isOpen && (
           <>
             <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setTeamDrawer((prev) => ({ ...prev, isOpen: false }))} />
@@ -806,6 +922,8 @@ export default function B2CAutoAnalysisTab({ selectedMonth, onMonthsAvailable }:
           </table>
         </div>
       </div>
+
+      {monthlyBreakdownSection}
 
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">

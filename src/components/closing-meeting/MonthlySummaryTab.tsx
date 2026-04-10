@@ -218,18 +218,6 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
     });
     return acc;
   }, new Map<number, Map<string, { sales: number; purchase: number; target: number }>>());
-  const yearlyMonthlyBreakdownMap = data.monthlyData.reduce((acc, row) => {
-    const [yearStr, monthStr] = row.month.split('-');
-    const year = Number(yearStr);
-    const month = Number(monthStr);
-    if (!year || !month || month > cutoffMonth) return acc;
-    if (!acc.has(year)) acc.set(year, []);
-    acc.get(year)!.push(row);
-    return acc;
-  }, new Map<number, MonthlyData[]>());
-  yearlyMonthlyBreakdownMap.forEach((rows) => {
-    rows.sort((a, b) => b.month.localeCompare(a.month));
-  });
 
   const toggleYear = (year: number) => {
     setExpandedYears((prev) =>
@@ -303,51 +291,7 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
                 {isExpanded && (
                   <tr className="bg-zinc-50/40 dark:bg-zinc-900/30">
                     <td colSpan={7} className="p-0">
-                      <div className="px-4 py-3 space-y-3">
-                        <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-900">
-                          <table className="w-full text-xs">
-                            <thead className="bg-zinc-50 dark:bg-zinc-800/50">
-                              <tr>
-                                <th className="text-left py-2 px-3 font-bold text-zinc-500">월</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">구매(L)</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">판매(L)</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">재고변동(L)</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">목표(L)</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">달성율</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">전년동월비</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(yearlyMonthlyBreakdownMap.get(item.year) || []).map((row) => (
-                                <tr key={`monthly_${row.month}`} className="border-b border-zinc-100 dark:border-zinc-800/60">
-                                  <td className="py-2 px-3 font-medium text-zinc-800 dark:text-zinc-200">
-                                    {Number(row.month.split('-')[1])}월
-                                  </td>
-                                  <td className="py-2 px-3 text-right font-mono">{formatNumber(row.purchase_weight)}</td>
-                                  <td className="py-2 px-3 text-right font-mono">{formatNumber(row.sales_weight)}</td>
-                                  <td className="py-2 px-3 text-right font-mono">{formatNumber(row.inventory_weight)}</td>
-                                  <td className="py-2 px-3 text-right font-mono">{formatNumber(row.target_weight)}</td>
-                                  <td className="py-2 px-3 text-right">
-                                    <span className={`font-medium ${
-                                      row.achievement_rate >= 100 ? 'text-green-600' :
-                                      row.achievement_rate >= 80 ? 'text-yellow-600' : 'text-red-600'
-                                    }`}>
-                                      {row.achievement_rate.toFixed(1)}%
-                                    </span>
-                                  </td>
-                                  <td className="py-2 px-3 text-right">
-                                    <span className={`inline-flex items-center gap-1 font-medium ${
-                                      row.yoy_growth_rate >= 0 ? 'text-green-600' : 'text-red-600'
-                                    }`}>
-                                      {row.yoy_growth_rate >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                                      {Math.abs(row.yoy_growth_rate).toFixed(1)}%
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                      <div className="px-4 py-3">
                         <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-800 rounded-lg bg-white dark:bg-zinc-900">
                           <table className="w-full text-xs">
                             <thead className="bg-zinc-50 dark:bg-zinc-800/50">

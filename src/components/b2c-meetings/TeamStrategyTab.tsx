@@ -3,6 +3,8 @@
 import { useState, useEffect, Fragment } from 'react';
 import { Loader2, TrendingUp, TrendingDown, Package } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
+import { useDisplayOrderBootstrap } from '@/hooks/useDisplayOrderBootstrap';
+import { compareTeams } from '@/lib/display-order-core';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -67,6 +69,7 @@ interface TeamStrategyTabProps {
 
 export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps) {
   const { includeVat } = useVatInclude();
+  const displayOrder = useDisplayOrderBootstrap();
   const [data, setData] = useState<TeamStrategyData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -235,7 +238,9 @@ export default function TeamStrategyTab({ selectedMonth }: TeamStrategyTabProps)
   const teamAggregated = aggregateTeamData();
 
   // Get unique teams
-  const teams = Array.from(new Set(teamData.map(row => row.team))).sort();
+  const teams = Array.from(new Set(teamData.map(row => row.team))).sort((a, b) =>
+    compareTeams(a, b, displayOrder.teamB2c, displayOrder.teamB2b)
+  );
 
   const getAllTeamsMonthWeights = (year: string, monthMM: string) => {
     let pv = 0;

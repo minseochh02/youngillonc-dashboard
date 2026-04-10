@@ -3,6 +3,8 @@
 import { useState, useEffect, Fragment } from 'react';
 import { Loader2, Users, ChevronDown, ChevronRight, Search, UserPlus, AlertCircle, CheckCircle2, Package, RefreshCw, Tag, Database, Folder } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { useDisplayOrderBootstrap } from '@/hooks/useDisplayOrderBootstrap';
+import { compareOffices, compareTeams } from '@/lib/display-order-core';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { exportToExcel, generateFilename } from '@/lib/excel-export';
 
@@ -88,10 +90,13 @@ const TEAM_PAIR_SEP = '\u0001';
 /** 사업소 미지정 bucket — listed after all named branches, with a section divider */
 const UNASSIGNED_BRANCH = '미배정';
 
-function sortBranchesWithUnassignedLast(branches: BranchAssignment[]): BranchAssignment[] {
+function sortBranchesWithUnassignedLast(
+  branches: BranchAssignment[],
+  officeMap: Map<string, number>
+): BranchAssignment[] {
   const assigned = branches
     .filter((b) => b.branch_name !== UNASSIGNED_BRANCH)
-    .sort((a, b) => a.branch_name.localeCompare(b.branch_name, 'ko'));
+    .sort((a, b) => compareOffices(a.branch_name, b.branch_name, officeMap));
   const unassigned = branches.filter((b) => b.branch_name === UNASSIGNED_BRANCH);
   return [...assigned, ...unassigned];
 }
@@ -141,6 +146,7 @@ function formatContextualTeamLabel(emp: Pick<EmployeeAssignment, 'b2b_team' | 'b
 }
 
 export default function ClientAssignmentManager() {
+  const displayOrder = useDisplayOrderBootstrap();
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [employeeAssignments, setEmployeeAssignments] = useState<EmployeeAssignment[]>([]);
@@ -163,7 +169,7 @@ export default function ClientAssignmentManager() {
 
   useEffect(() => {
     fetchData();
-  }, [selectedEmployee, showProducts, categoryType]);
+  }, [selectedEmployee, showProducts, categoryType, displayOrder.ready]);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -253,7 +259,7 @@ export default function ClientAssignmentManager() {
           branch.total_clients += emp.client_count;
         });
 
-        const branchArray = sortBranchesWithUnassignedLast(Array.from(branchMap.values()));
+        const branchArray = sortBranchesWithUnassignedLast(Array.from(branchMap.values()), displayOrder.office);
         setBranchAssignments(branchArray);
 
         console.log('Branch assignments:', branchArray);
@@ -567,7 +573,13 @@ export default function ClientAssignmentManager() {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(emp);
     });
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+    return Array.from(map.entries()).sort((a, b) => {
+      const e0 = a[1][0];
+      const e1 = b[1][0];
+      const ta = normalizeTeamField(e0?.b2c_team) || normalizeTeamField(e0?.b2b_team);
+      const tb = normalizeTeamField(e1?.b2c_team) || normalizeTeamField(e1?.b2b_team);
+      return compareTeams(ta, tb, displayOrder.teamB2c, displayOrder.teamB2b);
+    });
   };
 
   if (isLoading) {
@@ -811,7 +823,7 @@ export default function ClientAssignmentManager() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {sortBranchesWithUnassignedLast(branchAssignments).flatMap((branch, index, arr) => {
+                {sortBranchesWithUnassignedLast(branchAssignments, displayOrder.office).flatMap((branch, index, arr) => {
                   const prev = index > 0 ? arr[index - 1] : null;
                   const showUnassignedSeparator =
                     branch.branch_name === UNASSIGNED_BRANCH &&
