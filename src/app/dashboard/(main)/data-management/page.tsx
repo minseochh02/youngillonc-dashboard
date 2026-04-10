@@ -295,47 +295,84 @@ export default function DataManagementPage() {
     setIsSaving(true);
     setMessage(null);
     try {
-      // Save new/modified rows if any
-      if (rowsToSave.length > 0) {
+      const pk =
+        activeTableInfo?.keyColumns[0] || Object.keys(tableData[0] || {})[0];
+
+      // 사원분류: 스테이징을 반영한 전체 스냅샷을 한 번에 저장 (DELETE 전체 후 INSERT — 중복 행 방지)
+      if (activeTable === 'employee_category' && stagedDiffs) {
+        const merged = new Map<string, Record<string, unknown>>();
+        for (const r of tableData) {
+          const k = String(r[pk] ?? '');
+          if (k) merged.set(k, r);
+        }
+        for (const d of stagedDiffs) {
+          if (d.type === 'deleted') {
+            merged.delete(String(d.data[pk] ?? ''));
+          } else if (d.type === 'new' || d.type === 'modified') {
+            const k = String(d.data[pk] ?? '');
+            if (k) merged.set(k, d.data);
+          }
+        }
+        const snapshotRows = Array.from(merged.values());
         const response = await apiFetch('/api/dashboard/data-management', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tableName: activeTable, rows: rowsToSave }),
+          body: JSON.stringify({
+            tableName: activeTable,
+            rows: snapshotRows,
+            replaceAll: true,
+          }),
         });
         const result = await response.json();
-
         if (!result.success) {
-          setMessage({ type: 'error', text: '저장 중 오류가 발생했습니다.' });
+          setMessage({
+            type: 'error',
+            text: (result as { error?: string }).error || '저장 중 오류가 발생했습니다.',
+          });
           setIsSaving(false);
           setTimeout(() => setMessage(null), 3000);
           return;
         }
-      }
+      } else {
+        if (rowsToSave.length > 0) {
+          const response = await apiFetch('/api/dashboard/data-management', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tableName: activeTable, rows: rowsToSave }),
+          });
+          const result = await response.json();
 
-      // Delete removed rows if any
-      if (rowsToDelete.length > 0) {
-        const pk = activeTableInfo?.keyColumns[0] || Object.keys(tableData[0] || {})[0];
-        const deleteKey = activeTable === 'employee_category' && pk === '사원코드' ? '담당자' : pk;
+          if (!result.success) {
+            setMessage({ type: 'error', text: '저장 중 오류가 발생했습니다.' });
+            setIsSaving(false);
+            setTimeout(() => setMessage(null), 3000);
+            return;
+          }
+        }
 
-        // Build deletion filters for each row using the primary key
-        for (const row of rowsToDelete) {
-          const pkValue = row[deleteKey];
-          if (pkValue !== undefined && pkValue !== null) {
-            const deleteResponse = await apiFetch('/api/dashboard/data-management', {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                tableName: activeTable,
-                deletionFilter: { filters: { [deleteKey]: String(pkValue) } }
-              }),
-            });
-            const deleteResult = await deleteResponse.json();
+        if (rowsToDelete.length > 0) {
+          const deleteKey =
+            activeTable === 'employee_category' && pk === '사원코드' ? '담당자' : pk;
 
-            if (!deleteResult.success) {
-              setMessage({ type: 'error', text: '삭제 중 오류가 발생했습니다.' });
-              setIsSaving(false);
-              setTimeout(() => setMessage(null), 3000);
-              return;
+          for (const row of rowsToDelete) {
+            const pkValue = row[deleteKey];
+            if (pkValue !== undefined && pkValue !== null) {
+              const deleteResponse = await apiFetch('/api/dashboard/data-management', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  tableName: activeTable,
+                  deletionFilter: { filters: { [deleteKey]: String(pkValue) } },
+                }),
+              });
+              const deleteResult = await deleteResponse.json();
+
+              if (!deleteResult.success) {
+                setMessage({ type: 'error', text: '삭제 중 오류가 발생했습니다.' });
+                setIsSaving(false);
+                setTimeout(() => setMessage(null), 3000);
+                return;
+              }
             }
           }
         }

@@ -76,13 +76,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { tableName, rows } = body;
+    const { tableName, rows, replaceAll } = body;
 
     if (!tableName || !rows || !Array.isArray(rows)) {
       return NextResponse.json({ success: false, error: 'Table name and rows are required' }, { status: 400 });
     }
 
-    if (rows.length === 0) {
+    if (rows.length === 0 && !(tableName === 'employee_category' && replaceAll === true)) {
       return NextResponse.json({ success: true, count: 0 });
     }
 
@@ -143,7 +143,13 @@ export async function POST(request: Request) {
       return newRow;
     });
 
-    if (tableName === 'employee_category') {
+    if (tableName === 'employee_category' && replaceAll === true) {
+      await executeSQL('DELETE FROM employee_category');
+      const inserts = filteredRows.map(({ id: _id, ...rest }) => rest);
+      if (inserts.length > 0) {
+        await insertRows('employee_category', inserts);
+      }
+    } else if (tableName === 'employee_category') {
       for (const fr of filteredRows) {
         const rawId = fr.id;
         const idNum =
