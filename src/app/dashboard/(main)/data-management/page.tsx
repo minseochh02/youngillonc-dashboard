@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Database, Users, Building2, Package, Tags, MapPin, Settings, Loader2, Save, CheckCircle2, AlertCircle, X, Info, ArrowUp, ArrowDown, ListOrdered } from 'lucide-react';
+import { Database, Users, Building2, Package, Tags, MapPin, Settings, Loader2, Save, CheckCircle2, AlertCircle, X, Info, ArrowUp, ArrowDown, ListOrdered, GitCompare } from 'lucide-react';
+import type { DisplayOrderReconcileReport } from '@/lib/display-order-reconcile';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { ExcelUploadButton } from '@/components/ExcelUploadButton';
@@ -96,6 +97,14 @@ const baselineTables = [
     rowCount: '—',
     keyColumns: ['scope', '팀', '담당자'],
   },
+  {
+    id: 'display_order_reconcile',
+    label: '노출순서 정합 점검',
+    icon: GitCompare,
+    description: '사원분류 vs 노출순서 테이블 — 누락·고아 항목',
+    rowCount: '—',
+    keyColumns: ['missing', 'orphan'],
+  },
 ];
 
 export default function DataManagementPage() {
@@ -108,7 +117,9 @@ export default function DataManagementPage() {
   const isOfficeDisplayOrderTable = activeTable === 'office_display_order';
   const isChannelDisplayOrderTable =
     activeTable === 'display_order_b2c' || activeTable === 'display_order_b2b';
+  const isReconcileTable = activeTable === 'display_order_reconcile';
 
+  const [reconcileReport, setReconcileReport] = useState<DisplayOrderReconcileReport | null>(null);
   const [channelTeams, setChannelTeams] = useState<Array<{ 팀: string; 노출순서: number }>>([]);
   const [channelEmployeesByTeam, setChannelEmployeesByTeam] = useState<
     Record<string, Array<{ 담당자: string; 팀내_노출순서: number }>>
@@ -123,6 +134,20 @@ export default function DataManagementPage() {
   const fetchTableData = async () => {
     setIsLoading(true);
     try {
+      if (activeTable === 'display_order_reconcile') {
+        const response = await apiFetch('/api/dashboard/display-order/reconcile');
+        const result = await response.json();
+        if (result.success && result.data) {
+          setReconcileReport(result.data as DisplayOrderReconcileReport);
+        } else {
+          setReconcileReport(null);
+          setMessage({ type: 'error', text: result.error || '정합 점검을 불러오지 못했습니다.' });
+        }
+        setTableData([]);
+        return;
+      }
+      setReconcileReport(null);
+
       if (activeTable === 'display_order_b2c' || activeTable === 'display_order_b2b') {
         const scope = activeTable === 'display_order_b2c' ? 'b2c' : 'b2b';
         const response = await apiFetch(`/api/dashboard/display-order?scope=${scope}`);
@@ -547,7 +572,7 @@ export default function DataManagementPage() {
                   {activeTableInfo.description}
                 </p>
               </div>
-              {!isChannelDisplayOrderTable && (
+              {!isChannelDisplayOrderTable && !isReconcileTable && (
                 <div className="flex items-center gap-2">
                   <ExcelDownloadButton
                     label="내보내기"
@@ -561,21 +586,34 @@ export default function DataManagementPage() {
           </div>
 
           {/* Key Columns Info */}
-          <div className="px-6 py-4 bg-zinc-50/30 dark:bg-zinc-800/20 border-b border-zinc-200 dark:border-zinc-800">
-            <p className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2">
-              주요 컬럼
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {activeTableInfo.keyColumns.map((col) => (
-                <span
-                  key={col}
-                  className="px-2 py-0.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded text-[11px] font-mono text-zinc-600 dark:text-zinc-400"
-                >
-                  {col}
-                </span>
-              ))}
+          {!isReconcileTable && (
+            <div className="px-6 py-4 bg-zinc-50/30 dark:bg-zinc-800/20 border-b border-zinc-200 dark:border-zinc-800">
+              <p className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2">
+                주요 컬럼
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {activeTableInfo.keyColumns.map((col) => (
+                  <span
+                    key={col}
+                    className="px-2 py-0.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded text-[11px] font-mono text-zinc-600 dark:text-zinc-400"
+                  >
+                    {col}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+          {isReconcileTable && (
+            <div className="px-6 py-4 bg-amber-50/40 dark:bg-amber-950/15 border-b border-amber-200/80 dark:border-amber-900/50">
+              <p className="text-sm text-amber-900 dark:text-amber-200/90 leading-relaxed">
+                사원분류(<code className="text-xs bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">전체사업소</code>,{' '}
+                <code className="text-xs bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">b2c_팀</code>,{' '}
+                <code className="text-xs bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">b2b팀</code>)과 노출순서 테이블을 비교합니다.
+                <strong className="font-semibold"> 누락</strong>은 EC에는 있으나 노출순서에 없는 키(또는 정규화 후 매칭 불가),
+                <strong className="font-semibold"> 고아</strong>는 노출순서에만 남은 키입니다. 사업소는 대시보드와 동일하게 정규화합니다.
+              </p>
+            </div>
+          )}
 
           {/* Table Content */}
           <div className="overflow-x-auto min-h-[400px] w-full max-w-full">
@@ -662,6 +700,158 @@ export default function DataManagementPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            ) : isReconcileTable ? (
+              <div className="p-6 space-y-8">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-zinc-500">
+                    {reconcileReport
+                      ? `생성: ${new Date(reconcileReport.generatedAt).toLocaleString('ko-KR')}`
+                      : '점검 데이터를 불러오는 중이거나 오류가 났습니다.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => fetchTableData()}
+                    disabled={isLoading}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+                  >
+                    다시 불러오기
+                  </button>
+                </div>
+                {reconcileReport && (
+                  <>
+                    {(() => {
+                      const o = reconcileReport.offices;
+                      const c = reconcileReport.b2c;
+                      const b = reconcileReport.b2b;
+                      const issueCount =
+                        o.missingInDisplayOrder.length +
+                        o.orphanInDisplayOrder.length +
+                        c.teams.missing.length +
+                        c.teams.orphan.length +
+                        c.employees.missing.length +
+                        c.employees.orphan.length +
+                        b.teams.missing.length +
+                        b.teams.orphan.length +
+                        b.employees.missing.length +
+                        b.employees.orphan.length;
+                      return issueCount === 0 ? (
+                        <div className="flex items-center gap-2 rounded-lg border border-green-200 dark:border-green-900/50 bg-green-50/80 dark:bg-green-950/20 px-4 py-3 text-sm text-green-800 dark:text-green-200">
+                          <CheckCircle2 className="w-5 h-5 shrink-0" />
+                          정합 이슈 없음 — 사원분류와 노출순서 키가 일치합니다.
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+                          <AlertCircle className="w-5 h-5 shrink-0" />
+                          총 <strong>{issueCount}</strong>건의 누락·고아 항목이 있습니다. 아래를 참고해 사업소 테이블을 추가하거나,{' '}
+                          <code className="text-xs bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">npm run seed-display-order</code> 등으로 누락 행을 채울 수 있습니다.
+                        </div>
+                      );
+                    })()}
+                    <div className="grid gap-6 lg:grid-cols-1">
+                      <section className="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                        <h5 className="text-sm font-bold px-4 py-3 bg-zinc-50 dark:bg-zinc-800/80 border-b border-zinc-200 dark:border-zinc-700">
+                          사업소 (office_display_order)
+                        </h5>
+                        <div className="p-4 grid md:grid-cols-2 gap-4 text-xs">
+                          <div>
+                            <p className="font-semibold text-red-700 dark:text-red-300 mb-2">
+                              누락 ({reconcileReport.offices.missingInDisplayOrder.length})
+                            </p>
+                            <ul className="max-h-40 overflow-y-auto rounded border border-zinc-200 dark:border-zinc-700 p-2 font-mono space-y-0.5">
+                              {reconcileReport.offices.missingInDisplayOrder.length === 0 ? (
+                                <li className="text-zinc-400">—</li>
+                              ) : (
+                                reconcileReport.offices.missingInDisplayOrder.map((x) => (
+                                  <li key={x}>{x}</li>
+                                ))
+                              )}
+                            </ul>
+                          </div>
+                          <div>
+                            <p className="font-semibold text-zinc-600 dark:text-zinc-400 mb-2">
+                              고아 ({reconcileReport.offices.orphanInDisplayOrder.length})
+                            </p>
+                            <ul className="max-h-40 overflow-y-auto rounded border border-zinc-200 dark:border-zinc-700 p-2 font-mono space-y-0.5">
+                              {reconcileReport.offices.orphanInDisplayOrder.length === 0 ? (
+                                <li className="text-zinc-400">—</li>
+                              ) : (
+                                reconcileReport.offices.orphanInDisplayOrder.map((x) => (
+                                  <li key={x}>{x}</li>
+                                ))
+                              )}
+                            </ul>
+                          </div>
+                        </div>
+                      </section>
+                      {(['b2c', 'b2b'] as const).map((scope) => {
+                        const block = scope === 'b2c' ? reconcileReport.b2c : reconcileReport.b2b;
+                        const label = scope === 'b2c' ? 'B2C (b2c_팀)' : 'B2B (b2b팀)';
+                        return (
+                          <section key={scope} className="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                            <h5 className="text-sm font-bold px-4 py-3 bg-zinc-50 dark:bg-zinc-800/80 border-b border-zinc-200 dark:border-zinc-700">
+                              팀·사원 — {label}
+                            </h5>
+                            <div className="p-4 grid md:grid-cols-2 gap-4 text-xs">
+                              <div>
+                                <p className="font-semibold text-red-700 dark:text-red-300 mb-2">
+                                  팀 누락 ({block.teams.missing.length})
+                                </p>
+                                <ul className="max-h-28 overflow-y-auto rounded border border-zinc-200 dark:border-zinc-700 p-2 font-mono">
+                                  {block.teams.missing.length === 0 ? (
+                                    <li className="text-zinc-400">—</li>
+                                  ) : (
+                                    block.teams.missing.map((t) => <li key={t}>{t}</li>)
+                                  )}
+                                </ul>
+                                <p className="font-semibold text-red-700 dark:text-red-300 mt-4 mb-2">
+                                  사원 누락 ({block.employees.missing.length})
+                                </p>
+                                <ul className="max-h-36 overflow-y-auto rounded border border-zinc-200 dark:border-zinc-700 p-2 font-mono space-y-0.5">
+                                  {block.employees.missing.length === 0 ? (
+                                    <li className="text-zinc-400">—</li>
+                                  ) : (
+                                    block.employees.missing.map((r) => (
+                                      <li key={`${r.팀}\t${r.담당자}`}>
+                                        {r.팀} / {r.담당자}
+                                      </li>
+                                    ))
+                                  )}
+                                </ul>
+                              </div>
+                              <div>
+                                <p className="font-semibold text-zinc-600 dark:text-zinc-400 mb-2">
+                                  팀 고아 ({block.teams.orphan.length})
+                                </p>
+                                <ul className="max-h-28 overflow-y-auto rounded border border-zinc-200 dark:border-zinc-700 p-2 font-mono">
+                                  {block.teams.orphan.length === 0 ? (
+                                    <li className="text-zinc-400">—</li>
+                                  ) : (
+                                    block.teams.orphan.map((t) => <li key={t}>{t}</li>)
+                                  )}
+                                </ul>
+                                <p className="font-semibold text-zinc-600 dark:text-zinc-400 mt-4 mb-2">
+                                  사원 고아 ({block.employees.orphan.length})
+                                </p>
+                                <ul className="max-h-36 overflow-y-auto rounded border border-zinc-200 dark:border-zinc-700 p-2 font-mono space-y-0.5">
+                                  {block.employees.orphan.length === 0 ? (
+                                    <li className="text-zinc-400">—</li>
+                                  ) : (
+                                    block.employees.orphan.map((r) => (
+                                      <li key={`${r.팀}\t${r.담당자}`}>
+                                        {r.팀} / {r.담당자}
+                                      </li>
+                                    ))
+                                  )}
+                                </ul>
+                              </div>
+                            </div>
+                          </section>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             ) : isChannelDisplayOrderTable ? (
               <div className="p-6 space-y-8">
@@ -843,7 +1033,7 @@ export default function DataManagementPage() {
                 <p className="text-sm">엑셀 가져오기를 통해 데이터를 추가해 보세요.</p>
               </div>
             )}
-            {!isLoading && !isChannelDisplayOrderTable && tableData.length > 50 && (
+            {!isLoading && !isChannelDisplayOrderTable && !isReconcileTable && tableData.length > 50 && (
               <div className="px-6 py-4 bg-zinc-50 dark:bg-zinc-800/30 border-t border-zinc-200 dark:border-zinc-800 text-center">
                 <p className="text-xs text-zinc-500">
                   전체 {tableData.length.toLocaleString()}개 행 중 상위 50개만 표시됩니다. 전체 데이터는 내보내기를 통해 확인하세요.

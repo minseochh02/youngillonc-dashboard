@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { executeSQL, insertRows, queryTable, deleteRows } from '@/egdesk-helpers';
+import { executeSQL, insertRows, queryTable, deleteRows, updateRows } from '@/egdesk-helpers';
 import { TABLES } from '../../../../../egdesk.config';
 
 export async function GET(request: Request) {
@@ -17,6 +17,7 @@ export async function GET(request: Request) {
     } else if (tableName === 'employee_category') {
       const query = `
         SELECT
+          ec.id,
           COALESCE(e.사원_담당_코드, ec.담당자) AS 사원코드,
           ec.담당자,
           ec.b2b팀,
@@ -126,7 +127,8 @@ export async function POST(request: Request) {
             const code = String(row[key] ?? '').trim();
             const mappedName = employeeCodeToName.get(code);
             const existingName = String(row?.담당자 ?? '').trim();
-            newRow[targetKey] = mappedName || existingName || null;
+            // Staged row 담당자 must win over code→name lookup, or edits never persist (GET joins 사원코드).
+            newRow[targetKey] = existingName || mappedName || null;
           } else {
             newRow[targetKey] = row[key];
           }
@@ -141,8 +143,22 @@ export async function POST(request: Request) {
       return newRow;
     });
 
-    // Insert rows into the table (insertRows handles upsert if unique keys are defined)
-    await insertRows(tableName, filteredRows);
+    if (tableName === 'employee_category') {
+      for (const fr of filteredRows) {
+        const rawId = fr.id;
+        const idNum =
+          rawId != null && rawId !== '' && Number.isFinite(Number(rawId)) ? Number(rawId) : NaN;
+        if (Number.isFinite(idNum)) {
+          const { id: _omitId, ...updates } = fr;
+          await updateRows('employee_category', updates, { ids: [idNum] });
+        } else {
+          const { id: _omitId, ...insertPayload } = fr;
+          await insertRows('employee_category', [insertPayload]);
+        }
+      }
+    } else {
+      await insertRows(tableName, filteredRows);
+    }
 
     // Keep employees table in sync so employee_category's 사원코드
     // can be resolved by JOIN on subsequent reads.
