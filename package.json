@@ -32,7 +32,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@egdesk/next-api-plugin": "^1.2.3",
+    "@egdesk/next-api-plugin": "^1.3.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/node-cron": "^3.0.11",

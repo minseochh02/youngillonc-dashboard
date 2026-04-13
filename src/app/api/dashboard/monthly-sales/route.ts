@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
  * API Endpoint to fetch Monthly Sales and Purchase Status for the current year
@@ -10,8 +11,6 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const year = searchParams.get('year') || '2026';
     const includeVat = searchParams.get('includeVat') === 'true';
-
-    const divisor = includeVat ? '1.0' : '1.1';
 
     const officeMapping = `
       CASE 
@@ -34,20 +33,20 @@ export async function GET(request: Request) {
     `;
 
     const metrics = `
-      SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as totalSales,
+      SUM(${sqlSalesAmountExpr('s', includeVat)}) as totalSales,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as totalSalesWeight,
-      SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as mobileSalesAmount,
+      SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as mobileSalesAmount,
       SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as mobileSalesWeight,
-      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as flagshipSalesAmount,
+      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as flagshipSalesAmount,
       SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipSalesWeight
     `;
 
     const purchaseMetrics = `
-      SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor}) as totalPurchases,
+      SUM(${sqlPurchaseAmountExpr('p', includeVat)}) as totalPurchases,
       SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as totalPurchaseWeight,
-      SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as mobilePurchaseAmount,
+      SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN ${sqlPurchaseAmountExpr('p', includeVat)} ELSE 0 END) as mobilePurchaseAmount,
       SUM(CASE WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN CAST(REPLACE(p.중량, ',', '') AS NUMERIC) ELSE 0 END) as mobilePurchaseWeight,
-      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as flagshipPurchaseAmount,
+      SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN ${sqlPurchaseAmountExpr('p', includeVat)} ELSE 0 END) as flagshipPurchaseAmount,
       SUM(CASE WHEN i.품목그룹1코드 IN ('AVI', 'CVL', 'PVL', 'MB', 'MAR', 'IL') AND i.품목그룹3코드 = 'FLA' THEN CAST(REPLACE(p.중량, ',', '') AS NUMERIC) ELSE 0 END) as flagshipPurchaseWeight
     `;
 

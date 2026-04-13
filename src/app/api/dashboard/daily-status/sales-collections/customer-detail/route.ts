@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
  * API Endpoint to fetch Customer-wise Daily Sales & Collections
@@ -11,8 +12,7 @@ export async function GET(request: Request) {
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const division = searchParams.get('division') || '창원';
     const includeVat = searchParams.get('includeVat') === 'true';
-
-    const divisor = includeVat ? '1.0' : '1.1';
+    const salesLineAmount = sqlSalesAmountExpr('s', includeVat);
 
     // Calculate the start of the month for the given date
     const startDate = `${date.substring(0, 7)}-01`;
@@ -39,11 +39,11 @@ export async function GET(request: Request) {
     // 0. Base subquery to combine sales tables (excluding south division)
     const baseSalesSubquery = `
       (
-        SELECT 일자, 거래처코드, 담당자코드, 합계, 출하창고코드 FROM sales
+        SELECT 일자, 거래처코드, 담당자코드, 합계, 공급가액, 출하창고코드 FROM sales
         UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, 합계, 창고코드 as 출하창고코드 FROM east_division_sales
+        SELECT 일자, 거래처코드, 담당자코드, 합계, 공급가액, 출하창고코드 FROM east_division_sales
         UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, 합계, 창고코드 as 출하창고코드 FROM west_division_sales
+        SELECT 일자, 거래처코드, 담당자코드, 합계, 공급가액, 출하창고코드 FROM west_division_sales
       )
     `;
 
@@ -51,9 +51,9 @@ export async function GET(request: Request) {
       SELECT
         cust.name as customer,
         COALESCE(ts_prev.amount, 0) - COALESCE(tc_prev.amount, 0) as prevBalance,
-        COALESCE(ts.amount, 0) / ${divisor} as salesAmount,
+        COALESCE(ts.amount, 0) as salesAmount,
         COALESCE(tc.amount, 0) as collectionAmount,
-        COALESCE(ms.amount, 0) / ${divisor} as salesMTD,
+        COALESCE(ms.amount, 0) as salesMTD,
         COALESCE(mc.amount, 0) as collectionMTD,
         (COALESCE(ts_prev.amount, 0) - COALESCE(tc_prev.amount, 0) + COALESCE(ts.amount, 0) - COALESCE(tc.amount, 0)) as currentBalance
       FROM (
@@ -86,19 +86,19 @@ export async function GET(request: Request) {
       ) tc_prev ON cust.거래처코드 = tc_prev.거래처코드
       LEFT JOIN (
         SELECT
-          거래처코드,
-          SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as amount
-        FROM ${baseSalesSubquery}
-        WHERE 일자 < '${date}'
-        GROUP BY 거래처코드
+          s.거래처코드,
+          SUM(${salesLineAmount}) as amount
+        FROM ${baseSalesSubquery} s
+        WHERE s.일자 < '${date}'
+        GROUP BY s.거래처코드
       ) ts_prev ON cust.거래처코드 = ts_prev.거래처코드
       LEFT JOIN (
         SELECT
-          거래처코드,
-          SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as amount
-        FROM ${baseSalesSubquery}
-        WHERE 일자 = '${date}'
-        GROUP BY 거래처코드
+          s.거래처코드,
+          SUM(${salesLineAmount}) as amount
+        FROM ${baseSalesSubquery} s
+        WHERE s.일자 = '${date}'
+        GROUP BY s.거래처코드
       ) ts ON cust.거래처코드 = ts.거래처코드
       LEFT JOIN (
         SELECT
@@ -113,11 +113,11 @@ export async function GET(request: Request) {
       ) tc ON cust.거래처코드 = tc.거래처코드
       LEFT JOIN (
         SELECT
-          거래처코드,
-          SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as amount
-        FROM ${baseSalesSubquery}
-        WHERE 일자 >= '${startDate}' AND 일자 <= '${date}'
-        GROUP BY 거래처코드
+          s.거래처코드,
+          SUM(${salesLineAmount}) as amount
+        FROM ${baseSalesSubquery} s
+        WHERE s.일자 >= '${startDate}' AND s.일자 <= '${date}'
+        GROUP BY s.거래처코드
       ) ms ON cust.거래처코드 = ms.거래처코드
       LEFT JOIN (
         SELECT

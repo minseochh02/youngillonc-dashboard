@@ -18,8 +18,6 @@ export async function GET(request: Request) {
         UNION ALL SELECT 일자 FROM east_division_sales
         UNION ALL SELECT 일자 FROM west_division_sales
         UNION ALL SELECT 일자 FROM purchases
-        UNION ALL SELECT 일자 FROM east_division_purchases
-        UNION ALL SELECT 일자 FROM west_division_purchases
       ) WHERE 일자 IS NOT NULL AND 일자 != '' AND 일자 LIKE '202%'
       ORDER BY month ASC
     `;

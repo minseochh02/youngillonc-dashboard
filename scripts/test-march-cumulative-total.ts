@@ -66,14 +66,6 @@ async function queryMarchCumulative(targetYear: number): Promise<Row[]> {
       SELECT p.일자, p.품목코드, p.중량, i.품목그룹1코드
       FROM purchases p
       LEFT JOIN items i ON p.품목코드 = i.품목코드
-      UNION ALL
-      SELECT p.일자, p.품목코드, p.중량, i.품목그룹1코드
-      FROM east_division_purchases p
-      LEFT JOIN items i ON p.품목코드 = i.품목코드
-      UNION ALL
-      SELECT p.일자, p.품목코드, p.중량, i.품목그룹1코드
-      FROM west_division_purchases p
-      LEFT JOIN items i ON p.품목코드 = i.품목코드
     )
   `;
 

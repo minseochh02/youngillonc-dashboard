@@ -492,7 +492,7 @@ const query = `
     strftime('%Y', s.일자) as year,
     strftime('%Y-%m', s.일자) as year_month,
     SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-    SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+    SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
     SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
   FROM ${baseSalesTable} s
   LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -529,7 +529,7 @@ const query = `
     strftime('%Y', s.일자) as year,
     strftime('%Y-%m', s.일자) as year_month,
     SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-    SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+    SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
     SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
   FROM ${baseSalesTable} s
   LEFT JOIN clients c ON s.거래처코드 = c.거래처코드

@@ -7,6 +7,8 @@ import {
   loadFullDisplayOrderContext,
   loadOfficeOrderMap,
 } from '@/lib/display-order';
+import { buildCumulativeViewPayload } from '@/lib/closing-meeting-cumulative';
+import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
  * 사업소 축: 고객 거래처그룹이 아니라 담당자의 사원분류(employee_category.전체사업소) 기준.
@@ -39,39 +41,30 @@ export async function GET(request: Request) {
     const tab = searchParams.get('tab') || 'monthly-summary';
     const selectedMonthParam = searchParams.get('month');
     const includeVat = searchParams.get('includeVat') === 'true';
-    const divisor = includeVat ? '1.0' : '1.1';
 
     // Base subquery to combine sales tables (excluding south division)
-    // Joins with items to get 품목그룹1코드 and harmonizes '창고코드' to '출하창고코드'
+    // Joins with items to get 품목그룹1코드; sales sources all expose 출하창고코드
     const baseSalesSubquery = `
       (
-        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.출하창고코드, i.품목그룹1코드
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.출하창고코드, i.품목그룹1코드
         FROM sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         UNION ALL
-        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.창고코드 as 출하창고코드, i.품목그룹1코드
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.출하창고코드, i.품목그룹1코드
         FROM east_division_sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         UNION ALL
-        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.창고코드 as 출하창고코드, i.품목그룹1코드
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.출하창고코드, i.품목그룹1코드
         FROM west_division_sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
       )
     `;
 
-    // Base subquery to combine purchase tables
+    // Purchase metrics use unified purchases table only.
     const basePurchasesSubquery = `
       (
-        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합_계 as 합계, p.창고코드, i.품목그룹1코드
+        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합계, p.공급가액, p.창고코드, i.품목그룹1코드
         FROM purchases p
-        LEFT JOIN items i ON p.품목코드 = i.품목코드
-        UNION ALL
-        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합계 as 합계, p.창고코드, i.품목그룹1코드
-        FROM east_division_purchases p
-        LEFT JOIN items i ON p.품목코드 = i.품목코드
-        UNION ALL
-        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합계 as 합계, p.창고코드, i.품목그룹1코드
-        FROM west_division_purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
       )
     `;
@@ -83,8 +76,6 @@ export async function GET(request: Request) {
         UNION ALL SELECT 일자 FROM east_division_sales
         UNION ALL SELECT 일자 FROM west_division_sales
         UNION ALL SELECT 일자 FROM purchases
-        UNION ALL SELECT 일자 FROM east_division_purchases
-        UNION ALL SELECT 일자 FROM west_division_purchases
       ) WHERE 일자 IS NOT NULL
         AND 일자 != ''
         AND substr(일자, 1, 4) BETWEEN '2017' AND '2099'
@@ -117,9 +108,9 @@ export async function GET(request: Request) {
       const b2cTotalQuery = `
         SELECT
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as ytd_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as ytd_amount
+          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as ytd_amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
@@ -132,9 +123,9 @@ export async function GET(request: Request) {
       const b2bTotalQuery = `
         SELECT
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as ytd_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as ytd_amount
+          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as ytd_amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
@@ -196,7 +187,7 @@ export async function GET(request: Request) {
           substr(s.일자, 1, 7) as month,
           ${monthlySummaryCategoryCase} as category,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
@@ -213,7 +204,7 @@ export async function GET(request: Request) {
           substr(p.일자, 1, 7) as month,
           ${monthlySummaryPurchaseCategoryCase} as category,
           SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(p.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
+          SUM(${sqlPurchaseAmountExpr('p', includeVat)}) as amount
         FROM (${basePurchasesSubquery}) p
         WHERE p.일자 IS NOT NULL
         GROUP BY 1, 2
@@ -779,7 +770,7 @@ export async function GET(request: Request) {
           END as team,
           e.사원_담당_명 as employee,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
@@ -799,7 +790,7 @@ export async function GET(request: Request) {
           END as team,
           e.사원_담당_명 as employee,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
@@ -907,6 +898,17 @@ export async function GET(request: Request) {
       });
     }
 
+    if (tab === 'cumulative-view') {
+      const cumulativeData = await buildCumulativeViewPayload({
+        currentMonthStr,
+        currentYear,
+        availableMonths,
+        baseSalesSubquery,
+        basePurchasesSubquery,
+      });
+      return NextResponse.json({ success: true, data: cumulativeData });
+    }
+
     if (tab === 'b2c-auto') {
       const displayOrderMaps = await loadFullDisplayOrderContext();
       const yoyMonthStr = `${lastYear}-${currentMonthStr.split('-')[1]}`;
@@ -929,9 +931,9 @@ export async function GET(request: Request) {
             ELSE '기타'
           END as category,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as current_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as current_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as last_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as last_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -958,7 +960,7 @@ export async function GET(request: Request) {
             ELSE '기타'
           END as category,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as current_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as current_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_month_weight,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
@@ -1492,9 +1494,9 @@ export async function GET(request: Request) {
             WHEN s.품목그룹1코드 = 'IL' THEN 'IL'
           END as category,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as current_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as current_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as last_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as last_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -1519,7 +1521,7 @@ export async function GET(request: Request) {
             WHEN s.품목그룹1코드 = 'IL' THEN 'IL'
           END as category,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_month_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as current_month_amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as current_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_month_weight,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
@@ -1537,9 +1539,9 @@ export async function GET(request: Request) {
       const b2cTotalQuery = `
         SELECT
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as amount,
+          SUM(CASE WHEN substr(s.일자, 1, 7) = '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as ytd_weight,
-          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor} ELSE 0 END) as ytd_amount
+          SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as ytd_amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
@@ -1554,7 +1556,7 @@ export async function GET(request: Request) {
       const b2bYtdQuery = `
         SELECT
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
@@ -2063,7 +2065,7 @@ export async function GET(request: Request) {
           COALESCE(ct.산업분류, '미분류') as industry,
           COALESCE(ct.섹터분류, '미분류') as sector,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as amount
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드

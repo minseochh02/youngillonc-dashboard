@@ -2,8 +2,6 @@ import { executeSQL } from '../egdesk-helpers';
 
 // Target tables with display names
 const TARGET_TABLES = [
-  { name: 'west_division_purchases', displayName: '서부구매현황' },
-  { name: 'east_division_purchases', displayName: '동부구매현황' },
   { name: 'west_division_sales', displayName: '서부판매현황' },
   { name: 'east_division_sales', displayName: '동부판매현황' },
   { name: 'purchases', displayName: '구매현황' },

@@ -7,6 +7,7 @@ import B2BILAnalysisTab from '@/components/closing-meeting/B2BILAnalysisTab';
 import TargetAchievementTab from '@/components/closing-meeting/TargetAchievementTab';
 import YearOverYearTab from '@/components/closing-meeting/YearOverYearTab';
 import BranchPerformanceTab from '@/components/closing-meeting/BranchPerformanceTab';
+import CumulativeViewTab from '@/components/closing-meeting/CumulativeViewTab';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import VatToggle from '@/components/VatToggle';
 import { apiFetch } from '@/lib/api';
@@ -22,6 +23,7 @@ const tabs = [
   { id: 'target-achievement', label: '목표 달성율' },
   { id: 'yoy-comparison', label: '전년 대비' },
   { id: 'branch-performance', label: '사업소별 실적' },
+  { id: 'cumulative-view', label: '누적 보기' },
 ];
 
 export default function ClosingMeetingPage() {
@@ -82,11 +84,11 @@ export default function ClosingMeetingPage() {
           // 1. Summary Table
           islands.push({
             title: '월별 총괄 실적 요약 (L)',
-            headers: ['월', '매입중량', '매출중량', '재고변동', '목표중량', '달성율(%)', '전년비성장(%)'],
+            headers: ['월', '매출중량', '매입중량', '재고변동', '목표중량', '달성율(%)', '전년비성장(%)'],
             data: [
-              ['연누계', yearToDate.purchase_weight, yearToDate.sales_weight, yearToDate.inventory_weight, yearToDate.target_weight, yearToDate.achievement_rate.toFixed(1), '-'],
+              ['연누계', yearToDate.sales_weight, yearToDate.purchase_weight, yearToDate.inventory_weight, yearToDate.target_weight, yearToDate.achievement_rate.toFixed(1), '-'],
               ...monthlyData.map((r: any) => [
-                r.month, r.purchase_weight, r.sales_weight, r.inventory_weight, r.target_weight, 
+                r.month, r.sales_weight, r.purchase_weight, r.inventory_weight, r.target_weight, 
                 r.achievement_rate.toFixed(1), r.yoy_growth_rate.toFixed(1)
               ])
             ]
@@ -97,9 +99,9 @@ export default function ClosingMeetingPage() {
           if (currentMonth) {
             islands.push({
               title: `${selectedMonth} 카테고리별 세부 실적`,
-              headers: ['카테고리', '매입중량', '매출중량', '재고변동', '목표중량', '달성율(%)'],
+              headers: ['카테고리', '매출중량', '매입중량', '재고변동', '목표중량', '달성율(%)'],
               data: currentMonth.breakdown.map((c: any) => [
-                c.category, c.purchase_weight, c.sales_weight, c.inventory_weight, c.target_weight, c.achievement_rate.toFixed(1)
+                c.category, c.sales_weight, c.purchase_weight, c.inventory_weight, c.target_weight, c.achievement_rate.toFixed(1)
               ])
             });
           }
@@ -303,6 +305,8 @@ export default function ClosingMeetingPage() {
           <YearOverYearTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'branch-performance' ? (
           <BranchPerformanceTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+        ) : activeTab === 'cumulative-view' ? (
+          <CumulativeViewTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : null}
       </div>
     </div>

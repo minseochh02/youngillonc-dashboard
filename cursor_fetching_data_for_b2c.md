@@ -57,7 +57,7 @@ SQL collapses `전체사업소` into a `branch` label with `LIKE` rules; anythin
           AND ec.전체사업소 IS NOT NULL
 ```
 
-Filters: PVL/CVL, exclude 김도량, date range; VAT divisor applies to `합계`.
+Filters: PVL/CVL, exclude 김도량, date range; ex-VAT uses `공급가액`, gross uses `합계` (see `src/lib/vat-amount-sql.ts`).
 
 ### Manager sales tab (`tab=manager-sales`)
 

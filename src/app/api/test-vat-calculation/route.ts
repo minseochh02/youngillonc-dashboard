@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { executeSQL, getTableSchema } from '@/egdesk-helpers';
 
 /**
- * Test endpoint to compare different VAT calculation methods
+ * Test endpoint to compare VAT-related amount aggregations.
+ * Production dashboards use `공급가액` for ex-VAT (see `vat-amount-sql.ts`), not 합계/1.1.
  */
 export async function GET(request: Request) {
   try {
@@ -20,15 +21,17 @@ export async function GET(request: Request) {
         수량,
         단가,
         합계,
+        공급가액,
         CAST(REPLACE(수량, ',', '') AS NUMERIC) * 단가 as calculated_supply_price,
         CAST(REPLACE(합계, ',', '') AS NUMERIC) as total_with_vat,
-        CAST(REPLACE(합계, ',', '') AS NUMERIC) / 1.1 as total_divided_by_1_1
+        CAST(REPLACE(합계, ',', '') AS NUMERIC) / 1.1 as legacy_divided_by_1_1,
+        CAST(REPLACE(공급가액, ',', '') AS NUMERIC) as supply_from_column
       FROM sales
       WHERE 일자 = '${date}'
       LIMIT 5
     `;
 
-    // Method 1: Sum of (합계 / 1.1) - current buggy method
+    // Method 1: Sum of (합계 / 1.1) — legacy; do not use for new code
     const method1Query = `
       SELECT
         '현재 방법: SUM(합계/1.1)' as method,
@@ -58,7 +61,7 @@ export async function GET(request: Request) {
       WHERE 일자 = '${date}'
     `;
 
-    // Method 4: ROUND(Sum of (합계 / 1.1)) - if we must use 합계
+    // Method 4: ROUND(Sum of (합계 / 1.1)) - legacy rounded
     const method4Query = `
       SELECT
         '차선책: ROUND(SUM(합계/1.1))' as method,
@@ -68,12 +71,22 @@ export async function GET(request: Request) {
       WHERE 일자 = '${date}'
     `;
 
-    const [sampleResult, method1, method2, method3, method4] = await Promise.all([
+    const method5Query = `
+      SELECT
+        '권장: SUM(공급가액)' as method,
+        COUNT(*) as record_count,
+        SUM(CAST(REPLACE(공급가액, ',', '') AS NUMERIC)) as total
+      FROM sales
+      WHERE 일자 = '${date}'
+    `;
+
+    const [sampleResult, method1, method2, method3, method4, method5] = await Promise.all([
       executeSQL(sampleQuery),
       executeSQL(method1Query),
       executeSQL(method2Query),
       executeSQL(method3Query),
-      executeSQL(method4Query)
+      executeSQL(method4Query),
+      executeSQL(method5Query)
     ]);
 
     return NextResponse.json({
@@ -85,15 +98,17 @@ export async function GET(request: Request) {
         method1_current_buggy: method1?.rows?.[0] || {},
         method2_correct_supply_price: method2?.rows?.[0] || {},
         method3_with_vat: method3?.rows?.[0] || {},
-        method4_rounded_fallback: method4?.rows?.[0] || {}
+        method4_rounded_fallback: method4?.rows?.[0] || {},
+        method5_sum_supply_column: method5?.rows?.[0] || {}
       },
       explanation: {
-        method1: "현재 사용중: SUM(합계 / 1.1) → 소수점 문제 발생",
-        method2: "정확한 공급가액: SUM(수량 × 단가) → VAT 없는 정확한 금액!",
-        method3: "참고용 VAT 포함: SUM(합계) → VAT 포함된 전체 금액",
-        method4: "차선책: ROUND(SUM(합계 / 1.1)) → 반올림으로 소수점 제거"
+        method1: "레거시: SUM(합계 / 1.1) — 대시보드에서 제거됨",
+        method2: "참고: SUM(수량 × 단가) — 단가 정의에 따라 ERP 공급가액과 다를 수 있음",
+        method3: "VAT 포함: SUM(합계)",
+        method4: "레거시: ROUND(SUM(합계 / 1.1))",
+        method5: "권장: SUM(공급가액) — ERP 동기화 컬럼 기준 (앱 기본)"
       },
-      recommendation: "Method 2 (수량 × 단가)를 사용하면 정확한 공급가액을 얻을 수 있습니다!"
+      recommendation: "Ex-VAT 금액은 SUM(공급가액)을 사용합니다. 합계/1.1은 레거시 비교용입니다."
     });
   } catch (error: any) {
     console.error('Test VAT calculation error:', error);

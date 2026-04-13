@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
  * API Endpoint to fetch Daily Closing Status (Excel rendition)
@@ -11,8 +12,6 @@ export async function GET(request: Request) {
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const division = searchParams.get('division') || '창원';
     const includeVat = searchParams.get('includeVat') === 'true';
-
-    const divisor = includeVat ? '1.0' : '1.1';
 
     // Calculate the start of the month for the given date
     const startDate = `${date.substring(0, 7)}-01`;
@@ -45,22 +44,18 @@ export async function GET(request: Request) {
     // 0. Base subquery to combine sales tables (excluding south division)
     const baseSalesSubquery = `
       (
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 출하창고코드, 실납업체 FROM sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 출하창고코드, 실납업체 FROM sales
         UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, east_division_sales.창고코드 as 출하창고코드, 실납업체 FROM east_division_sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 출하창고코드, 실납업체 FROM east_division_sales
         UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, west_division_sales.창고코드 as 출하창고코드, 실납업체 FROM west_division_sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 출하창고코드, 실납업체 FROM west_division_sales
       )
     `;
 
-    // Base subquery for purchases
+    // Purchase metrics use unified purchases table only.
     const basePurchSubquery = `
       (
-        SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 as 합계, purchases.창고코드 FROM purchases
-        UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 중량, 합계, east_division_purchases.창고코드 FROM east_division_purchases
-        UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 중량, 합계, west_division_purchases.창고코드 FROM west_division_purchases
+        SELECT 일자, 거래처코드, 품목코드, 중량, 합계, 공급가액, purchases.창고코드 FROM purchases
       )
     `;
 
@@ -83,7 +78,7 @@ export async function GET(request: Request) {
           END as category,
           CASE
             WHEN i.품목그룹1코드 = 'MB' THEN 0
-            ELSE CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}
+            ELSE ${sqlSalesAmountExpr('s', includeVat)}
           END as amount,
           CAST(REPLACE(s.중량, ',', '') AS NUMERIC) as weight,
           s.일자
@@ -252,7 +247,7 @@ export async function GET(request: Request) {
       FROM (
         SELECT
           CAST(REPLACE(p.중량, ',', '') AS NUMERIC) as volume,
-          CAST(REPLACE(p.합계, ',', '') AS NUMERIC) / ${divisor} as amount,
+          ${sqlPurchaseAmountExpr('p', includeVat)} as amount,
           p.일자
         FROM ${basePurchSubquery} p
         LEFT JOIN items i ON p.품목코드 = i.품목코드

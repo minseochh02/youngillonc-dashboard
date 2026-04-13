@@ -3,6 +3,8 @@
  *
  * Pattern-based natural language query matching for common database queries.
  * Provides fast, free, and secure SQL generation for common use cases.
+ *
+ * Amount columns: synced ERP tables use `합계` (gross) and `공급가액` (ex-VAT). Do not use 합계/1.1 for ex-VAT when `공급가액` exists.
  */
 
 export interface QueryTemplate {
@@ -140,7 +142,7 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
           return `
             SELECT
               ${normalizeBranch('거래처그룹1코드명')} as 사업소,
-              SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as 총매출액
+              SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as 총매출액
             FROM sales
             WHERE 일자 = '${params.date}'
               ${divisionFilter}
@@ -194,7 +196,7 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
           return `
             SELECT
               ${normalizeBranch('거래처그룹1코드명')} as 사업소,
-              SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as 총매출액
+              SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as 총매출액
             FROM sales
             WHERE 일자 = '${params.date}'
               ${divisionFilter}
@@ -244,7 +246,7 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     sqlGenerator: (params) => `
       SELECT
         ${normalizeBranch('거래처그룹1코드명')} as 사업소,
-        SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as 총매출액
+        SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as 총매출액
       FROM sales
       WHERE 일자 = '${params.date}'
         AND 거래처그룹1코드명 LIKE '%${params.division}%'
@@ -262,7 +264,7 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     sqlGenerator: (params) => `
       SELECT
         ${normalizeBranch('거래처그룹1코드명')} as 사업소,
-        SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as 총매출액
+        SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as 총매출액
       FROM sales
       WHERE 일자 = '${params.date}'
       GROUP BY ${normalizeBranch('거래처그룹1코드명')}
@@ -281,10 +283,10 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     sqlGenerator: (params) => `
       SELECT
         ${normalizeBranch('거래처그룹1코드명')} as 사업소,
-        SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as 총매출액,
+        SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as 총매출액,
         SUM(CASE
           WHEN 품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
-          THEN CAST(REPLACE(합_계, ',', '') AS NUMERIC)
+          THEN CAST(REPLACE(합계, ',', '') AS NUMERIC)
           ELSE 0
         END) as 모빌매출액
       FROM sales
@@ -305,10 +307,10 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     sqlGenerator: (params) => `
       SELECT
         ${normalizeBranch('거래처그룹1코드명')} as 사업소,
-        SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as 총매출액,
+        SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as 총매출액,
         SUM(CASE
           WHEN 품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
-          THEN CAST(REPLACE(합_계, ',', '') AS NUMERIC)
+          THEN CAST(REPLACE(합계, ',', '') AS NUMERIC)
           ELSE 0
         END) as 모빌매출액
       FROM sales
@@ -426,7 +428,7 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     sqlGenerator: (params) => `
       SELECT
         판매처명,
-        SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as 총매출액,
+        SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as 총매출액,
         COUNT(*) as 거래건수
       FROM sales
       WHERE 판매처명 LIKE '%${params.customer}%'
@@ -492,7 +494,7 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
       return `
         SELECT
           ${normalizeBranch('거래처그룹1코드명')} as 사업소,
-          SUM(CAST(REPLACE(합_계, ',', '') AS NUMERIC)) as 매출액,
+          SUM(CAST(REPLACE(합계, ',', '') AS NUMERIC)) as 매출액,
           SUM(CAST(REPLACE(중량, ',', '') AS NUMERIC)) as 중량
         FROM sales
         WHERE ${productFilter}

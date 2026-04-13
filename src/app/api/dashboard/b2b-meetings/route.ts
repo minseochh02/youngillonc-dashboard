@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
+import { sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /** YTD through the same calendar month for current and prior year (alias must be the sales table alias, e.g. s). */
 function sqlSalesYtdThroughMonth(
@@ -40,7 +41,6 @@ export async function GET(request: Request) {
     const tab = searchParams.get('tab') || 'industry';
     const selectedMonthParam = searchParams.get('month');
     const includeVat = searchParams.get('includeVat') === 'true';
-    const divisor = includeVat ? '1.0' : '1.1';
 
     const dateRangeQuery = `
       SELECT DISTINCT substr(일자, 1, 7) as month FROM (
@@ -68,11 +68,11 @@ export async function GET(request: Request) {
 
     // 0. Base table for sales (unioned across all three tables and using 실납업체 logic)
     const baseSalesSubquery = `(
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM sales
+      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 공급가액 FROM sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM east_division_sales
+      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 공급가액 FROM east_division_sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM west_division_sales
+      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 공급가액 FROM west_division_sales
     )`;
 
     if (tab === 'industry') {
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
           ct.모빌분류 as industry_name,
           strftime('%Y', s.일자) as year,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -192,7 +192,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
@@ -218,7 +218,7 @@ export async function GET(request: Request) {
           END as product_group,
           strftime('%Y', s.일자) as year,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
@@ -288,7 +288,7 @@ export async function GET(request: Request) {
           ct.섹터분류 as sector,
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
@@ -340,7 +340,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -367,7 +367,7 @@ export async function GET(request: Request) {
           END as fps_category,
           strftime('%Y', s.일자) as year,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -431,7 +431,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -458,7 +458,7 @@ export async function GET(request: Request) {
           END as region,
           strftime('%Y', s.일자) as year,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -531,7 +531,7 @@ export async function GET(request: Request) {
           END as branch,
           strftime('%Y', s.일자) as year,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity,
           COUNT(DISTINCT s.일자) as transaction_days
         FROM clients c
@@ -645,7 +645,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -668,7 +668,7 @@ export async function GET(request: Request) {
           END as team,
           strftime('%Y', s.일자) as year,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -741,7 +741,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드

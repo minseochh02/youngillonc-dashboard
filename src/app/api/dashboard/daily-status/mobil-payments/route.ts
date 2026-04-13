@@ -3,7 +3,7 @@ import { executeSQL } from '@/egdesk-helpers';
 
 /**
  * 모빌결제내역 — per DB_KNOWLEDGE §6 and egdesk.config (TABLES.table6).
- * Table: purchase_orders (발주서현황), exclusive source. Amount column: 합계.
+ * Table: purchase_orders (발주서현황). No 공급가액 column — ex-VAT still uses 합계/1.1.
  * Numeric aggregation per DB_KNOWLEDGE §3: REPLACE commas, CAST to NUMERIC.
  */
 export async function GET(request: Request) {

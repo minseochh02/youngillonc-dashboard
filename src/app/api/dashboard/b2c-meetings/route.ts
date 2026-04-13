@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareEmployees, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
+import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 export async function GET(request: Request) {
   try {
@@ -8,7 +9,8 @@ export async function GET(request: Request) {
     const tab = searchParams.get('tab') || 'business';
     const selectedMonthParam = searchParams.get('month');
     const includeVat = searchParams.get('includeVat') === 'true';
-    const divisor = includeVat ? '1.0' : '1.1';
+    /** shopping_sales has no 공급가액; keep gross→net divisor for that table only. */
+    const shoppingAmountDivisor = includeVat ? '1.0' : '1.1';
 
     // Discover the actual months available in the database
     const dateRangeQuery = `
@@ -17,8 +19,6 @@ export async function GET(request: Request) {
         UNION ALL SELECT 일자 FROM east_division_sales
         UNION ALL SELECT 일자 FROM west_division_sales
         UNION ALL SELECT 일자 FROM purchases
-        UNION ALL SELECT 일자 FROM east_division_purchases
-        UNION ALL SELECT 일자 FROM west_division_purchases
       ) WHERE 일자 IS NOT NULL AND 일자 != '' AND 일자 LIKE '202%'
       ORDER BY month ASC
     `;
@@ -42,11 +42,11 @@ export async function GET(request: Request) {
 
     // Base table for sales
     const baseSalesTable = `(
-      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 수량, 단가 FROM sales
+      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 수량, 단가 FROM sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 수량, 단가 FROM east_division_sales
+      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 수량, 단가 FROM east_division_sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 수량, 단가 FROM west_division_sales
+      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 수량, 단가 FROM west_division_sales
     )`;
 
     if (tab === 'business') {
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -146,7 +146,7 @@ export async function GET(request: Request) {
             ELSE NULL
           END as channel,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -559,7 +559,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -592,7 +592,7 @@ export async function GET(request: Request) {
           strftime('%Y-%m', s.일자) as year_month,
           COUNT(DISTINCT s.거래처코드) as client_count,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -620,7 +620,7 @@ export async function GET(request: Request) {
           strftime('%Y-%m', s.일자) as year_month,
           COUNT(DISTINCT s.거래처코드) as client_count,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -650,7 +650,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -679,7 +679,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -824,7 +824,7 @@ export async function GET(request: Request) {
           i.품목그룹1코드 as product_group,
           strftime('%Y', s.일자) as year,
           ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
-          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount,
+          ROUND(SUM(${sqlSalesAmountExpr('s', includeVat)})) as total_amount,
           ROUND(SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC))) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -952,7 +952,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
-          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount,
+          ROUND(SUM(${sqlSalesAmountExpr('s', includeVat)})) as total_amount,
           ROUND(SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC))) as total_quantity,
           COUNT(DISTINCT s.일자) as transaction_days
         FROM clients c
@@ -1060,10 +1060,10 @@ export async function GET(request: Request) {
           COUNT(DISTINCT s.사업자번호) as client_count,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity,
           SUM(CAST(REPLACE(s.용량, ',', '') AS NUMERIC) * CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_weight,
-          SUM(CAST(REPLACE(s.주문금액, ',', '') AS NUMERIC) / ${divisor}) as total_supply_amount,
-          SUM(CAST(REPLACE(s.총_주문금액, ',', '') AS NUMERIC) / ${divisor}) as total_amount,
+          SUM(CAST(REPLACE(s.주문금액, ',', '') AS NUMERIC) / ${shoppingAmountDivisor}) as total_supply_amount,
+          SUM(CAST(REPLACE(s.총_주문금액, ',', '') AS NUMERIC) / ${shoppingAmountDivisor}) as total_amount,
           SUM(CAST(REPLACE(s.사용한_포인트, ',', '') AS NUMERIC)) as total_points,
-          SUM(CAST(REPLACE(s.결제한_금액, ',', '') AS NUMERIC) / ${divisor}) as net_amount
+          SUM(CAST(REPLACE(s.결제한_금액, ',', '') AS NUMERIC) / ${shoppingAmountDivisor}) as net_amount
         FROM shopping_sales s
         LEFT JOIN employee_category ec ON s.담당자 = ec.담당자
         WHERE s.주문_날짜 >= '${currentYear}-01-01'
@@ -1120,7 +1120,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
-          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount,
+          ROUND(SUM(${sqlSalesAmountExpr('s', includeVat)})) as total_amount,
           ROUND(SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC))) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -1143,7 +1143,7 @@ export async function GET(request: Request) {
           'sales' as type,
           strftime('%Y', s.일자) as year,
           ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
-          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
+          ROUND(SUM(${sqlSalesAmountExpr('s', includeVat)})) as total_amount
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
@@ -1164,14 +1164,8 @@ export async function GET(request: Request) {
           'purchase' as type,
           strftime('%Y', p.일자) as year,
           ROUND(SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC))) as total_weight,
-          ROUND(SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
-        FROM (
-          SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 FROM purchases
-          UNION ALL
-          SELECT 일자, 거래처코드, 품목코드, 중량, 합계 FROM east_division_purchases
-          UNION ALL
-          SELECT 일자, 거래처코드, 품목코드, 중량, 합계 FROM west_division_purchases
-        ) p
+          ROUND(SUM(${sqlPurchaseAmountExpr('p', includeVat)})) as total_amount
+        FROM purchases p
         LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
         LEFT JOIN items i ON p.품목코드 = i.품목코드
         WHERE (
@@ -1189,7 +1183,7 @@ export async function GET(request: Request) {
           c.거래처명 as dealer_name,
           strftime('%Y', s.일자) as year,
           ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
-          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount,
+          ROUND(SUM(${sqlSalesAmountExpr('s', includeVat)})) as total_amount,
           ROUND(SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC))) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -1219,7 +1213,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
-          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
+          ROUND(SUM(${sqlSalesAmountExpr('s', includeVat)})) as total_amount
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
@@ -1241,14 +1235,8 @@ export async function GET(request: Request) {
           strftime('%Y', p.일자) as year,
           strftime('%Y-%m', p.일자) as year_month,
           ROUND(SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC))) as total_weight,
-          ROUND(SUM(CAST(REPLACE(p.합_계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
-        FROM (
-          SELECT 일자, 거래처코드, 품목코드, 중량, 합_계 FROM purchases
-          UNION ALL
-          SELECT 일자, 거래처코드, 품목코드, 중량, 합계 FROM east_division_purchases
-          UNION ALL
-          SELECT 일자, 거래처코드, 품목코드, 중량, 합계 FROM west_division_purchases
-        ) p
+          ROUND(SUM(${sqlPurchaseAmountExpr('p', includeVat)})) as total_amount
+        FROM purchases p
         LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
         LEFT JOIN items i ON p.품목코드 = i.품목코드
         WHERE (
@@ -1266,7 +1254,7 @@ export async function GET(request: Request) {
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
           ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) as total_weight,
-          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount,
+          ROUND(SUM(${sqlSalesAmountExpr('s', includeVat)})) as total_amount,
           ROUND(SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC))) as total_quantity
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
@@ -1468,7 +1456,7 @@ export async function GET(request: Request) {
           END as product_group,
           strftime('%Y', s.일자) as year,
           strftime('%Y-%m', s.일자) as year_month,
-          ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) as total_amount
+          ROUND(SUM(${sqlSalesAmountExpr('s', includeVat)})) as total_amount
         FROM ${baseSalesTable} s
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { sqlPurchaseAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
  * API Endpoint for B2B Daily Purchase Analysis
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const branch = searchParams.get('branch') || 'all'; // 'all', 'MB', '화성', '창원', etc.
     const includeVat = searchParams.get('includeVat') === 'true';
-    const divisor = includeVat ? '1.0' : '1.1';
+    const purchaseLineAmount = sqlPurchaseAmountExpr('p', includeVat);
 
     // Build branch filter
     let branchFilter = '';
@@ -45,19 +46,13 @@ export async function GET(request: Request) {
         COALESCE(i.품목명, '미지정') as item_name,
         p.품목코드 as item_code,
         SUM(CAST(REPLACE(p.수량, ',', '') AS NUMERIC)) as quantity,
-        SUM(CAST(REPLACE(p.공급가액, ',', '') AS NUMERIC) / ${divisor}) as supply_amount,
+        SUM(${purchaseLineAmount}) as supply_amount,
         CASE
           WHEN SUM(CAST(REPLACE(p.수량, ',', '') AS NUMERIC)) > 0
-          THEN SUM(CAST(REPLACE(p.공급가액, ',', '') AS NUMERIC)) / SUM(CAST(REPLACE(p.수량, ',', '') AS NUMERIC))
+          THEN SUM(${purchaseLineAmount}) / SUM(CAST(REPLACE(p.수량, ',', '') AS NUMERIC))
           ELSE 0
         END as unit_price
-      FROM (
-        SELECT 일자, 거래처코드, 품목코드, 수량, 공급가액 FROM purchases
-        UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 수량, 공급가액 FROM east_division_purchases
-        UNION ALL
-        SELECT 일자, 거래처코드, 품목코드, 수량, 공급가액 FROM west_division_purchases
-      ) p
+      FROM purchases p
       LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
       LEFT JOIN clients vendor_client ON p.거래처코드 = vendor_client.거래처코드
       LEFT JOIN items i ON p.품목코드 = i.품목코드

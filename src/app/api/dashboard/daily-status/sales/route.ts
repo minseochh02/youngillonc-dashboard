@@ -13,14 +13,14 @@ export async function GET(request: Request) {
     const includeVat = searchParams.get('includeVat') === 'true';
     const editedOnly = searchParams.get('editedOnly') === 'true';
 
-    // Sales amount calculation: with VAT uses 합계, without VAT uses 수량×단가
+    // Sales: gross uses 합계; ex-VAT uses 공급가액 (ERP column), not 합계/1.1.
     const salesAmountExpr = includeVat
       ? 'CAST(REPLACE(s.합계, \',\', \'\') AS NUMERIC)'
-      : '(CAST(REPLACE(s.수량, \',\', \'\') AS NUMERIC) * s.단가)';
+      : 'CAST(REPLACE(s.공급가액, \',\', \'\') AS NUMERIC)';
 
-    // Purchase amount calculation: with VAT uses 합_계, without VAT uses 공급가액
+    // Purchases: gross uses 합계; ex-VAT uses 공급가액.
     const purchaseAmountExpr = includeVat
-      ? 'CAST(REPLACE(p.합_계, \',\', \'\') AS NUMERIC)'
+      ? 'CAST(REPLACE(p.합계, \',\', \'\') AS NUMERIC)'
       : 'CAST(REPLACE(p.공급가액, \',\', \'\') AS NUMERIC)';
 
     const salesEditedExpr = `COALESCE(NULLIF(substr(COALESCE(s.최종수정일시, ''), 1, 10), ''), '')`;

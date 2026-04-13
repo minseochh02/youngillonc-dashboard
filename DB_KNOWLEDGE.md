@@ -130,15 +130,22 @@ Many numeric columns stored as TEXT with commas: `"1,234,567"`
 - In business language, reports, and dashboards, **판매량** means **중량** (weight, typically liters), **not** piece count.
 - For aggregates labeled 판매량 / 판매량(L) / 용량, use the **`중량`** column (e.g. `SUM` of `sales.중량`, `purchases.중량`), not **`수량`**.
 
-### 매출 = 공급가 (부가세 제외); 환산 규칙
-- For analysis and cross-report consistency, **매출** is treated as **공급가 — excluding 10% VAT**.
-- When the source amount is **VAT-inclusive** (공급가+부가세), convert to 공급가 매출 by **dividing by 1.1** and **rounding** to a whole currency unit (원):
+### 매출 = 공급가 (부가세 제외); 컬럼 선택
+- For analysis and cross-report consistency, **매출 (ex-VAT)** uses the **`공급가액`** column from synced ERP rows (`sales`, division sales, `purchases`). Clean commas then `CAST(... AS NUMERIC)`; **do not** derive ex-VAT by dividing `합계` by 1.1.
+- **매출 (gross, VAT 포함)** uses **`합계`** the same way (no division).
 
 ```sql
-ROUND(CAST(REPLACE(합계, ',', '') AS NUMERIC) / 1.1)
+-- ex-VAT
+CAST(REPLACE(공급가액, ',', '') AS NUMERIC)
+-- gross
+CAST(REPLACE(합계, ',', '') AS NUMERIC)
 ```
 
-Use the same pattern for any other VAT-inclusive sales total column after comma cleaning. **Do not** divide if the column is already 공급가-only (e.g. some exports use separate `공급가액`).
+- **Exceptions**: tables without `공급가액` (e.g. `shopping_sales`, `purchase_orders`) may still approximate ex-VAT with `합계 / 1.1` or another rule documented at the call site.
+
+### Purchases source-of-truth rule (2026-04)
+- For dashboard/report purchase metrics, use only the unified **`purchases`** table.
+- Do **not** UNION `east_division_purchases` or `west_division_purchases` into analytic purchase queries; those tables are excluded by current business policy.
 
 ---
 
@@ -176,8 +183,9 @@ Beginning Inventory = Ending Inventory - Purchases + Sales - Net Transfers
 | Daily transactions | All tables | `일자` | 'YYYY-MM-DD' |
 | Ledger entries | `ledger` | `일자` | 'YYYY-MM-DD' |
 | 판매량 (volume) | `sales`, `purchases`, division sales | **`중량`** | Sum `중량`, not `수량` |
-| 매출 (ex-VAT) | `sales` etc. | `합계` (if VAT-inclusive) | `ROUND(clean/1.1)` → 공급가 |
+| 매출 (ex-VAT) | `sales`, division sales, `purchases` | **`공급가액`** | comma-clean → numeric |
+| 매출 (gross) | same | **`합계`** | comma-clean → numeric |
 
 ---
 
-**Last Updated**: 2026-04-03 (§7: 판매량=중량, 매출 공급가 환산)
+**Last Updated**: 2026-04-13 (§7: ex-VAT = `공급가액`; purchase analytics use `purchases` only)

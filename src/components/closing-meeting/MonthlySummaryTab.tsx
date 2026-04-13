@@ -238,12 +238,12 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
                 <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">연도</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">구매(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">구매 증감율</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">구매 증감량(L)</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">판매(L)</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">판매 증감율</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">판매 증감량(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">구매(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">구매 증감율</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">구매 증감량(L)</th>
               </tr>
             </thead>
             <tbody>
@@ -263,18 +263,6 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
                       {item.year}년
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">{formatNumber(item.purchase)}</td>
-                  <td className="py-3 px-4 text-right">
-                    {item.purchaseChange ? (
-                      <span className={`inline-flex items-center gap-1 font-medium ${item.purchaseChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                        {item.purchaseChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {item.purchaseChange.isPositive ? '+' : ''}{item.purchaseChange.percent.toFixed(1)}%
-                      </span>
-                    ) : <span className="text-zinc-400">N/A</span>}
-                  </td>
-                  <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
-                    {item.prevPurchase !== null ? `${item.purchase - item.prevPurchase >= 0 ? '+' : ''}${formatNumber(item.purchase - item.prevPurchase)}` : 'N/A'}
-                  </td>
                   <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">{formatNumber(item.sales)}</td>
                   <td className="py-3 px-4 text-right">
                     {item.salesChange ? (
@@ -286,6 +274,18 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
                   </td>
                   <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
                     {item.prevSales !== null ? `${item.sales - item.prevSales >= 0 ? '+' : ''}${formatNumber(item.sales - item.prevSales)}` : 'N/A'}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">{formatNumber(item.purchase)}</td>
+                  <td className="py-3 px-4 text-right">
+                    {item.purchaseChange ? (
+                      <span className={`inline-flex items-center gap-1 font-medium ${item.purchaseChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                        {item.purchaseChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {item.purchaseChange.isPositive ? '+' : ''}{item.purchaseChange.percent.toFixed(1)}%
+                      </span>
+                    ) : <span className="text-zinc-400">N/A</span>}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                    {item.prevPurchase !== null ? `${item.purchase - item.prevPurchase >= 0 ? '+' : ''}${formatNumber(item.purchase - item.prevPurchase)}` : 'N/A'}
                   </td>
                 </tr>
                 {isExpanded && (

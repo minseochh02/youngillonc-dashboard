@@ -18,7 +18,8 @@ import {
   LayoutGrid,
   MessageSquare,
   X,
-  AlertTriangle
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 
@@ -158,6 +159,8 @@ export default function EmployeesPage() {
   const [productMessages, setProductMessages] = useState<CompanyMessage[]>([]);
   const [loadingProductMessages, setLoadingProductMessages] = useState(false);
 
+  const [markingActivityId, setMarkingActivityId] = useState<number | null>(null);
+
   // Follow-up Cycle Thresholds
   const [thresholds, setThresholds] = useState({ good: 1, warning: 7 });
 
@@ -212,6 +215,45 @@ export default function EmployeesPage() {
       setLoadingEmployees(false);
     }
   };
+
+  const markActivityAsCompleted = async (activityId: number) => {
+    setMarkingActivityId(activityId);
+    try {
+      const res = await apiFetch(`/api/employees/activities/${activityId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activity_type: 'completed_task' })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || '업데이트 실패');
+        return;
+      }
+      if (selectedEmployee) {
+        await loadEmployeeDetails(selectedEmployee);
+      }
+      await loadEmployees();
+    } catch (e) {
+      console.error(e);
+      alert('업데이트 중 오류가 발생했습니다.');
+    } finally {
+      setMarkingActivityId(null);
+    }
+  };
+
+  const confirmMarkPlannedAsCompleted = (activityId: number) => {
+    if (
+      !window.confirm(
+        '이 예정 항목을 완료로 변경합니다. 활동 유형이 "예정"에서 "완료"로 바뀌며 Follow-up 통계에 반영됩니다. 계속할까요?'
+      )
+    ) {
+      return;
+    }
+    void markActivityAsCompleted(activityId);
+  };
+
+  const isCompletedActivityType = (t: string) =>
+    t === 'completed_task' || t === 'work_completed' || t === 'sales_activity';
 
   const loadEmployeeDetails = async (name: string) => {
     setLoadingDetails(true);
@@ -610,7 +652,7 @@ export default function EmployeesPage() {
                                 {d}
                               </span>
                               <div className="space-y-2">
-                                {dayActivities.map((act, idx) => {
+                                {dayActivities.map((act) => {
                                   const typeConfig: Record<string, { bg: string, border: string, text: string, icon: string }> = {
                                     completed_task: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-900', icon: '✓' },
                                     work_completed: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-900', icon: '✓' },
@@ -626,7 +668,7 @@ export default function EmployeesPage() {
 
                                   return (
                                     <div
-                                      key={idx}
+                                      key={act.id}
                                       className={`p-2 rounded-lg text-[10px] leading-tight border transition-all hover:scale-[1.02] cursor-default ${config.bg} ${config.border} ${config.text}`}
                                     >
                                       <div className="font-black mb-1 flex items-center gap-1">
@@ -644,6 +686,24 @@ export default function EmployeesPage() {
                                             </span>
                                           ))}
                                         </div>
+                                      )}
+                                      {!isCompletedActivityType(act.activity_type) && (
+                                        <button
+                                          type="button"
+                                          disabled={markingActivityId === act.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void markActivityAsCompleted(act.id);
+                                          }}
+                                          className="mt-1.5 flex w-full items-center justify-center gap-1 rounded border border-emerald-300/80 bg-white/90 py-1 text-[9px] font-bold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+                                        >
+                                          {markingActivityId === act.id ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                                          ) : (
+                                            <CheckCircle2 className="h-3 w-3" aria-hidden />
+                                          )}
+                                          완료로 표시
+                                        </button>
                                       )}
                                     </div>
                                   );
@@ -818,9 +878,26 @@ export default function EmployeesPage() {
 
                           {!match.actual && match.status === 'missed' && (
                             <div className="mt-6 bg-red-50 rounded-xl p-5 border border-red-100">
-                              <div className="flex items-center gap-2">
-                                <XCircle className="w-4 h-4 text-red-500" />
-                                <p className="text-sm font-bold text-red-700">해당 예정일에 관련 업무 수행 기록이 확인되지 않습니다.</p>
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex items-center gap-2">
+                                  <XCircle className="h-4 w-4 shrink-0 text-red-500" />
+                                  <p className="text-sm font-bold text-red-700">
+                                    해당 예정일에 관련 업무 수행 기록이 확인되지 않습니다.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={markingActivityId === match.planned.id}
+                                  onClick={() => confirmMarkPlannedAsCompleted(match.planned.id)}
+                                  className="inline-flex shrink-0 items-center justify-center gap-2 self-start rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50 sm:self-auto"
+                                >
+                                  {markingActivityId === match.planned.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                                  ) : (
+                                    <CheckCircle2 className="h-4 w-4" aria-hidden />
+                                  )}
+                                  완료로 수정
+                                </button>
                               </div>
                             </div>
                           )}

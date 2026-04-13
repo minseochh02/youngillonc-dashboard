@@ -1,6 +1,6 @@
 /**
  * Monthly and period totals from unified sales (sales + east_division_sales + west_division_sales).
- * Amount uses 합계 / 1.1 (VAT excluded). Pass --include-vat for gross amounts.
+ * Ex-VAT uses 공급가액; gross uses 합계. Pass --include-vat for gross amounts.
  *
  * Run:
  *   npx tsx scripts/sales-range-totals.ts
@@ -18,16 +18,22 @@ config({ path: resolve(process.cwd(), '.env.local') });
 
 const BASE_SALES_UNION = `
   (
-    SELECT s.일자, s.거래처코드, s.실납업체, s.합계, s.중량
+    SELECT s.일자, s.거래처코드, s.실납업체, s.합계, s.공급가액, s.중량
     FROM sales s
     UNION ALL
-    SELECT s.일자, s.거래처코드, s.실납업체, s.합계, s.중량
+    SELECT s.일자, s.거래처코드, s.실납업체, s.합계, s.공급가액, s.중량
     FROM east_division_sales s
     UNION ALL
-    SELECT s.일자, s.거래처코드, s.실납업체, s.합계, s.중량
+    SELECT s.일자, s.거래처코드, s.실납업체, s.합계, s.공급가액, s.중량
     FROM west_division_sales s
   )
 `;
+
+function amountExpr(includeVat: boolean, alias = 's') {
+  return includeVat
+    ? `CAST(REPLACE(${alias}.합계, ',', '') AS NUMERIC)`
+    : `CAST(REPLACE(${alias}.공급가액, ',', '') AS NUMERIC)`;
+}
 
 function parseArgs() {
   const argv = process.argv.slice(2);
@@ -44,20 +50,20 @@ function parseArgs() {
     monthTo,
     fromYm: `${year}-${monthFrom}`,
     toYm: `${year}-${monthTo}`,
-    divisor: includeVat ? '1.0' : '1.1',
     includeVat,
     allOnly,
     excludeKimOnly,
   };
 }
 
-function buildQueries(divisor: string, fromYm: string, toYm: string) {
+function buildQueries(includeVat: boolean, fromYm: string, toYm: string) {
+  const line = amountExpr(includeVat, 's');
   const period = `substr(s.일자, 1, 7) >= '${fromYm}' AND substr(s.일자, 1, 7) <= '${toYm}'`;
 
   const allByMonth = `
     SELECT
       substr(s.일자, 1, 7) AS month,
-      ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) AS total_amount,
+      ROUND(SUM(${line})) AS total_amount,
       ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) AS total_weight
     FROM ${BASE_SALES_UNION} s
     WHERE ${period}
@@ -67,7 +73,7 @@ function buildQueries(divisor: string, fromYm: string, toYm: string) {
 
   const allPeriod = `
     SELECT
-      ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) AS total_amount,
+      ROUND(SUM(${line})) AS total_amount,
       ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) AS total_weight
     FROM ${BASE_SALES_UNION} s
     WHERE ${period}
@@ -78,7 +84,7 @@ function buildQueries(divisor: string, fromYm: string, toYm: string) {
   const exKimByMonth = `
     SELECT
       substr(s.일자, 1, 7) AS month,
-      ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) AS total_amount,
+      ROUND(SUM(${line})) AS total_amount,
       ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) AS total_weight
     FROM ${BASE_SALES_UNION} s
     LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -91,7 +97,7 @@ function buildQueries(divisor: string, fromYm: string, toYm: string) {
 
   const exKimPeriod = `
     SELECT
-      ROUND(SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC) / ${divisor})) AS total_amount,
+      ROUND(SUM(${line})) AS total_amount,
       ROUND(SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC))) AS total_weight
     FROM ${BASE_SALES_UNION} s
     LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
@@ -100,18 +106,19 @@ function buildQueries(divisor: string, fromYm: string, toYm: string) {
       AND ${excludeKim}
   `;
 
+  const uLine = amountExpr(includeVat, 'u');
   const byDivisionMonth = `
     SELECT
       substr(u.일자, 1, 7) AS month,
       u.division,
-      ROUND(SUM(CAST(REPLACE(u.합계, ',', '') AS NUMERIC) / ${divisor})) AS total_amount,
+      ROUND(SUM(${uLine})) AS total_amount,
       ROUND(SUM(CAST(REPLACE(u.중량, ',', '') AS NUMERIC))) AS total_weight
     FROM (
-      SELECT 'main' AS division, 일자, 합계, 중량 FROM sales
+      SELECT 'main' AS division, 일자, 합계, 공급가액, 중량 FROM sales
       UNION ALL
-      SELECT 'east' AS division, 일자, 합계, 중량 FROM east_division_sales
+      SELECT 'east' AS division, 일자, 합계, 공급가액, 중량 FROM east_division_sales
       UNION ALL
-      SELECT 'west' AS division, 일자, 합계, 중량 FROM west_division_sales
+      SELECT 'west' AS division, 일자, 합계, 공급가액, 중량 FROM west_division_sales
     ) u
     WHERE substr(u.일자, 1, 7) >= '${fromYm}' AND substr(u.일자, 1, 7) <= '${toYm}'
     GROUP BY 1, 2
@@ -124,13 +131,13 @@ function buildQueries(divisor: string, fromYm: string, toYm: string) {
 async function main() {
   const args = parseArgs();
   const { allByMonth, allPeriod, exKimByMonth, exKimPeriod, byDivisionMonth } = buildQueries(
-    args.divisor,
+    args.includeVat,
     args.fromYm,
     args.toYm
   );
 
   console.log(
-    `Range: ${args.fromYm} .. ${args.toYm} | amount divisor: ${args.divisor} (${args.includeVat ? 'gross' : 'ex-VAT'})\n`
+    `Range: ${args.fromYm} .. ${args.toYm} | amount: ${args.includeVat ? '합계 (gross)' : '공급가액 (ex-VAT)'}\n`
   );
 
   if (args.excludeKimOnly) {

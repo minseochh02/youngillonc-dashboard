@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { sqlSalesAmountExprCoalesced } from '@/lib/vat-amount-sql';
 
 /**
  * API Endpoint for B2B Daily Sales Profit Analysis
@@ -11,8 +12,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const includeVat = searchParams.get('includeVat') === 'true';
-    const divisor = includeVat ? '1.0' : '1.1';
-    
+    const saleAmt = sqlSalesAmountExprCoalesced('s', includeVat);
+
     // Mapping logic for branches based on clients.거래처그룹1명
     const branchMapping = `
       CASE 
@@ -42,32 +43,32 @@ export async function GET(request: Request) {
     // 3. Aggregate by branch and item to calculate total sales, costs, and profits.
     const query = `
       SELECT 
-        ROW_NUMBER() OVER(ORDER BY ${branchMapping}, SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC) / ${divisor}) DESC) as id,
+        ROW_NUMBER() OVER(ORDER BY ${branchMapping}, SUM(${saleAmt}) DESC) as id,
         ${branchMapping} as branch,
         s.품목코드,
         MAX(COALESCE(sp.품목명, i.품목명, '미지정')) as 품목명,
         SUM(CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC)) as 판매수량,
         AVG(CAST(REPLACE(COALESCE(s.단가, '0'), ',', '') AS NUMERIC)) as 판매단가,
-        SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC) / ${divisor}) as 판매금액,
+        SUM(${saleAmt}) as 판매금액,
         MAX(CAST(REPLACE(COALESCE(CAST(sp.원가단가 AS VARCHAR), '0'), ',', '') AS NUMERIC)) as 원가단가,
         SUM(CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC) * CAST(REPLACE(COALESCE(CAST(sp.원가단가 AS VARCHAR), '0'), ',', '') AS NUMERIC)) as 원가금액,
-        SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC) / ${divisor} - (CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC) * CAST(REPLACE(COALESCE(CAST(sp.원가단가 AS VARCHAR), '0'), ',', '') AS NUMERIC))) as 이익금액,
+        SUM(${saleAmt} - (CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC) * CAST(REPLACE(COALESCE(CAST(sp.원가단가 AS VARCHAR), '0'), ',', '') AS NUMERIC))) as 이익금액,
         CASE 
           WHEN SUM(CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC)) > 0 
-          THEN SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC) / ${divisor} - (CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC) * CAST(REPLACE(COALESCE(CAST(sp.원가단가 AS VARCHAR), '0'), ',', '') AS NUMERIC))) / SUM(CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC))
+          THEN SUM(${saleAmt} - (CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC) * CAST(REPLACE(COALESCE(CAST(sp.원가단가 AS VARCHAR), '0'), ',', '') AS NUMERIC))) / SUM(CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC))
           ELSE 0 
         END as 이익단가,
         CASE 
-          WHEN SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC) / ${divisor}) > 0 
-          THEN SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC) / ${divisor} - (CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC) * CAST(REPLACE(COALESCE(CAST(sp.원가단가 AS VARCHAR), '0'), ',', '') AS NUMERIC))) / SUM(CAST(REPLACE(COALESCE(s.합계, '0'), ',', '') AS NUMERIC) / ${divisor})
+          WHEN SUM(${saleAmt}) > 0 
+          THEN SUM(${saleAmt} - (CAST(REPLACE(COALESCE(s.수량, '0'), ',', '') AS NUMERIC) * CAST(REPLACE(COALESCE(CAST(sp.원가단가 AS VARCHAR), '0'), ',', '') AS NUMERIC))) / SUM(${saleAmt})
           ELSE 0 
         END as 이익율
       FROM (
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계 FROM sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계, 공급가액 FROM sales
         UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계 FROM east_division_sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계, 공급가액 FROM east_division_sales
         UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계 FROM west_division_sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계, 공급가액 FROM west_division_sales
       ) s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN items i ON s.품목코드 = i.품목코드
