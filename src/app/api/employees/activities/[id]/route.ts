@@ -18,6 +18,7 @@ const COMPLETED_ACTIVITY_TYPES = new Set(['completed_task', 'work_completed', 's
 type PatchBody = {
   activity_type?: string;
   confidence_score?: number;
+  completion_reason?: string;
 };
 
 export async function PATCH(
@@ -64,6 +65,18 @@ export async function PATCH(
   ) {
     // Human-verified completion: include in /api/employees tracker (confidence >= 0.7)
     updates.confidence_score = 1;
+  }
+
+  if (body.activity_type !== undefined && COMPLETED_ACTIVITY_TYPES.has(body.activity_type)) {
+    const completionReason =
+      typeof body.completion_reason === 'string' && body.completion_reason.trim().length > 0
+        ? body.completion_reason.trim()
+        : '관리자 보고로 완료 처리';
+
+    updates.task_status = 'completed';
+    updates.resolved_by = 'admin';
+    updates.action_taken = 'manual_completion';
+    updates.outcome = completionReason;
   }
 
   if (Object.keys(updates).length === 0) {

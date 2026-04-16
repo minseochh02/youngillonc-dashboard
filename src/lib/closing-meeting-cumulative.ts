@@ -434,11 +434,15 @@ export async function buildCumulativeViewPayload(params: {
     return s || '미분류';
   };
 
+  /** Must match `team_display_order.팀` trimming — used for maps + compareTeams sort keys */
+  const normTeam = (t: unknown) => String(t ?? '').trim();
+
   for (const r of salesYtdRes?.rows || []) {
     const y = Number(r.year);
     const cat = String(r.category);
     const branch = normBranch(r.branch);
-    const team = String(r.team);
+    const team = normTeam(r.team);
+    if (!team) continue;
     const w = Number(r.weight) || 0;
     const catInner = ensureYCat(catSalesYtd, y, cat);
     catInner.set(cat, (catInner.get(cat) || 0) + w);
@@ -458,7 +462,8 @@ export async function buildCumulativeViewPayload(params: {
     const y = Number(r.year);
     const cat = String(r.category);
     const branch = normBranch(r.branch);
-    const team = String(r.team);
+    const team = normTeam(r.team);
+    if (!team) continue;
     const w = Number(r.weight) || 0;
     const catInnerMo = ensureYCat(catSalesMo, y, cat);
     catInnerMo.set(cat, (catInnerMo.get(cat) || 0) + w);
@@ -477,7 +482,8 @@ export async function buildCumulativeViewPayload(params: {
   for (const r of goalsYtdRes?.rows || []) {
     const cat = String(r.category);
     const branch = normBranch(r.branch);
-    const team = String(r.team);
+    const team = normTeam(r.team);
+    if (!team) continue;
     const tw = Number(r.target_weight) || 0;
     const gk = `${cat}\t${branch}\t${team}`;
     goalsYtd.set(gk, (goalsYtd.get(gk) || 0) + tw);
@@ -486,7 +492,8 @@ export async function buildCumulativeViewPayload(params: {
   for (const r of goalsMoRes?.rows || []) {
     const cat = String(r.category);
     const branch = normBranch(r.branch);
-    const team = String(r.team);
+    const team = normTeam(r.team);
+    if (!team) continue;
     const y = String(r.year);
     const tw = Number(r.target_weight) || 0;
     const gk = `${y}\t${cat}\t${branch}\t${team}`;
@@ -497,7 +504,8 @@ export async function buildCumulativeViewPayload(params: {
     const y = Number(r.year);
     const cat = String(r.category);
     const branch = normBranch(r.branch);
-    const team = String(r.team);
+    const team = normTeam(r.team);
+    if (!team) continue;
     const w = Number(r.weight) || 0;
     const catInnerB2b = ensureYCat(b2bCatSalesYtd, y, cat);
     catInnerB2b.set(cat, (catInnerB2b.get(cat) || 0) + w);
@@ -515,7 +523,8 @@ export async function buildCumulativeViewPayload(params: {
     const y = Number(r.year);
     const cat = String(r.category);
     const branch = normBranch(r.branch);
-    const team = String(r.team);
+    const team = normTeam(r.team);
+    if (!team) continue;
     const w = Number(r.weight) || 0;
     const catInnerB2bMo = ensureYCat(b2bCatSalesMo, y, cat);
     catInnerB2bMo.set(cat, (catInnerB2bMo.get(cat) || 0) + w);
@@ -532,7 +541,8 @@ export async function buildCumulativeViewPayload(params: {
   for (const r of b2bGoalsYtdRes?.rows || []) {
     const cat = String(r.category);
     const branch = normBranch(r.branch);
-    const team = String(r.team);
+    const team = normTeam(r.team);
+    if (!team) continue;
     const tw = Number(r.target_weight) || 0;
     const gk = `${cat}\t${branch}\t${team}`;
     goalsB2bYtd.set(gk, (goalsB2bYtd.get(gk) || 0) + tw);
@@ -540,7 +550,8 @@ export async function buildCumulativeViewPayload(params: {
   for (const r of b2bGoalsMoRes?.rows || []) {
     const cat = String(r.category);
     const branch = normBranch(r.branch);
-    const team = String(r.team);
+    const team = normTeam(r.team);
+    if (!team) continue;
     const y = String(r.year);
     const tw = Number(r.target_weight) || 0;
     const gk = `${y}\t${cat}\t${branch}\t${team}`;

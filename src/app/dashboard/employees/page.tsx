@@ -222,7 +222,10 @@ export default function EmployeesPage() {
       const res = await apiFetch(`/api/employees/activities/${activityId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activity_type: 'completed_task' })
+        body: JSON.stringify({
+          activity_type: 'completed_task',
+          completion_reason: '관리자 보고로 완료 처리'
+        })
       });
       const data = await res.json();
       if (!data.success) {
@@ -244,7 +247,7 @@ export default function EmployeesPage() {
   const confirmMarkPlannedAsCompleted = (activityId: number) => {
     if (
       !window.confirm(
-        '이 예정 항목을 완료로 변경합니다. 활동 유형이 "예정"에서 "완료"로 바뀌며 Follow-up 통계에 반영됩니다. 계속할까요?'
+        '이 예정 항목을 완료로 변경합니다. 활동 유형이 "예정"에서 "완료"로 바뀌며 Follow-up 통계에 반영됩니다. 계속할까요?\n\n완료 사유: 관리자 보고로 완료 처리'
       )
     ) {
       return;
@@ -693,7 +696,7 @@ export default function EmployeesPage() {
                                           disabled={markingActivityId === act.id}
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            void markActivityAsCompleted(act.id);
+                                            void confirmMarkPlannedAsCompleted(act.id);
                                           }}
                                           className="mt-1.5 flex w-full items-center justify-center gap-1 rounded border border-emerald-300/80 bg-white/90 py-1 text-[9px] font-bold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
                                         >

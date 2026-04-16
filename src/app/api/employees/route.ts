@@ -5,6 +5,7 @@ interface PlannedTask {
   id: number;
   employee_name: string;
   message_date: string; // When they made the plan
+  activity_label?: string;
   next_action: string;
   next_action_date: string; // When they plan to do it
   customer_name?: string;
@@ -16,6 +17,7 @@ interface ActualActivity {
   employee_name: string;
   activity_date: string;
   activity_type: string;
+  activity_label?: string;
   activity_summary: string;
   customer_name?: string;
   confidence_score: number;
@@ -81,7 +83,10 @@ export async function GET(request: NextRequest) {
         eal.employee_name,
         eal.activity_date,
         eal.activity_type,
-        COALESCE(krm.message, eal.activity_label, '') as activity_summary,
+        CASE
+          WHEN eal.activity_type = 'completed_task' AND eal.resolved_by = 'admin' THEN COALESCE(eal.outcome, eal.activity_label, '')
+          ELSE COALESCE(krm.message, eal.activity_label, '')
+        END as activity_summary,
         eal.activity_label,
         eal.customer as customer_name,
         eal.confidence_score
@@ -98,6 +103,7 @@ export async function GET(request: NextRequest) {
     const actualActivities: ActualActivity[] = actualResult?.rows || [];
 
     // Match planned tasks with actual activities
+    const usedActualIds = new Set<number>();
     const matches: FollowUpMatch[] = plannedTasks.map(planned => {
       const now = new Date();
       // Use local date for comparison to avoid UTC off-by-one
@@ -113,27 +119,70 @@ export async function GET(request: NextRequest) {
       }
 
       // Find matching activity on the planned date
-      const matchingActivity = actualActivities.find(actual => {
-        // Must be same employee and same date
-        if (actual.employee_name !== planned.employee_name) return false;
-        if (actual.activity_date !== planned.next_action_date) return false;
+      const matchingActivity = actualActivities
+        .filter(actual => {
+          if (usedActualIds.has(actual.id)) return false;
+          // Must be same employee and same date
+          if (actual.employee_name !== planned.employee_name) return false;
+          if (actual.activity_date !== planned.next_action_date) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          const score = (actual: ActualActivity) => {
+            let s = 0;
+            const plannedCustomer = planned.customer_name?.trim();
+            const actualCustomer = actual.customer_name?.trim();
+            const plannedLabel = planned.activity_label?.trim();
+            const actualLabel = actual.activity_label?.trim();
+            const actualSummary = actual.activity_summary || '';
 
-        // If planned task has a customer, check if actual activity mentions it
-        if (planned.customer_name) {
-          // Check if customer name appears in the actual activity
-          if (actual.customer_name && actual.customer_name.includes(planned.customer_name)) {
-            return true;
-          }
-          // Also check in the summary
-          if (actual.activity_summary && actual.activity_summary.includes(planned.customer_name)) {
-            return true;
-          }
-          return false;
-        }
+            if (plannedCustomer) {
+              if (actualCustomer && actualCustomer.includes(plannedCustomer)) s += 100;
+              if (actualSummary.includes(plannedCustomer)) s += 60;
+            }
 
-        // If no specific customer in plan, any activity on that date counts
-        return true;
-      });
+            if (plannedLabel) {
+              if (actualLabel && actualLabel === plannedLabel) s += 80;
+              if (actualSummary.includes(plannedLabel)) s += 40;
+            }
+
+            if (actual.id === planned.id) s += 200;
+            return s;
+          };
+          return score(b) - score(a);
+        })
+        .find(actual => {
+          const plannedCustomer = planned.customer_name?.trim();
+          const plannedLabel = planned.activity_label?.trim();
+          const actualCustomer = actual.customer_name?.trim();
+          const actualLabel = actual.activity_label?.trim();
+          const actualSummary = actual.activity_summary || '';
+
+          if (plannedCustomer) {
+            const customerMatched =
+              (actualCustomer && actualCustomer.includes(plannedCustomer)) ||
+              actualSummary.includes(plannedCustomer);
+            if (!customerMatched) return false;
+          }
+
+          // For plans without customer, require some label-level relevance.
+          if (!plannedCustomer && plannedLabel) {
+            const labelMatched =
+              (actualLabel && actualLabel === plannedLabel) ||
+              actualSummary.includes(plannedLabel);
+            if (!labelMatched) return false;
+          }
+
+          // If neither customer nor label exists, avoid broad auto-matching.
+          if (!plannedCustomer && !plannedLabel) {
+            return false;
+          }
+
+          return true;
+        });
+      if (matchingActivity) {
+        usedActualIds.add(matchingActivity.id);
+      }
 
       return {
         planned,

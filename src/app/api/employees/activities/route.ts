@@ -26,7 +26,10 @@ export async function GET(request: NextRequest) {
         eal.activity_date,
         eal.activity_type,
         eal.activity_label,
-        COALESCE(krm.message, eal.activity_label, '') as activity_summary,
+        CASE
+          WHEN eal.activity_type = 'completed_task' AND eal.resolved_by = 'admin' THEN COALESCE(eal.outcome, eal.activity_label, '')
+          ELSE COALESCE(krm.message, eal.activity_label, '')
+        END as activity_summary,
         eal.customer as customer_name,
         eal.location,
         eal.products as products_mentioned,

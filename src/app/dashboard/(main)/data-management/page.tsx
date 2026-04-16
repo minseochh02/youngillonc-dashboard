@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Database, Users, Building2, Package, Tags, MapPin, Settings, Loader2, Save, CheckCircle2, AlertCircle, X, Info, ArrowUp, ArrowDown, ListOrdered, GitCompare } from 'lucide-react';
+import { Database, Users, Building2, Package, Tags, MapPin, Settings, Loader2, Save, CheckCircle2, AlertCircle, X, Info, ArrowUp, ArrowDown, ListOrdered, GitCompare, RefreshCw, Play } from 'lucide-react';
 import type { DisplayOrderReconcileReport } from '@/lib/display-order-reconcile';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -14,6 +14,19 @@ interface StagedDiff {
   data: Record<string, any>;
   originalData?: Record<string, any>;
   changes?: string[];
+}
+
+interface BrowserRecordingRunOptionsInput {
+  startDate?: string;
+  endDate?: string;
+  labeledFieldFills?: (string | undefined)[][];
+}
+
+interface ScriptRunControl {
+  useWeekFromToday: boolean;
+  startDate: string;
+  endDate: string;
+  labeledFieldFillsText: string;
 }
 
 const baselineTables = [
@@ -125,11 +138,141 @@ export default function DataManagementPage() {
     Record<string, Array<{ 담당자: string; 팀내_노출순서: number }>>
   >({});
   const [selectedChannelTeam, setSelectedChannelTeam] = useState<string>('');
+  const [scriptNames, setScriptNames] = useState<string[]>([]);
+  const [scriptsLoading, setScriptsLoading] = useState(false);
+  const [scriptsError, setScriptsError] = useState<string | null>(null);
+  const [scriptControls, setScriptControls] = useState<Record<string, ScriptRunControl>>({});
+  const [runningScript, setRunningScript] = useState<string | null>(null);
+  const [scriptRunResult, setScriptRunResult] = useState<Record<string, string>>({});
 
   useEffect(() => {
     cancelStaging();
     fetchTableData();
   }, [activeTable]);
+
+  useEffect(() => {
+    fetchBrowserRecordingScripts();
+  }, []);
+
+  const localYmd = (d: Date): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const getDefaultScriptControl = (): ScriptRunControl => ({
+    useWeekFromToday: false,
+    startDate: '',
+    endDate: '',
+    labeledFieldFillsText: ''
+  });
+
+  const fetchBrowserRecordingScripts = async () => {
+    setScriptsLoading(true);
+    setScriptsError(null);
+    try {
+      const response = await apiFetch('/api/dashboard/browser-recording');
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || '스크립트 목록을 불러오지 못했습니다.');
+      }
+
+      const scripts = Array.isArray(result.scripts) ? result.scripts as string[] : [];
+      setScriptNames(scripts);
+      setScriptControls((prev) => {
+        const next: Record<string, ScriptRunControl> = {};
+        for (const script of scripts) {
+          next[script] = prev[script] ?? getDefaultScriptControl();
+        }
+        return next;
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '스크립트 목록을 불러오지 못했습니다.';
+      setScriptsError(msg);
+    } finally {
+      setScriptsLoading(false);
+    }
+  };
+
+  const updateScriptControl = (
+    scriptName: string,
+    patch: Partial<ScriptRunControl>
+  ) => {
+    setScriptControls((prev) => ({
+      ...prev,
+      [scriptName]: {
+        ...(prev[scriptName] ?? getDefaultScriptControl()),
+        ...patch
+      }
+    }));
+  };
+
+  const buildRunOptions = (control: ScriptRunControl): BrowserRecordingRunOptionsInput => {
+    const options: BrowserRecordingRunOptionsInput = {};
+
+    if (control.useWeekFromToday) {
+      const today = new Date();
+      const end = new Date(today);
+      end.setDate(end.getDate() + 7);
+      options.startDate = localYmd(today);
+      options.endDate = localYmd(end);
+    } else {
+      if (control.startDate.trim()) options.startDate = control.startDate.trim();
+      if (control.endDate.trim()) options.endDate = control.endDate.trim();
+    }
+
+    if (control.labeledFieldFillsText.trim()) {
+      const parsed = JSON.parse(control.labeledFieldFillsText) as (string | undefined)[][];
+      if (!Array.isArray(parsed)) {
+        throw new Error('라벨 필드 입력은 JSON 배열 형식이어야 합니다.');
+      }
+      options.labeledFieldFills = parsed;
+    }
+
+    return options;
+  };
+
+  const runBrowserScript = async (scriptName: string) => {
+    const control = scriptControls[scriptName] ?? getDefaultScriptControl();
+    let runOptions: BrowserRecordingRunOptionsInput;
+    try {
+      runOptions = buildRunOptions(control);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '실행 옵션 파싱에 실패했습니다.';
+      setScriptRunResult((prev) => ({ ...prev, [scriptName]: msg }));
+      return;
+    }
+
+    setRunningScript(scriptName);
+    setScriptRunResult((prev) => ({ ...prev, [scriptName]: '실행 중...' }));
+
+    try {
+      const response = await apiFetch('/api/dashboard/browser-recording', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          testFile: scriptName,
+          runOptions
+        })
+      });
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || '스크립트 실행에 실패했습니다.');
+      }
+      const replay = result.result ?? {};
+      const success = replay.success === true;
+      const replayMessage = success
+        ? replay.message || '실행 완료'
+        : replay.error || '실행 실패';
+      setScriptRunResult((prev) => ({ ...prev, [scriptName]: replayMessage }));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '스크립트 실행에 실패했습니다.';
+      setScriptRunResult((prev) => ({ ...prev, [scriptName]: msg }));
+    } finally {
+      setRunningScript(null);
+    }
+  };
 
   const fetchTableData = async () => {
     setIsLoading(true);
@@ -554,6 +697,109 @@ export default function DataManagementPage() {
               변경 사항은 모든 대시보드 및 보고서에 즉시 반영됩니다.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Browser Recorder Scripts */}
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm">
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/50 flex items-center justify-between gap-3">
+          <div>
+            <h4 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Browser Recorder Scripts</h4>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+              사용 가능한 스크립트를 실행해 동기화 데이터를 갱신합니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchBrowserRecordingScripts}
+            disabled={scriptsLoading}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+          >
+            {scriptsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            목록 새로고침
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          {scriptsError && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+              <AlertCircle className="w-4 h-4" />
+              {scriptsError}
+            </div>
+          )}
+          {scriptsLoading ? (
+            <div className="flex items-center gap-2 text-zinc-500 text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              스크립트 목록을 불러오는 중...
+            </div>
+          ) : scriptNames.length === 0 ? (
+            <p className="text-sm text-zinc-500">표시할 스크립트가 없습니다.</p>
+          ) : (
+            <div className="space-y-4">
+              {scriptNames.map((scriptName) => {
+                const control = scriptControls[scriptName] ?? getDefaultScriptControl();
+                const isRunning = runningScript === scriptName;
+                return (
+                  <div
+                    key={scriptName}
+                    className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{scriptName}</p>
+                      <button
+                        type="button"
+                        onClick={() => runBrowserScript(scriptName)}
+                        disabled={isRunning}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                        실행
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300 md:col-span-3">
+                        <input
+                          type="checkbox"
+                          checked={control.useWeekFromToday}
+                          onChange={(e) => updateScriptControl(scriptName, { useWeekFromToday: e.target.checked })}
+                        />
+                        오늘부터 1주일 날짜 범위 자동 설정
+                      </label>
+                      <input
+                        type="text"
+                        value={control.startDate}
+                        onChange={(e) => updateScriptControl(scriptName, { startDate: e.target.value })}
+                        placeholder="startDate (YYYY-MM-DD)"
+                        disabled={control.useWeekFromToday}
+                        className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs"
+                      />
+                      <input
+                        type="text"
+                        value={control.endDate}
+                        onChange={(e) => updateScriptControl(scriptName, { endDate: e.target.value })}
+                        placeholder="endDate (YYYY-MM-DD)"
+                        disabled={control.useWeekFromToday}
+                        className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs"
+                      />
+                      <input
+                        type="text"
+                        value={control.labeledFieldFillsText}
+                        onChange={(e) => updateScriptControl(scriptName, { labeledFieldFillsText: e.target.value })}
+                        placeholder='labeledFieldFills JSON (optional)'
+                        className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs md:col-span-3"
+                      />
+                    </div>
+
+                    {scriptRunResult[scriptName] && (
+                      <p className="text-xs text-zinc-600 dark:text-zinc-300">
+                        {scriptRunResult[scriptName]}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

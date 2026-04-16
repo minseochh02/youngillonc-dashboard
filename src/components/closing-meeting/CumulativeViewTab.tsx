@@ -298,6 +298,9 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
               const isB2b = row.rowKind.startsWith("b2b_");
               const isBranchSub = row.rowKind === "branch_subtotal";
               const isTeam = row.rowKind === "team";
+              const isTotal = row.rowKind === "total";
+              const isB2bTotal = row.rowKind === "b2b_total";
+              const isSubtotal = isBranchSub || row.rowKind === "b2b_branch_subtotal";
               const isB2bBranchSub = row.rowKind === "b2b_branch_subtotal";
               const isB2bTeamRow = row.rowKind === "b2b_team";
               const numCls = isInv
@@ -307,6 +310,15 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
                   : isBranchSub
                     ? `${tdNum} bg-zinc-100 dark:bg-zinc-800/90 font-medium`
                     : tdNum;
+              let metricCls = numCls;
+              if (isTotal)
+                metricCls = `${tdNum} bg-violet-100 dark:bg-violet-950/35 font-bold text-zinc-900 dark:text-zinc-100`;
+              else if (isB2bTotal)
+                metricCls = `${tdNum} bg-sky-200 dark:bg-sky-900/60 font-bold text-zinc-900 dark:text-zinc-100`;
+              else if (isB2bBranchSub)
+                metricCls = `${tdNum} bg-sky-100 dark:bg-sky-950/35 font-semibold border-y-2 border-sky-300 dark:border-sky-700`;
+              else if (isSubtotal)
+                metricCls = `${tdNum} bg-zinc-100 dark:bg-zinc-800/90 font-semibold border-y-2 border-zinc-400/70 dark:border-zinc-500`;
               let subCls = isInv ? rowInvSub : thSub;
               if (isB2bBranchSub)
                 subCls = `${thSub} bg-sky-100 dark:bg-sky-950/35 font-semibold`;
@@ -315,23 +327,28 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
               else if (isB2b) subCls = rowB2bSub;
               else if (isBranchSub) subCls = `${thSub} bg-zinc-100 dark:bg-zinc-800/90 font-semibold`;
               else if (isTeam) subCls = `${thSub} font-normal`;
+              if (isTotal) subCls = `${thSub} bg-violet-100 dark:bg-violet-950/35 font-bold`;
+              else if (isB2bTotal) subCls = `${thSub} bg-sky-200 dark:bg-sky-900/60 font-bold`;
+              else if (isB2bBranchSub)
+                subCls = `${subCls} border-y-2 border-sky-300 dark:border-sky-700`;
+              else if (isSubtotal) subCls = `${subCls} border-y-2 border-zinc-400/70 dark:border-zinc-500`;
               const block = (
                 <>
-                  <td className={numCls}>{formatInt(row.metrics.yPast3)}</td>
-                  <td className={numCls}>{formatInt(row.metrics.yPast2)}</td>
-                  <td className={numCls}>{formatInt(row.metrics.yPast1)}</td>
-                  <td className={numCls}>{formatInt(row.metrics.yCurrent)}</td>
-                  <td className={numCls}>{formatRate(row.metrics.growthRate)}</td>
-                  <td className={numCls}>{formatInt(row.metrics.cum.priorYear)}</td>
-                  <td className={numCls}>{formatInt(row.metrics.cum.target)}</td>
-                  <td className={numCls}>{formatInt(row.metrics.cum.currentYear)}</td>
-                  <td className={numCls}>{formatRate(row.metrics.cum.achievementRate)}</td>
-                  <td className={numCls}>{formatRate(row.metrics.cum.yoyRate)}</td>
-                  <td className={numCls}>{formatInt(row.metrics.mo.priorYear)}</td>
-                  <td className={numCls}>{formatInt(row.metrics.mo.target)}</td>
-                  <td className={numCls}>{formatInt(row.metrics.mo.currentYear)}</td>
-                  <td className={numCls}>{formatRate(row.metrics.mo.achievementRate)}</td>
-                  <td className={numCls}>{formatRate(row.metrics.mo.yoyRate)}</td>
+                  <td className={metricCls}>{formatInt(row.metrics.yPast3)}</td>
+                  <td className={metricCls}>{formatInt(row.metrics.yPast2)}</td>
+                  <td className={metricCls}>{formatInt(row.metrics.yPast1)}</td>
+                  <td className={metricCls}>{formatInt(row.metrics.yCurrent)}</td>
+                  <td className={metricCls}>{formatRate(row.metrics.growthRate)}</td>
+                  <td className={metricCls}>{formatInt(row.metrics.cum.priorYear)}</td>
+                  <td className={metricCls}>{formatInt(row.metrics.cum.target)}</td>
+                  <td className={metricCls}>{formatInt(row.metrics.cum.currentYear)}</td>
+                  <td className={metricCls}>{formatRate(row.metrics.cum.achievementRate)}</td>
+                  <td className={metricCls}>{formatRate(row.metrics.cum.yoyRate)}</td>
+                  <td className={metricCls}>{formatInt(row.metrics.mo.priorYear)}</td>
+                  <td className={metricCls}>{formatInt(row.metrics.mo.target)}</td>
+                  <td className={metricCls}>{formatInt(row.metrics.mo.currentYear)}</td>
+                  <td className={metricCls}>{formatRate(row.metrics.mo.achievementRate)}</td>
+                  <td className={metricCls}>{formatRate(row.metrics.mo.yoyRate)}</td>
                 </>
               );
               return (
@@ -342,7 +359,21 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
                     </th>
                   ) : null}
                   <th className={subCls}>
-                    {row.rowKind === "sellin" ? (
+                    {isTotal || isB2bTotal ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="rounded-sm border border-zinc-500/40 dark:border-zinc-400/50 bg-white/70 dark:bg-zinc-900/70 px-1.5 py-0.5 text-[10px] font-bold leading-none">
+                          합계
+                        </span>
+                        <strong>{row.label}</strong>
+                      </span>
+                    ) : isSubtotal ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="rounded-sm border border-zinc-500/30 dark:border-zinc-400/40 bg-white/60 dark:bg-zinc-900/60 px-1.5 py-0.5 text-[10px] font-semibold leading-none">
+                          소계
+                        </span>
+                        <span>{row.label}</span>
+                      </span>
+                    ) : row.rowKind === "sellin" ? (
                       <strong>{row.label}</strong>
                     ) : row.rowKind === "team" || row.rowKind === "b2b_team" ? (
                       <span className="block pl-5 text-left">{row.label}</span>
