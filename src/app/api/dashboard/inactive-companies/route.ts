@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { sqlAndEmployeeNotSpecialHandlingOrNull } from '@/lib/special-handling-employees';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
             AND s.일자 <= ?
           LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
           WHERE c.거래처코드 IS NOT NULL
-            AND (e.사원_담당_명 IS NULL OR e.사원_담당_명 != '김도량')
+            ${sqlAndEmployeeNotSpecialHandlingOrNull()}
             ${branchFilter}
           GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드
           HAVING last_transaction_date IS NULL OR last_transaction_date < ?
@@ -133,7 +134,7 @@ export async function GET(request: NextRequest) {
             AND s.일자 <= ?
           LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
           WHERE c.거래처코드 IS NOT NULL
-            AND (e.사원_담당_명 IS NULL OR e.사원_담당_명 != '김도량')
+            ${sqlAndEmployeeNotSpecialHandlingOrNull()}
             ${branchFilter}
           GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드
           HAVING last_transaction_date IS NULL OR last_transaction_date < ?
@@ -160,7 +161,7 @@ export async function GET(request: NextRequest) {
           AND s.일자 <= ?
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE c.거래처코드 IS NOT NULL
-          AND (e.사원_담당_명 IS NULL OR e.사원_담당_명 != '김도량')
+          ${sqlAndEmployeeNotSpecialHandlingOrNull()}
           ${branchFilter}
         GROUP BY c.거래처코드, c.거래처명, e.사원_담당_명, e.사원_담당_코드
         HAVING last_transaction_date IS NULL OR last_transaction_date < ?

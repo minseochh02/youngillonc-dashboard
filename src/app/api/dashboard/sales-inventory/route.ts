@@ -1,5 +1,14 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import {
+  combinedInventorySnapshotJoinFromSql,
+  snapshotItemNameExpr,
+} from '@/lib/inventory-snapshot-combined';
+import {
+  employeeAliasNotSpecialHandlingCondition,
+  sqlAndEmployeeNotSpecialHandling,
+  sqlAndSalesRemarkNotExact,
+} from '@/lib/special-handling-employees';
 
 export async function GET(request: Request) {
   try {
@@ -48,7 +57,7 @@ export async function GET(request: Request) {
         LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        WHERE e.사원_담당_명 != '김도량' ${monthFilter}
+        WHERE ${employeeAliasNotSpecialHandlingCondition('e')} ${monthFilter}
       ) s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       WHERE 1=1 ${divisionFilter}
@@ -59,13 +68,13 @@ export async function GET(request: Request) {
     // 2. Inventory by item × warehouse (창고별 재고)
     const inventoryByItem = await executeSQL(`
       SELECT
-        품목코드,
-        품목명_규격_ as item_name,
-        창고명 as warehouse,
-        CAST(REPLACE(재고수량, ',', '') AS NUMERIC) as stock_qty
-      FROM inventory
-      WHERE CAST(REPLACE(재고수량, ',', '') AS NUMERIC) > 0
-      ORDER BY 품목코드, 창고명
+        inv.품목코드,
+        ${snapshotItemNameExpr} as item_name,
+        w.창고명 as warehouse,
+        CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) as stock_qty
+      ${combinedInventorySnapshotJoinFromSql()}
+      WHERE CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) > 0
+      ORDER BY inv.품목코드, w.창고명
     `);
 
     // 3. Pending sales (미판매) by item
@@ -102,7 +111,10 @@ export async function GET(request: Request) {
 
     // 5. Distinct warehouses & divisions for filters
     const warehouses = await executeSQL(`
-      SELECT DISTINCT 창고명 as warehouse FROM inventory WHERE 창고명 IS NOT NULL ORDER BY 창고명
+      SELECT DISTINCT w.창고명 as warehouse
+      ${combinedInventorySnapshotJoinFromSql()}
+      WHERE w.창고명 IS NOT NULL
+      ORDER BY w.창고명
     `);
 
     const divisions = await executeSQL(`
@@ -113,7 +125,8 @@ export async function GET(request: Request) {
       LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE c.거래처그룹1명 IS NOT NULL
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       ORDER BY 1
     `);
 

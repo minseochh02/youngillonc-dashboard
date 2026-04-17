@@ -8,6 +8,13 @@ import {
   loadOfficeOrderMap,
 } from '@/lib/display-order';
 import { buildCumulativeViewPayload } from '@/lib/closing-meeting-cumulative';
+import { SNAPSHOT_IMPORTED_AT, combinedInventoryUnionSql } from '@/lib/inventory-snapshot-combined';
+import {
+  sqlAndEmployeeNotSpecialHandling,
+  sqlPurchaseOnlyClassifiedGroups,
+  sqlAndSalesRemarkNotExact,
+  sqlSalesResolvedClientKeyExpr,
+} from '@/lib/special-handling-employees';
 import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
@@ -46,19 +53,20 @@ export async function GET(request: Request) {
     // Joins with items to get 품목그룹1코드; sales sources all expose 출하창고코드
     const baseSalesSubquery = `
       (
-        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.출하창고코드, i.품목그룹1코드
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.적요, s.출하창고코드, i.품목그룹1코드
         FROM sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         UNION ALL
-        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.출하창고코드, i.품목그룹1코드
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.적요, s.출하창고코드, i.품목그룹1코드
         FROM east_division_sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         UNION ALL
-        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.출하창고코드, i.품목그룹1코드
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.적요, s.출하창고코드, i.품목그룹1코드
         FROM west_division_sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
       )
     `;
+    const clientKeyExpr = sqlSalesResolvedClientKeyExpr('s');
 
     // Purchase metrics use unified purchases table only.
     const basePurchasesSubquery = `
@@ -66,6 +74,8 @@ export async function GET(request: Request) {
         SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합계, p.공급가액, p.창고코드, i.품목그룹1코드
         FROM purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
+        WHERE 1=1
+          ${sqlPurchaseOnlyClassifiedGroups('i')}
       )
     `;
 
@@ -112,12 +122,13 @@ export async function GET(request: Request) {
           SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as ytd_weight,
           SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as ytd_amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}')
           AND ${WHERE_B2C_CHANNEL}
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       `;
 
       const b2bTotalQuery = `
@@ -127,12 +138,13 @@ export async function GET(request: Request) {
           SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as ytd_weight,
           SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as ytd_amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}')
           AND ec.b2c_팀 = 'B2B'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       `;
 
       const [b2cRes, b2bRes] = await Promise.all([
@@ -189,11 +201,12 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ec.전체사업소 IS NOT NULL
         GROUP BY 1, 2
       `;
@@ -216,12 +229,13 @@ export async function GET(request: Request) {
           substr(s.일자, 1, 7) as month,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 LIKE '${lastYear}-%'
           AND s.일자 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ec.전체사업소 IS NOT NULL
         GROUP BY month
       `;
@@ -287,12 +301,13 @@ export async function GET(request: Request) {
           s.품목그룹1코드 as raw_category,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 IS NOT NULL
           AND s.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ec.전체사업소 IS NOT NULL
         GROUP BY 1, 2
       `;
@@ -344,6 +359,65 @@ export async function GET(request: Request) {
       };
 
       const categories = ['MB', 'AVI', 'MAR', 'AUTO', 'IL', '기타'];
+      const snapshotMonthStr = SNAPSHOT_IMPORTED_AT.slice(0, 7);
+
+      const snapshotByCategoryQuery = `
+        SELECT
+          CASE
+            WHEN i.품목그룹1코드 = 'MB' THEN 'MB'
+            WHEN i.품목그룹1코드 = 'AVI' THEN 'AVI'
+            WHEN i.품목그룹1코드 = 'MAR' THEN 'MAR'
+            WHEN i.품목그룹1코드 IN ('PVL', 'CVL') THEN 'AUTO'
+            WHEN i.품목그룹1코드 = 'IL' THEN 'IL'
+            ELSE '기타'
+          END as category,
+          SUM(CAST(COALESCE(inv.총중량, 0) AS NUMERIC)) as snapshot_weight
+        FROM (${combinedInventoryUnionSql()}) inv
+        LEFT JOIN items i ON inv.품목코드 = i.품목코드
+        GROUP BY 1
+      `;
+      const snapshotByCategoryResult = await executeSQL(snapshotByCategoryQuery);
+      const snapshotByCategoryMap = new Map<string, number>();
+      (snapshotByCategoryResult?.rows || []).forEach((row: any) => {
+        snapshotByCategoryMap.set(String(row.category), Number(row.snapshot_weight) || 0);
+      });
+
+      const getInventoryWeightForCategoryAtMonth = (category: string, monthStr: string, monthlyNet: number) => {
+        // Keep legacy behavior before snapshot baseline exists.
+        if (monthStr < snapshotMonthStr) return monthlyNet;
+
+        let inventory = snapshotByCategoryMap.get(category) || 0;
+        for (const m of availableMonths) {
+          if (m <= snapshotMonthStr || m > monthStr) continue;
+          const key = `${m}_${category}`;
+          const s = salesMap.get(key) || { weight: 0 };
+          const p = purchasesMap.get(key) || { weight: 0 };
+          inventory += p.weight - s.weight;
+        }
+        return inventory;
+      };
+      const getLegacyNetInventoryForCategoryAtMonth = (category: string, monthStr: string) => {
+        const [year] = monthStr.split('-');
+        let inventory = 0;
+        for (const m of availableMonths) {
+          if (!m.startsWith(`${year}-`) || m > monthStr) continue;
+          const key = `${m}_${category}`;
+          const s = salesMap.get(key) || { weight: 0 };
+          const p = purchasesMap.get(key) || { weight: 0 };
+          inventory += p.weight - s.weight;
+        }
+        return inventory;
+      };
+      const getInventoryWeightAtMonth = (category: string, monthStr: string) => {
+        const key = `${monthStr}_${category}`;
+        const s = salesMap.get(key) || { weight: 0 };
+        const p = purchasesMap.get(key) || { weight: 0 };
+        const monthlyNet = (p.weight || 0) - (s.weight || 0);
+        return monthStr < snapshotMonthStr
+          ? getLegacyNetInventoryForCategoryAtMonth(category, monthStr)
+          : getInventoryWeightForCategoryAtMonth(category, monthStr, monthlyNet);
+      };
+
       const monthlyData = [];
       let ytdPurchase = 0, ytdPurchaseAmount = 0, ytdSales = 0, ytdSalesAmount = 0, ytdInventory = 0, ytdTargetWeight = 0;
       let lastYearYtdPurchase = 0, lastYearYtdPurchaseAmount = 0, lastYearYtdSales = 0, lastYearYtdSalesAmount = 0, lastYearYtdInventory = 0;
@@ -384,17 +458,6 @@ export async function GET(request: Request) {
         }
       }
 
-      // Convert last year category data to array
-      const lastYearCategoryBreakdown = categories.map(cat => {
-        const data = lastYearByCategory.get(cat)!;
-        return {
-          category: cat,
-          purchase_weight: Math.round(data.purchase),
-          sales_weight: Math.round(data.sales),
-          inventory_weight: Math.round(data.inventory),
-        };
-      });
-
       for (const monthStr of availableMonths) {
         let purchaseWeight = 0, purchaseAmount = 0, salesWeight = 0, salesAmount = 0, monthTargetWeight = 0;
         const monthNum = monthStr.split('-')[1];
@@ -411,11 +474,14 @@ export async function GET(request: Request) {
           salesAmount += s.amount;
           monthTargetWeight += g.weight;
 
-          return {
+            const monthlyNetInventory = p.weight - s.weight;
+            return {
             category: cat,
             purchase_weight: Math.round(p.weight),
             sales_weight: Math.round(s.weight),
-            inventory_weight: Math.round(p.weight - s.weight),
+              inventory_weight: Math.round(
+                getInventoryWeightForCategoryAtMonth(cat, monthStr, monthlyNetInventory)
+              ),
             target_weight: Math.round(g.weight),
             achievement_rate: g.weight > 0 ? (s.weight / g.weight) * 100 : 0
           };
@@ -427,7 +493,10 @@ export async function GET(request: Request) {
         const lastYearSales = lastYearSalesMap.get(monthNum) || 0;
         const yoyGrowthRate = lastYearSales > 0 ? ((salesWeight - lastYearSales) / lastYearSales) * 100 : 0;
 
-        const inventoryWeight = purchaseWeight - salesWeight;
+        const inventoryWeight = breakdown.reduce(
+          (sum: number, row: { inventory_weight: number }) => sum + (Number(row.inventory_weight) || 0),
+          0
+        );
         const achievementRate = monthTargetWeight > 0 ? (salesWeight / monthTargetWeight) * 100 : 0;
 
         monthlyData.push({
@@ -444,6 +513,20 @@ export async function GET(request: Request) {
           breakdown: breakdown,
         });
       }
+
+      // Snapshot-aware last-year inventory at the same cutoff month.
+      lastYearYtdInventory = 0;
+      const lastYearCategoryBreakdown = categories.map(cat => {
+        const data = lastYearByCategory.get(cat)!;
+        const inv = getInventoryWeightAtMonth(cat, lastYearCutoff);
+        lastYearYtdInventory += inv;
+        return {
+          category: cat,
+          purchase_weight: Math.round(data.purchase),
+          sales_weight: Math.round(data.sales),
+          inventory_weight: Math.round(inv),
+        };
+      });
 
       // True YTD for the selected year only (matches UI "N년 · 1월~M월 누계")
       const ytdStart = `${currentYear}-01`;
@@ -485,13 +568,16 @@ export async function GET(request: Request) {
           agg.target += g.weight;
         });
       }
+      let ytdInventoryFromSnapshot = 0;
       const yearToDateCategoryBreakdown = categories.map((cat) => {
         const data = currentYearCategoryYtd.get(cat)!;
+        const inv = getInventoryWeightAtMonth(cat, currentMonthStr);
+        ytdInventoryFromSnapshot += inv;
         return {
           category: cat,
           purchase_weight: Math.round(data.purchase),
           sales_weight: Math.round(data.sales),
-          inventory_weight: Math.round(data.inventory),
+          inventory_weight: Math.round(inv),
           target_weight: Math.round(data.target),
           achievement_rate: data.target > 0 ? (data.sales / data.target) * 100 : 0,
         };
@@ -554,7 +640,7 @@ export async function GET(request: Request) {
             purchase_amount: Math.round(ytdPurchaseAmount),
             sales_weight: Math.round(ytdSales),
             sales_amount: Math.round(ytdSalesAmount),
-            inventory_weight: Math.round(ytdInventory),
+            inventory_weight: Math.round(ytdInventoryFromSnapshot),
             inventory_amount: Math.round(ytdPurchaseAmount - ytdSalesAmount),
             target_weight: Math.round(ytdTargetWeight),
             achievement_rate: ytdTargetWeight > 0 ? (ytdSales / ytdTargetWeight) * 100 : 0,
@@ -600,11 +686,12 @@ export async function GET(request: Request) {
           ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ${WHERE_EC_BRANCH_OK}
         GROUP BY branch
       `;
@@ -678,11 +765,12 @@ export async function GET(request: Request) {
           ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ${WHERE_EC_BRANCH_OK}
         GROUP BY branch
       `;
@@ -693,11 +781,12 @@ export async function GET(request: Request) {
           ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${lastYearMonthStr}'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ${WHERE_EC_BRANCH_OK}
         GROUP BY branch
       `;
@@ -772,11 +861,12 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${currentMonthStr}'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ${WHERE_EC_BRANCH_OK}
         GROUP BY branch, team, employee
       `;
@@ -792,11 +882,12 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) = '${lastMonthStr}'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ${WHERE_EC_BRANCH_OK}
         GROUP BY branch, team, employee
       `;
@@ -940,12 +1031,13 @@ export async function GET(request: Request) {
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as last_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) IN ('${currentMonthStr}', '${lastMonthStr}', '${yoyMonthStr}'))
           AND ${WHERE_B2C_CHANNEL}
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY category
       `;
 
@@ -968,12 +1060,13 @@ export async function GET(request: Request) {
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_month_weight,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) IN ('${currentMonthStr}', '${lastMonthStr}', '${yoyMonthStr}'))
           AND ${WHERE_B2C_CHANNEL}
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY branch, team, category
       `;
 
@@ -1009,13 +1102,14 @@ export async function GET(request: Request) {
           END as category,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE substr(s.일자, 1, 7) >= '${currentYear}-01'
           AND substr(s.일자, 1, 7) <= '${currentMonthStr}'
           AND ${WHERE_B2C_CHANNEL}
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY 1, 2
       `;
 
@@ -1100,12 +1194,13 @@ export async function GET(request: Request) {
           s.품목그룹1코드 as raw_category,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 IS NOT NULL
           AND ${WHERE_B2C_CHANNEL}
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND substr(s.일자, 6, 2) <= '${monthNum}'
         GROUP BY 1, 2, 3, 4, 5
       `;
@@ -1164,12 +1259,13 @@ export async function GET(request: Request) {
           END as category,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 IS NOT NULL
           AND ec.b2c_팀 = 'B2B'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND substr(s.일자, 6, 2) <= '${monthNum}'
         GROUP BY 1, 2
       `;
@@ -1503,13 +1599,14 @@ export async function GET(request: Request) {
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as last_month_amount,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) IN ('${currentMonthStr}', '${lastMonthStr}', '${yoyMonthStr}'))
           AND ec.b2c_팀 = 'B2B'
           AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY category
       `;
 
@@ -1529,13 +1626,14 @@ export async function GET(request: Request) {
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${lastMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as last_month_weight,
           SUM(CASE WHEN substr(s.일자, 1, 7) = '${yoyMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as yoy_weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) IN ('${currentMonthStr}', '${lastMonthStr}', '${yoyMonthStr}'))
           AND ec.b2c_팀 = 'B2B'
           AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY branch, team, category
       `;
 
@@ -1547,13 +1645,14 @@ export async function GET(request: Request) {
           SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as ytd_weight,
           SUM(CASE WHEN substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}' THEN ${sqlSalesAmountExpr('s', includeVat)} ELSE 0 END) as ytd_amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}')
           AND ${WHERE_B2C_CHANNEL}
           AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       `;
 
       // 4. Query current division YTD for comparison
@@ -1562,13 +1661,14 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE (substr(s.일자, 1, 7) >= '${currentYear}-01' AND substr(s.일자, 1, 7) <= '${currentMonthStr}')
           AND ec.b2c_팀 = 'B2B'
           AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       `;
 
       // Query goals aggregated by category and team for B2B IL
@@ -1631,13 +1731,14 @@ export async function GET(request: Request) {
           END as category,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 IS NOT NULL
           AND ec.b2c_팀 = 'B2B'
           AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND substr(s.일자, 6, 2) <= '${monthNum}'
         GROUP BY 1, 2, 3, 4
       `;
@@ -1688,13 +1789,14 @@ export async function GET(request: Request) {
           END as category,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE s.일자 IS NOT NULL
           AND ${WHERE_B2C_CHANNEL}
           AND s.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND substr(s.일자, 6, 2) <= '${monthNum}'
         GROUP BY 1, 2
       `;
@@ -2071,7 +2173,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN items i ON s.품목코드 = i.품목코드
@@ -2079,7 +2181,8 @@ export async function GET(request: Request) {
         ${additionalJoins}
         WHERE s.일자 LIKE '${prevYear}-%'
           AND e.사원_담당_명 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ${WHERE_EC_BRANCH_OK}
         GROUP BY month, employee_name, branch, team, category, industry, sector
         HAVING ${categoryHavingClause}

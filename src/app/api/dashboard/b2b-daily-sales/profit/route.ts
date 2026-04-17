@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { sqlAndEmployeeNotSpecialHandlingCoalescedEmpty, sqlAndSalesRemarkNotExact } from '@/lib/special-handling-employees';
 import { sqlSalesAmountExprCoalesced } from '@/lib/vat-amount-sql';
 
 /**
@@ -64,11 +65,11 @@ export async function GET(request: Request) {
           ELSE 0 
         END as 이익율
       FROM (
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계, 공급가액 FROM sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계, 공급가액, 적요 FROM sales
         UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계, 공급가액 FROM east_division_sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계, 공급가액, 적요 FROM east_division_sales
         UNION ALL
-        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계, 공급가액 FROM west_division_sales
+        SELECT 일자, 거래처코드, 담당자코드, 품목코드, 수량, 단가, 합계, 공급가액, 적요 FROM west_division_sales
       ) s
       LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
       LEFT JOIN items i ON s.품목코드 = i.품목코드
@@ -85,7 +86,8 @@ export async function GET(request: Request) {
       ) sp ON s.품목코드 = sp.품목코드
       WHERE s.일자 = '${date}'
         AND ec.b2c_팀 = 'B2B'
-        AND COALESCE(e.사원_담당_명, '') != '김도량'
+        ${sqlAndEmployeeNotSpecialHandlingCoalescedEmpty()}
+        ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY branch, s.품목코드
       ORDER BY branch, 판매금액 DESC
     `;

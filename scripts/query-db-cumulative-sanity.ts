@@ -10,18 +10,19 @@ import { config } from 'dotenv';
 config({ path: '.env.local' });
 
 import { executeSQL } from '../egdesk-helpers';
+import { sqlAndEmployeeNotSpecialHandling, sqlAndSalesRemarkNotExact } from '../src/lib/special-handling-employees';
 
 const baseSalesSubquery = `
   (
-    SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.출하창고코드, i.품목그룹1코드
+    SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.적요, s.출하창고코드, i.품목그룹1코드
     FROM sales s
     LEFT JOIN items i ON s.품목코드 = i.품목코드
     UNION ALL
-    SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.출하창고코드, i.품목그룹1코드
+    SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.적요, s.출하창고코드, i.품목그룹1코드
     FROM east_division_sales s
     LEFT JOIN items i ON s.품목코드 = i.품목코드
     UNION ALL
-    SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.출하창고코드, i.품목그룹1코드
+    SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.적요, s.출하창고코드, i.품목그룹1코드
     FROM west_division_sales s
     LEFT JOIN items i ON s.품목코드 = i.품목코드
   )
@@ -62,7 +63,8 @@ async function main() {
     LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
     WHERE ${ytdFilter(years, monthNum, 's')}
       AND (ec.b2c_팀 IS NULL OR ec.b2c_팀 != 'B2B')
-      AND e.사원_담당_명 != '김도량'
+      ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
     GROUP BY 1
     ORDER BY 1

@@ -1,5 +1,10 @@
 import { executeSQL } from '@/egdesk-helpers';
 import { compareOffices, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
+import {
+  sqlAndEmployeeNotSpecialHandling,
+  sqlAndSalesRemarkNotExact,
+  sqlSalesResolvedClientKeyExpr,
+} from '@/lib/special-handling-employees';
 
 const WHERE_B2C = `(ec.b2c_팀 IS NULL OR ec.b2c_팀 != 'B2B')`;
 const WHERE_B2B = `ec.b2c_팀 = 'B2B'`;
@@ -48,6 +53,7 @@ const PUR_CAT = `
 `;
 
 const CATEGORIES = ['MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL', '기타'] as const;
+const SALES_CLIENT_KEY_EXPR = sqlSalesResolvedClientKeyExpr('s');
 
 export interface CumulativeMetricBlock {
   yPast3: number;
@@ -192,6 +198,42 @@ export async function buildCumulativeViewPayload(params: {
 
   const salesYtdFilter = getYtdYearFilter(y3, y2, y1, y0, monthNum, 's');
   const purYtdFilter = getYtdYearFilter(y3, y2, y1, y0, monthNum, 'p');
+  const yearlyMonthKeys = Array.from(
+    new Set([
+      `${y3}-${monthNum}`,
+      `${y2}-${monthNum}`,
+      `${y1}-${monthNum}`,
+      `${y0}-${monthNum}`,
+      `${y3}-12`,
+      `${y2}-12`,
+      `${y1}-12`,
+      `${y0}-12`,
+    ])
+  );
+  const computedInventoryByMonthCat = new Map<string, number>();
+  const computedInventorySql = `
+    SELECT month, category, inventory_weight
+    FROM computed_inventory_monthly
+    WHERE month IN ('${yearlyMonthKeys.join("','")}')
+  `;
+  const computedInventoryRes = await executeSQL(computedInventorySql);
+  (computedInventoryRes?.rows || []).forEach((row: any) => {
+    computedInventoryByMonthCat.set(
+      `${String(row.month)}\t${String(row.category)}`,
+      Number(row.inventory_weight) || 0
+    );
+  });
+  const getComputedInventory = (y: number, cat: string, monthOverride?: string): number => {
+    const m = monthOverride ?? monthNum;
+    const k = `${y}-${m}\t${cat}`;
+    const v = computedInventoryByMonthCat.get(k);
+    if (v == null) {
+      throw new Error(
+        `Missing computed inventory: month=${y}-${m}, category=${cat}. Run rebuild-computed-inventory-monthly first.`
+      );
+    }
+    return v;
+  };
 
   /** 과거 3개 연도: 연간 전체(1~12월). 실적 23·24·25년 컬럼용. 당해 연도(y0)는 YTD만 별도 쿼리. */
   const threePastYearsIn = `('${y3}', '${y2}', '${y1}')`;
@@ -204,12 +246,13 @@ export async function buildCumulativeViewPayload(params: {
       ec.b2c_팀 as team,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
-    LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
     LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
     LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
     WHERE substr(s.일자, 1, 4) IN ${threePastYearsIn}
       AND ${WHERE_B2C}
-      AND e.사원_담당_명 != '김도량'
+      ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
     GROUP BY 1, 2, 3, 4
   `;
@@ -236,12 +279,13 @@ export async function buildCumulativeViewPayload(params: {
       ${B2B_TEAM} as team,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
-    LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
     LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
     LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
     WHERE substr(s.일자, 1, 4) IN ${threePastYearsIn}
       AND ${WHERE_B2B}
-      AND e.사원_담당_명 != '김도량'
+      ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
     GROUP BY 1, 2, 3, 4
   `;
 
@@ -267,12 +311,13 @@ export async function buildCumulativeViewPayload(params: {
       ec.b2c_팀 as team,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
-    LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
     LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
     LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
     WHERE ${salesYtdFilter}
       AND ${WHERE_B2C}
-      AND e.사원_담당_명 != '김도량'
+      ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
     GROUP BY 1, 2, 3, 4
   `;
@@ -299,12 +344,13 @@ export async function buildCumulativeViewPayload(params: {
       ec.b2c_팀 as team,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
-    LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
     LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
     LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
     WHERE substr(s.일자, 1, 7) IN ('${monthKeyPrev}', '${monthKeyCur}')
       AND ${WHERE_B2C}
-      AND e.사원_담당_명 != '김도량'
+      ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
     GROUP BY 1, 2, 3, 4
   `;
@@ -364,12 +410,13 @@ export async function buildCumulativeViewPayload(params: {
       ${B2B_TEAM} as team,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
-    LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
     LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
     LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
     WHERE ${salesYtdFilter}
       AND ${WHERE_B2B}
-      AND e.사원_담당_명 != '김도량'
+      ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
     GROUP BY 1, 2, 3, 4
   `;
 
@@ -395,12 +442,13 @@ export async function buildCumulativeViewPayload(params: {
       ${B2B_TEAM} as team,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
-    LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
     LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
     LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
     WHERE substr(s.일자, 1, 7) IN ('${monthKeyPrev}', '${monthKeyCur}')
       AND ${WHERE_B2B}
-      AND e.사원_담당_명 != '김도량'
+      ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
     GROUP BY 1, 2, 3, 4
   `;
 
@@ -772,7 +820,9 @@ export async function buildCumulativeViewPayload(params: {
     getPur(b2bPurYtd, y, cat) - getCatSales(b2bCatSalesYtd, y, cat);
 
   /** 매입−매출 (B2C+B2B), 품목 기준 */
-  const invCombined = (y: number, cat: string) => inv(y, cat) + b2bInv(y, cat);
+  const invCombined = (y: number, cat: string) => {
+    return getComputedInventory(y, cat);
+  };
 
   const purCombined = (
     mB2c: Map<number, Map<string, number>>,
@@ -963,11 +1013,7 @@ export async function buildCumulativeViewPayload(params: {
 
     const invMonthSnapshot = (y: number) => {
       if (cumulativeChannel === 'combined') {
-        return (
-          purCombined(purMo, b2bPurMo, y, cat) -
-          getCatSales(catSalesMo, y, cat) -
-          getCatSales(b2bCatSalesMo, y, cat)
-        );
+        return getComputedInventory(y, cat);
       }
       if (cumulativeChannel === 'b2c') {
         return getPur(purMo, y, cat) - getCatSales(catSalesMo, y, cat);
@@ -984,12 +1030,8 @@ export async function buildCumulativeViewPayload(params: {
     /** 실적 23·24·25년: 연간 — 재고 행 */
     const invFullForYear = (y: number) => {
       if (cumulativeChannel === 'combined') {
-        return (
-          getPur(purFull, y, cat) +
-          getPur(b2bPurFull, y, cat) -
-          getCatSales(catSalesFull, y, cat) -
-          getCatSales(b2bCatSalesFull, y, cat)
-        );
+        // 연도 실적 컬럼(23/24/25)은 항상 연말(12월말) 재고를 사용한다.
+        return getComputedInventory(y, cat, '12');
       }
       if (cumulativeChannel === 'b2c') return getPur(purFull, y, cat) - getCatSales(catSalesFull, y, cat);
       return getPur(b2bPurFull, y, cat) - getCatSales(b2bCatSalesFull, y, cat);

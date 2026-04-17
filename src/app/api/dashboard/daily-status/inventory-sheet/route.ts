@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareOffices, loadOfficeOrderMap } from '@/lib/display-order';
+import { combinedInventoryUnionSql } from '@/lib/inventory-snapshot-combined';
 
 /**
  * API Endpoint for Daily Inventory Status Sheet (일일재고파악시트)
- * Consolidates data from inventory, sales, and purchases.
+ * Consolidates data from combined 2025-12-31 inventory snapshots, sales, and purchases.
  *
  * Logic:
  * Ending Inventory = (Feb 1st Snapshot) + (Purchases Feb 2nd to Date) - (Sales Feb 2nd to Date)
@@ -66,13 +67,13 @@ export async function GET(request: Request) {
       baselineSubquery = `
         SELECT branch, category, tier, SUM(qty) as inv_qty, SUM(weight) as inv_weight
         FROM (
-          -- Snapshot Feb 1 EOD (esz018r_6)
+          -- Snapshot 2025-12-31 (영일 + 서부 + 동부 ESZ018R)
           SELECT ${branchCase('w.창고명')} as branch, ${categoryCase('p')} as category, ${tierCase('p')} as tier, 
-                 CAST(REPLACE(e.재고수량, ',', '') AS NUMERIC) as qty, 
-                 ${weightCalc('e.재고수량', 'p.규격정보')} as weight
-          FROM esz018r_6 e
-          LEFT JOIN warehouses w ON e.창고코드 = w.창고코드 OR CAST(e.창고코드 AS TEXT) = CAST(w.창고코드 AS TEXT)
-          LEFT JOIN items p ON e.품목코드 = p.품목코드
+                 CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) as qty, 
+                 CAST(COALESCE(inv.총중량, 0) AS NUMERIC) as weight
+          FROM (${combinedInventoryUnionSql()}) inv
+          LEFT JOIN warehouses w ON inv.창고코드 = w.창고코드 OR CAST(inv.창고코드 AS TEXT) = CAST(w.창고코드 AS TEXT)
+          LEFT JOIN items p ON inv.품목코드 = p.품목코드
           WHERE ${warehouseFilter('w.창고명')}
           
           UNION ALL
@@ -128,11 +129,11 @@ export async function GET(request: Request) {
       `;
     } else {
       baselineSubquery = `
-        SELECT ${branchCase('i.창고명')} as branch, ${categoryCase('p')} as category, ${tierCase('p')} as tier, SUM(CAST(REPLACE(i.재고수량, ',', '') AS NUMERIC)) as inv_qty, SUM(${weightCalc('i.재고수량', 'p.규격정보')}) as inv_weight
-        FROM inventory i
-        LEFT JOIN items p ON i.품목코드 = p.품목코드
-        WHERE ${warehouseFilter('i.창고명')}
-          AND i.imported_at = (SELECT MAX(imported_at) FROM inventory WHERE DATE(imported_at) <= '${date}')
+        SELECT ${branchCase('w.창고명')} as branch, ${categoryCase('p')} as category, ${tierCase('p')} as tier, SUM(CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC)) as inv_qty, SUM(CAST(COALESCE(inv.총중량, 0) AS NUMERIC)) as inv_weight
+        FROM (${combinedInventoryUnionSql()}) inv
+        LEFT JOIN items p ON inv.품목코드 = p.품목코드
+        LEFT JOIN warehouses w ON inv.창고코드 = w.창고코드 OR CAST(inv.창고코드 AS TEXT) = CAST(w.창고코드 AS TEXT)
+        WHERE ${warehouseFilter('w.창고명')}
         GROUP BY 1, 2, 3
       `;
     }

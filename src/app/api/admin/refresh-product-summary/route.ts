@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeSQL, createTable, deleteRows, insertRows } from '@/egdesk-helpers';
+import {
+  sqlAndEmployeeNotSpecialHandling,
+  sqlAndSalesRemarkNotExact,
+  sqlSalesResolvedClientKeyExpr,
+} from '@/lib/special-handling-employees';
 
 type CategoryType = 'tier' | 'division' | 'family';
 
@@ -75,6 +80,7 @@ async function isTableEmpty(): Promise<boolean> {
 }
 
 async function computeProductSummary(year: string, categoryType: CategoryType): Promise<ProductSummaryRow[]> {
+  const clientKeyExpr = sqlSalesResolvedClientKeyExpr('s');
   let caseStatement: string;
   let havingClause: string;
 
@@ -113,7 +119,7 @@ async function computeProductSummary(year: string, categoryType: CategoryType): 
 
   const productQuery = `
     SELECT
-      COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) as client_code,
+      ${clientKeyExpr} as client_code,
       '${year}' as year,
       '${categoryType}' as category_type,
       ${caseStatement} as category,
@@ -121,17 +127,18 @@ async function computeProductSummary(year: string, categoryType: CategoryType): 
       SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount,
       date('now') as computed_date
     FROM (
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM sales
+        SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 적요 FROM sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM east_division_sales
+        SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 적요 FROM east_division_sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM west_division_sales
+        SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 적요 FROM west_division_sales
     ) s
     LEFT JOIN items i ON s.품목코드 = i.품목코드
-    LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+    LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
     LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
     WHERE strftime('%Y', s.일자) = '${year}'
-      AND e.사원_담당_명 != '김도량'
+      ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       AND i.품목코드 IS NOT NULL
     GROUP BY client_code, category
     HAVING ${havingClause}

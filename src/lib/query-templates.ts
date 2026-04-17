@@ -7,6 +7,11 @@
  * Amount columns: synced ERP tables use `합계` (gross) and `공급가액` (ex-VAT). Do not use 합계/1.1 for ex-VAT when `공급가액` exists.
  */
 
+import {
+  combinedInventorySnapshotJoinFromSql,
+  snapshotItemNameExpr,
+} from '@/lib/inventory-snapshot-combined';
+
 export interface QueryTemplate {
   pattern: RegExp;
   intent: string;
@@ -156,17 +161,17 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
         intent: 'inventory_status',
         generator: (params) => {
           const divisionFilter = params.division
-            ? `WHERE 창고명 LIKE '%${params.division}%'`
+            ? `WHERE w.창고명 LIKE '%${params.division}%'`
             : '';
 
           return `
             SELECT
-              창고명,
-              품목명_규격_,
-              CAST(REPLACE(재고수량, ',', '') AS NUMERIC) as 재고수량
-            FROM inventory
+              w.창고명 as 창고명,
+              ${snapshotItemNameExpr} as 품목명_규격_,
+              CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) as 재고수량
+            ${combinedInventorySnapshotJoinFromSql()}
             ${divisionFilter}
-            ORDER BY CAST(REPLACE(재고수량, ',', '') AS NUMERIC) DESC
+            ORDER BY CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) DESC
             LIMIT 100
           `;
         }
@@ -330,17 +335,17 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     },
     sqlGenerator: (params) => {
       const whereClause = params.division
-        ? `WHERE 창고명 LIKE '%${params.division}%'`
+        ? `WHERE w.창고명 LIKE '%${params.division}%'`
         : '';
 
       return `
         SELECT
-          창고명,
-          품목명_규격_,
-          CAST(REPLACE(재고수량, ',', '') AS NUMERIC) as 재고수량
-        FROM inventory
+          w.창고명 as 창고명,
+          ${snapshotItemNameExpr} as 품목명_규격_,
+          CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) as 재고수량
+        ${combinedInventorySnapshotJoinFromSql()}
         ${whereClause}
-        ORDER BY CAST(REPLACE(재고수량, ',', '') AS NUMERIC) DESC
+        ORDER BY CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) DESC
         LIMIT 100
       `;
     }
@@ -357,12 +362,12 @@ export const QUERY_TEMPLATES: QueryTemplate[] = [
     },
     sqlGenerator: (params) => `
       SELECT
-        창고명,
-        품목명_규격_,
-        CAST(REPLACE(재고수량, ',', '') AS NUMERIC) as 재고수량
-      FROM inventory
-      WHERE CAST(REPLACE(재고수량, ',', '') AS NUMERIC) > 0
-      ORDER BY CAST(REPLACE(재고수량, ',', '') AS NUMERIC) DESC
+        w.창고명 as 창고명,
+        ${snapshotItemNameExpr} as 품목명_규격_,
+        CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) as 재고수량
+      ${combinedInventorySnapshotJoinFromSql()}
+      WHERE CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) > 0
+      ORDER BY CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) DESC
       LIMIT ${params.limit}
     `
   },

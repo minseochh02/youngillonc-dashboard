@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { sqlAndEmployeeNotSpecialHandlingCoalescedEmpty } from '@/lib/special-handling-employees';
 import { sqlPurchaseAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
@@ -60,7 +61,7 @@ export async function GET(request: Request) {
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       WHERE p.일자 = '${date}'
         AND ec.b2c_팀 = 'B2B'
-        AND COALESCE(e.사원_담당_명, '') != '김도량'
+        ${sqlAndEmployeeNotSpecialHandlingCoalescedEmpty()}
         ${branchFilter}
       GROUP BY
         branch,

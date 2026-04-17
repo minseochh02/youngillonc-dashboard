@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareOffices, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
+import { sqlAndEmployeeNotSpecialHandling, sqlAndSalesRemarkNotExact } from '@/lib/special-handling-employees';
 import { sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
@@ -201,7 +202,8 @@ export async function GET(request: Request) {
         ${employeeWhere}
         ${clientWhere}
         ${productWhere}
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY ${groupByFields.join(', ')}
       ORDER BY total_amount DESC
       LIMIT 1000

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
+import { sqlSalesResolvedClientKeyExpr } from '@/lib/special-handling-employees';
 
 function endDateOfCalendarMonth(yearMonth: string): string {
   const [y, m] = yearMonth.split('-').map(Number);
@@ -49,13 +50,14 @@ export async function GET(request: NextRequest) {
       endDate = endDateOfCalendarMonth(resolvedMonth);
     }
 
+    const clientKeyExpr = sqlSalesResolvedClientKeyExpr('s');
     const query = `
       SELECT
         ct.모빌분류,
         ct.산업분류,
         ct.영일분류,
         COALESCE(ec.b2b팀, '미분류') as team_name,
-        COUNT(DISTINCT COALESCE(NULLIF(s.실납업체, ''), s.거래처코드)) as client_count,
+        COUNT(DISTINCT ${clientKeyExpr}) as client_count,
         COUNT(DISTINCT s.id) as transaction_count,
         SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity,
         SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
@@ -68,7 +70,7 @@ export async function GET(request: NextRequest) {
         UNION ALL
         SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 공급가액 FROM west_division_sales
       ) s
-      LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+      LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
       LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
       LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드

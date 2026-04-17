@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareOffices, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
+import { sqlAndEmployeeNotSpecialHandling, sqlAndSalesRemarkNotExact } from '@/lib/special-handling-employees';
 
 /**
  * API Endpoint for Product Status
@@ -42,11 +43,11 @@ export async function GET(request: Request) {
 
     // Section 1: Auto by B2C vs B2B
     const salesUnion = `
-      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 실납업체 FROM sales
+      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 실납업체, 적요 FROM sales
       UNION ALL 
-      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 실납업체 FROM east_division_sales
+      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 실납업체, 적요 FROM east_division_sales
       UNION ALL 
-      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 실납업체 FROM west_division_sales
+      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 실납업체, 적요 FROM west_division_sales
     `;
 
     const autoQuery = `
@@ -73,7 +74,8 @@ export async function GET(request: Request) {
         AND s.일자 <= '${currentYear}-12-31'
         AND ca.업종분류코드 IS NOT NULL
         AND ec.b2c_팀 IS NOT NULL
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY category, year, quarter
     `;
 
@@ -98,7 +100,8 @@ export async function GET(request: Request) {
         AND s.일자 <= '${currentYear}-12-31'
         AND ec.b2c_팀 IS NOT NULL
         AND ec.b2c_팀 != 'B2B'
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY ec.b2c_팀, year, quarter
     `;
 
@@ -134,7 +137,8 @@ export async function GET(request: Request) {
         AND s.일자 <= '${currentYear}-12-31'
         AND i.제품군 = 'MOBIL 1'
         AND ec.전체사업소 IS NOT NULL
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY category, year, quarter
     `;
 
@@ -160,7 +164,8 @@ export async function GET(request: Request) {
         AND i.제품군 = 'MOBIL 1'
         AND ec.b2c_팀 IS NOT NULL
         AND ec.b2c_팀 != 'B2B'
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY ec.b2c_팀, year, quarter
     `;
 
@@ -185,7 +190,8 @@ export async function GET(request: Request) {
         AND s.일자 <= '${currentYear}-12-31'
         AND i.제품군 = 'AIOP'
         AND ec.b2c_팀 IS NOT NULL
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY ec.b2c_팀, year, quarter
     `;
 
@@ -210,7 +216,8 @@ export async function GET(request: Request) {
         AND s.일자 <= '${currentYear}-12-31'
         AND i.제품군 = 'TP'
         AND ec.b2c_팀 IS NOT NULL
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY ec.b2c_팀, year, quarter
     `;
 
@@ -235,7 +242,8 @@ export async function GET(request: Request) {
         AND s.일자 <= '${currentYear}-12-31'
         AND i.제품군 = 'SPECIAL P'
         AND ec.b2c_팀 IS NOT NULL
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY ec.b2c_팀, year, quarter
     `;
 
@@ -260,7 +268,8 @@ export async function GET(request: Request) {
         AND s.일자 <= '${currentYear}-12-31'
         AND i.품목그룹1코드 = 'CVL'
         AND ec.b2c_팀 IS NOT NULL
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY ec.b2c_팀, year, quarter
     `;
 
@@ -286,7 +295,8 @@ export async function GET(request: Request) {
         AND i.품목그룹1코드 = 'CVL'
         AND i.품목명 LIKE '%LEGEND%'
         AND ec.b2c_팀 IS NOT NULL
-        AND e.사원_담당_명 != '김도량'
+        ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       GROUP BY ec.b2c_팀, year, quarter
     `;
 

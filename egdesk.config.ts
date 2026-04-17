@@ -173,6 +173,7 @@ export const TABLES = {
   table22: {
     name: 'esz018r_6',
     displayName: 'esz018r 6',
+    description: 'Deprecated for dashboard baselines; use youngil/west/east_inventory_20251231 union.',
     rowCount: 759,
     columnCount: 5,
     columns: ['id', '품목코드', '창고코드', '재고수량', '중량']
@@ -292,6 +293,30 @@ export const TABLES = {
     rowCount: 54815,
     columnCount: 7,
     columns: ['id', '품목코드', '품목명_규격_', '창고코드', '창고명', '재고수량', 'imported_at']
+  } as TableDefinition,
+  table39: {
+    name: 'youngil_inventory_20251231',
+    displayName: '영일 재고 스냅샷 2025-12-31',
+    description: 'ESZ018R combined baseline (영일)',
+    rowCount: 0,
+    columnCount: 7,
+    columns: ['id', '품목코드', '창고코드', '재고수량', '중량', '총중량', 'imported_at']
+  } as TableDefinition,
+  table40: {
+    name: 'west_inventory_20251231',
+    displayName: '서부 재고 스냅샷 2025-12-31',
+    description: 'ESZ018R combined baseline (서부)',
+    rowCount: 0,
+    columnCount: 7,
+    columns: ['id', '품목코드', '창고코드', '재고수량', '중량', '총중량', 'imported_at']
+  } as TableDefinition,
+  table41: {
+    name: 'east_inventory_20251231',
+    displayName: '동부 재고 스냅샷 2025-12-31',
+    description: 'ESZ018R combined baseline (동부)',
+    rowCount: 0,
+    columnCount: 7,
+    columns: ['id', '품목코드', '창고코드', '재고수량', '중량', '총중량', 'imported_at']
   } as TableDefinition
 } as const;
 
@@ -344,5 +369,8 @@ export const TABLE_NAMES = {
   table35: 'user_data_files',
   table36: 'inventory_transfers',
   table37: 'internal_uses',
-  table38: 'inventory'
+  table38: 'inventory',
+  table39: 'youngil_inventory_20251231',
+  table40: 'west_inventory_20251231',
+  table41: 'east_inventory_20251231'
 } as const;

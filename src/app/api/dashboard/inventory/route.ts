@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import {
+  combinedInventorySnapshotJoinFromSql,
+  snapshotItemNameExpr,
+} from '@/lib/inventory-snapshot-combined';
 
 /**
  * API Endpoint for Simple Inventory Status (재고현황)
@@ -10,13 +14,13 @@ export async function GET(request: Request) {
     // 1. Inventory by item × warehouse
     const inventoryByItem = await executeSQL(`
       SELECT
-        품목코드,
-        품목명_규격_ as item_name,
-        창고명 as warehouse,
-        CAST(REPLACE(재고수량, ',', '') AS NUMERIC) as stock_qty
-      FROM inventory
-      WHERE CAST(REPLACE(재고수량, ',', '') AS NUMERIC) > 0
-      ORDER BY 품목코드, 창고명
+        inv.품목코드,
+        ${snapshotItemNameExpr} as item_name,
+        w.창고명 as warehouse,
+        CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) as stock_qty
+      ${combinedInventorySnapshotJoinFromSql()}
+      WHERE CAST(REPLACE(inv.재고수량, ',', '') AS NUMERIC) > 0
+      ORDER BY inv.품목코드, w.창고명
     `);
 
     // 2. Pending sales (미판매) by item
@@ -53,7 +57,10 @@ export async function GET(request: Request) {
 
     // 4. Distinct warehouses for filters
     const warehouses = await executeSQL(`
-      SELECT DISTINCT 창고명 as warehouse FROM inventory WHERE 창고명 IS NOT NULL ORDER BY 창고명
+      SELECT DISTINCT w.창고명 as warehouse
+      ${combinedInventorySnapshotJoinFromSql()}
+      WHERE w.창고명 IS NOT NULL
+      ORDER BY w.창고명
     `);
 
     return NextResponse.json({

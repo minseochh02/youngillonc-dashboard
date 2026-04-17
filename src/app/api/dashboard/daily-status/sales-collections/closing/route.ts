@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { combinedInventoryUnionSql } from '@/lib/inventory-snapshot-combined';
 import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
@@ -135,7 +136,7 @@ export async function GET(request: Request) {
       GROUP BY method
     `;
 
-    // 3. Inventory Status Aggregation (Using Feb 01 baseline from esz018r_6)
+    // 3. Inventory Status Aggregation (baseline: combined 2025-12-31 ESZ018R snapshots)
     const BASELINE_DATE = '2026-02-01';
     const inventoryQuery = `
       SELECT
@@ -159,12 +160,12 @@ export async function GET(request: Request) {
             WHEN i.품목그룹1코드 = 'BL' THEN '블라자'
             ELSE '기타(셸 외 타사제품)'
           END as category,
-          CAST(REPLACE(CAST(b.중량 AS TEXT), ',', '') AS NUMERIC) / 200.0 as amount,
+          CAST(COALESCE(b.총중량, 0) AS REAL) / 200.0 as amount,
           'baseline' as type,
           '${BASELINE_DATE}' as 일자
-        FROM esz018r_6 b
+        FROM (${combinedInventoryUnionSql()}) b
         LEFT JOIN items i ON b.품목코드 = i.품목코드
-        LEFT JOIN warehouses w ON b.창고코드 = w.창고코드 OR b.창고코드 = CAST(w.창고코드 AS TEXT)
+        LEFT JOIN warehouses w ON b.창고코드 = w.창고코드 OR CAST(b.창고코드 AS TEXT) = CAST(w.창고코드 AS TEXT)
         WHERE ${getPurchBranchFilter('b')}
 
         UNION ALL

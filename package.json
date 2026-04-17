@@ -14,7 +14,15 @@
     "create-team-display-order-table": "tsx scripts/create-team-display-order-table.ts",
     "create-employee-display-order-table": "tsx scripts/create-employee-display-order-table.ts",
     "seed-office-display-order": "tsx scripts/seed-office-display-order-from-employee-category.ts",
-    "seed-display-order": "tsx scripts/seed-display-order.ts"
+    "seed-display-order": "tsx scripts/seed-display-order.ts",
+    "esz018r-group-weight": "tsx scripts/esz018r-weight-by-product-group.ts",
+    "regular-esz018r-export": "tsx scripts/regular-esz018r-inventory-export.ts",
+    "east-esz018r-export": "tsx scripts/east-esz018r-inventory-export.ts",
+    "west-esz018r-export": "tsx scripts/west-esz018r-inventory-export.ts",
+    "esz018r-combined-export": "tsx scripts/esz018r-combined-export.ts",
+    "create-inventory-snapshots-20251231": "tsx scripts/create-inventory-snapshot-tables-20251231.ts",
+    "reset-inventory-snapshots-20251231": "tsx scripts/create-inventory-snapshot-tables-20251231.ts --force",
+    "populate-inventory-snapshots-20251231": "tsx scripts/populate-inventory-snapshots-20251231.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

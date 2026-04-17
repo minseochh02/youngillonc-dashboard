@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareEmployees, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
+import {
+  sqlAndClientKeyNotAssignedToSpecialHandling,
+  sqlAndEmployeeNotSpecialHandling,
+  sqlAndSalesRemarkNotExact,
+} from '@/lib/special-handling-employees';
 import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 export async function GET(request: Request) {
@@ -42,11 +47,11 @@ export async function GET(request: Request) {
 
     // Base table for sales
     const baseSalesTable = `(
-      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 수량, 단가 FROM sales
+      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 수량, 단가, 적요 FROM sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 수량, 단가 FROM east_division_sales
+      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 수량, 단가, 적요 FROM east_division_sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 수량, 단가 FROM west_division_sales
+      SELECT id, 일자, 거래처코드, 담당자코드, 품목코드, 중량, 합계, 공급가액, 수량, 단가, 적요 FROM west_division_sales
     )`;
 
     if (tab === 'business') {
@@ -78,7 +83,8 @@ export async function GET(request: Request) {
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         WHERE s.일자 >= '${businessMinYear}-01-01'
           AND s.일자 <= '${currentYear}-12-31'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ec.b2c사업소 IS NOT NULL
         GROUP BY branch, business_type, year, year_month
@@ -160,7 +166,8 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 != 'B2B'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ca.업종분류코드 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY 1, 2, 3, 4, 5, 6
         ORDER BY 1, 3, 4, 5, 6
       `;
@@ -202,7 +209,8 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 IS NOT NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ca.업종분류코드 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY 1
       `;
 
@@ -237,7 +245,8 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 IS NOT NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ca.업종분류코드 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND (${managerChannelCase.trim()}) IS NOT NULL
           AND (${managerSegmentCase.trim()}) IS NOT NULL
         GROUP BY 1, 2, 3
@@ -255,7 +264,8 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 != 'B2B'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ca.업종분류코드 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY e.사원_담당_명, year
       `;
 
@@ -272,7 +282,8 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 != 'B2B'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ca.업종분류코드 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND (${managerChannelCase.trim()}) IS NOT NULL
         GROUP BY e.사원_담당_명, year, channel
       `;
@@ -290,7 +301,8 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 != 'B2B'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ca.업종분류코드 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY e.사원_담당_명, year, year_month
       `;
 
@@ -308,7 +320,8 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 != 'B2B'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ca.업종분류코드 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND (${managerChannelCase.trim()}) IS NOT NULL
         GROUP BY e.사원_담당_명, year, year_month, channel
       `;
@@ -329,7 +342,8 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 != 'B2B'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ca.업종분류코드 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND (${managerChannelCase.trim()}) IS NOT NULL
         GROUP BY e.사원_담당_명, year, channel
       `;
@@ -573,7 +587,8 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 IS NOT NULL
           AND ec.b2c_팀 != 'B2B'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND (
             (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
             OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
@@ -604,7 +619,8 @@ export async function GET(request: Request) {
           AND s.일자 <= '${currentYear}-12-31'
           AND ca.업종분류코드 IS NOT NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND (
             (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
             OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
@@ -632,7 +648,8 @@ export async function GET(request: Request) {
           AND s.일자 <= '${currentYear}-12-31'
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('IL', 'AVI', 'MAR', 'MB')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND (
             (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
             OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
@@ -664,7 +681,8 @@ export async function GET(request: Request) {
           AND ec.b2c_팀 IS NOT NULL
           AND ec.b2c_팀 != 'B2B'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND (
             (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
             OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
@@ -690,7 +708,8 @@ export async function GET(request: Request) {
           AND s.일자 <= '${currentYear}-12-31'
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('IL', 'AVI', 'MAR', 'MB')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND (
             (strftime('%Y', s.일자) = '${currentYear}' AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}')
             OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
@@ -836,7 +855,7 @@ export async function GET(request: Request) {
           )
           AND ca.업종분류코드 IS NOT NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND (s.거래처코드 NOT IN (SELECT 거래처코드 FROM clients WHERE 담당자코드 IN (SELECT 사원_담당_코드 FROM employees WHERE 사원_담당_명 = '김도량')) OR s.거래처코드 IS NULL)
+          ${sqlAndClientKeyNotAssignedToSpecialHandling('s.거래처코드')}
         GROUP BY 1, 2, 3
         ORDER BY 1, 2, 3
       `;
@@ -888,7 +907,8 @@ export async function GET(request: Request) {
         WHERE (s.일자 LIKE '${lastYearMonth}%' OR s.일자 LIKE '${currentMonthStr}%')
           AND ca.업종분류코드 IS NOT NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY ca.거래처그룹2, e.사원_담당_명, c.거래처코드, c.거래처명
         HAVING last_year_weight > 0 OR current_year_weight > 0
         ORDER BY c.거래처코드
@@ -967,7 +987,8 @@ export async function GET(request: Request) {
           )
           AND ec.b2c_팀 IS NOT NULL
           AND ec.b2c_팀 != 'B2B'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY c.거래처코드, c.거래처명, c.신규일, e.사원_담당_명, branch, year, year_month
         ORDER BY team, e.사원_담당_명, c.신규일 DESC
       `;
@@ -1132,7 +1153,8 @@ export async function GET(request: Request) {
             OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
           )
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY ec.b2c_팀, i.품목그룹1코드, year, year_month
         ORDER BY ec.b2c_팀, year, year_month
       `;
@@ -1155,7 +1177,8 @@ export async function GET(request: Request) {
           )
           AND (ec.전체사업소 LIKE '%남부%' OR c.거래처그룹1명 LIKE '%남부%')
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY year
 
         UNION ALL
@@ -1202,7 +1225,7 @@ export async function GET(request: Request) {
             OR c.거래처명 LIKE '%진병택%'
             OR c.거래처명 LIKE '%영동모빌%'
           )
-          AND (s.거래처코드 NOT IN (SELECT 거래처코드 FROM clients WHERE 담당자코드 IN (SELECT 사원_담당_코드 FROM employees WHERE 사원_담당_명 = '김도량')) OR s.거래처코드 IS NULL)
+          ${sqlAndClientKeyNotAssignedToSpecialHandling('s.거래처코드')}
         GROUP BY c.거래처명, year
         ORDER BY c.거래처명, year
       `;
@@ -1225,7 +1248,8 @@ export async function GET(request: Request) {
           )
           AND (ec.전체사업소 LIKE '%남부%' OR c.거래처그룹1명 LIKE '%남부%')
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY strftime('%Y', s.일자), strftime('%Y-%m', s.일자)
 
         UNION ALL
@@ -1273,7 +1297,7 @@ export async function GET(request: Request) {
             OR c.거래처명 LIKE '%진병택%'
             OR c.거래처명 LIKE '%영동모빌%'
           )
-          AND (s.거래처코드 NOT IN (SELECT 거래처코드 FROM clients WHERE 담당자코드 IN (SELECT 사원_담당_코드 FROM employees WHERE 사원_담당_명 = '김도량')) OR s.거래처코드 IS NULL)
+          ${sqlAndClientKeyNotAssignedToSpecialHandling('s.거래처코드')}
         GROUP BY c.거래처명, strftime('%Y', s.일자), strftime('%Y-%m', s.일자)
         ORDER BY c.거래처명, year_month
       `;
@@ -1389,7 +1413,8 @@ export async function GET(request: Request) {
           )
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
           AND ec.b2c_팀 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY ec.b2c_팀, e.사원_담당_명, i.품목그룹1코드, year, year_month
         ORDER BY ec.b2c_팀, e.사원_담당_명, i.품목그룹1코드, year, year_month
       `;
@@ -1441,7 +1466,8 @@ export async function GET(request: Request) {
             OR (strftime('%Y', s.일자) = '${lastYear}' AND strftime('%Y-%m', s.일자) <= '${lastYearMonthStr}')
           )
           AND ec.b2c_팀 IS NOT NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       `;
 
       // Query monthly sales amount by team, employee, and product group (PVL/CVL/OTHERS) across all three tables - both years

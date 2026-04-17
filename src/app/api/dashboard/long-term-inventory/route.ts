@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import {
+  combinedInventorySnapshotJoinFromSql,
+  snapshotItemNameExpr,
+} from '@/lib/inventory-snapshot-combined';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -46,10 +50,10 @@ export async function GET(request: Request) {
 
     // Fetch warehouses for selection
     const warehouses = await executeSQL(`
-      SELECT DISTINCT 창고명 as warehouse 
-      FROM inventory 
-      WHERE 창고명 IS NOT NULL 
-      ORDER BY 창고명
+      SELECT DISTINCT w.창고명 as warehouse
+      ${combinedInventorySnapshotJoinFromSql()}
+      WHERE w.창고명 IS NOT NULL
+      ORDER BY w.창고명
     `);
 
     // Fetch units for selection from saved planning records.
@@ -89,17 +93,17 @@ export async function GET(request: Request) {
 
     let havingClause = "";
     if (stockType === 'dead') {
-      havingClause = `(MAX(last_sales.일자) IS NULL OR MAX(last_sales.일자) < '${cutoffDateStr}') AND SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) > 0`;
+      havingClause = `(MAX(last_sales.일자) IS NULL OR MAX(last_sales.일자) < '${cutoffDateStr}') AND SUM(CAST(REPLACE(inv.재고수량, ',', '') AS REAL)) > 0`;
     } else if (stockType === 'slow') {
-      havingClause = `(MAX(last_sales.일자) >= '${cutoffDateStr}') AND (COALESCE(sales_sum.qty, 0) / SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) < ${turnoverThreshold}) AND SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) > 0`;
+      havingClause = `(MAX(last_sales.일자) >= '${cutoffDateStr}') AND (COALESCE(sales_sum.qty, 0) / SUM(CAST(REPLACE(inv.재고수량, ',', '') AS REAL)) < ${turnoverThreshold}) AND SUM(CAST(REPLACE(inv.재고수량, ',', '') AS REAL)) > 0`;
     } else {
-      havingClause = `(COALESCE(sales_sum.qty, 0) / SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) < ${turnoverThreshold}) AND SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) > 0`;
+      havingClause = `(COALESCE(sales_sum.qty, 0) / SUM(CAST(REPLACE(inv.재고수량, ',', '') AS REAL)) < ${turnoverThreshold}) AND SUM(CAST(REPLACE(inv.재고수량, ',', '') AS REAL)) > 0`;
     }
 
     const totalCountResult = await executeSQL(`
       SELECT COUNT(*) as count FROM (
-        SELECT i.품목코드
-        FROM inventory i
+        SELECT inv.품목코드
+        ${combinedInventorySnapshotJoinFromSql()}
         LEFT JOIN (
           SELECT 품목코드, MAX(일자) as 일자 FROM (
             SELECT 품목코드, 일자 FROM sales
@@ -107,7 +111,7 @@ export async function GET(request: Request) {
             UNION ALL SELECT 품목코드, 일자 FROM west_division_sales
             UNION ALL SELECT 품목코드, 일자 FROM internal_uses
           ) GROUP BY 품목코드
-        ) last_sales ON i.품목코드 = last_sales.품목코드
+        ) last_sales ON inv.품목코드 = last_sales.품목코드
         LEFT JOIN (
           SELECT 품목코드, SUM(CAST(REPLACE(수량, ',', '') AS REAL)) as qty
           FROM (
@@ -118,9 +122,8 @@ export async function GET(request: Request) {
           ) 
           WHERE 일자 >= '${cutoffDateStr}'
           GROUP BY 품목코드
-        ) sales_sum ON i.품목코드 = sales_sum.품목코드
-        WHERE i.imported_at = (SELECT MAX(imported_at) FROM inventory)
-        GROUP BY i.품목코드, i.품목명_규격_, i.창고명
+        ) sales_sum ON inv.품목코드 = sales_sum.품목코드
+        GROUP BY inv.품목코드, ${snapshotItemNameExpr}, w.창고명
         HAVING ${havingClause}
       )
     `);
@@ -128,18 +131,18 @@ export async function GET(request: Request) {
 
     const recommendedItems = await executeSQL(`
       SELECT 
-        i.품목코드 as itemCode,
-        i.품목명_규격_ as itemName,
-        i.창고명 as warehouse,
-        SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) as quantity,
+        inv.품목코드 as itemCode,
+        ${snapshotItemNameExpr} as itemName,
+        w.창고명 as warehouse,
+        SUM(CAST(REPLACE(inv.재고수량, ',', '') AS REAL)) as quantity,
         COALESCE(sales_sum.qty, 0) as sales_qty_6m,
         MAX(last_sales.일자) as lastSoldDate,
         CASE 
-          WHEN SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL)) > 0 
-          THEN COALESCE(sales_sum.qty, 0) / SUM(CAST(REPLACE(i.재고수량, ',', '') AS REAL))
+          WHEN SUM(CAST(REPLACE(inv.재고수량, ',', '') AS REAL)) > 0 
+          THEN COALESCE(sales_sum.qty, 0) / SUM(CAST(REPLACE(inv.재고수량, ',', '') AS REAL))
           ELSE 0 
         END as turnoverRatio
-      FROM inventory i
+      ${combinedInventorySnapshotJoinFromSql()}
       LEFT JOIN (
         SELECT 품목코드, MAX(일자) as 일자 FROM (
           SELECT 품목코드, 일자 FROM sales
@@ -147,7 +150,7 @@ export async function GET(request: Request) {
           UNION ALL SELECT 품목코드, 일자 FROM west_division_sales
           UNION ALL SELECT 품목코드, 일자 FROM internal_uses
         ) GROUP BY 품목코드
-      ) last_sales ON i.품목코드 = last_sales.품목코드
+      ) last_sales ON inv.품목코드 = last_sales.품목코드
       LEFT JOIN (
         SELECT 품목코드, SUM(CAST(REPLACE(수량, ',', '') AS REAL)) as qty
         FROM (
@@ -158,9 +161,8 @@ export async function GET(request: Request) {
         ) 
         WHERE 일자 >= '${cutoffDateStr}'
         GROUP BY 품목코드
-      ) sales_sum ON i.품목코드 = sales_sum.품목코드
-      WHERE i.imported_at = (SELECT MAX(imported_at) FROM inventory)
-      GROUP BY i.품목코드, i.품목명_규격_, i.창고명
+      ) sales_sum ON inv.품목코드 = sales_sum.품목코드
+      GROUP BY inv.품목코드, ${snapshotItemNameExpr}, w.창고명
       HAVING ${havingClause}
       ORDER BY quantity DESC
       LIMIT ${pageSize} OFFSET ${offset}

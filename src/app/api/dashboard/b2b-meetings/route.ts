@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
+import {
+  sqlAndClientKeyNotAssignedToSpecialHandling,
+  sqlAndEmployeeNotSpecialHandling,
+  sqlAndSalesRemarkNotExact,
+  sqlSalesResolvedClientKeyExpr,
+} from '@/lib/special-handling-employees';
 import { sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /** YTD through the same calendar month for current and prior year (alias must be the sales table alias, e.g. s). */
@@ -68,12 +74,13 @@ export async function GET(request: Request) {
 
     // 0. Base table for sales (unioned across all three tables and using 실납업체 logic)
     const baseSalesSubquery = `(
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 공급가액 FROM sales
+      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 공급가액, 적요 FROM sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 공급가액 FROM east_division_sales
+      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 공급가액, 적요 FROM east_division_sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 공급가액 FROM west_division_sales
+      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 공급가액, 적요 FROM west_division_sales
     )`;
+    const clientKeyExpr = sqlSalesResolvedClientKeyExpr('s');
 
     if (tab === 'industry') {
       // Query sales by industry (영일분류)
@@ -86,7 +93,7 @@ export async function GET(request: Request) {
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
@@ -94,7 +101,8 @@ export async function GET(request: Request) {
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 = 'IL'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY ct.영일분류, ct.모빌분류, year
         ORDER BY ct.영일분류, year
       `;
@@ -135,14 +143,15 @@ export async function GET(request: Request) {
           SUM(CASE WHEN strftime('%Y-%m', s.일자) <= '${currentMonthStr}' AND strftime('%Y', s.일자) = '${currentYear}' THEN CAST(REPLACE(s.중량, ',', '') AS NUMERIC) ELSE 0 END) as current_year_weight
         FROM ${baseSalesSubquery} s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 = 'IL'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY i.품목코드, i.품목명, i.품목그룹1코드, i.품목그룹2코드, i.품목그룹3코드
         HAVING last_year_weight > 0 OR current_year_weight > 0
         ORDER BY current_year_weight DESC
@@ -196,11 +205,11 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
-          AND (COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) NOT IN (SELECT 거래처코드 FROM clients WHERE 담당자코드 IN (SELECT 사원_담당_코드 FROM employees WHERE 사원_담당_명 = '김도량')) OR COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) IS NULL)
+          ${sqlAndClientKeyNotAssignedToSpecialHandling(clientKeyExpr)}
         GROUP BY product_group, year, year_month
         HAVING product_group IN ('Standard', 'Premium', 'Flagship', 'Alliance')
         ORDER BY product_group, year, year_month
@@ -222,11 +231,11 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
-          AND (COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) NOT IN (SELECT 거래처코드 FROM clients WHERE 담당자코드 IN (SELECT 사원_담당_코드 FROM employees WHERE 사원_담당_명 = '김도량')) OR COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) IS NULL)
+          ${sqlAndClientKeyNotAssignedToSpecialHandling(clientKeyExpr)}
         GROUP BY product_group, year
         HAVING product_group IN ('Standard', 'Premium', 'Flagship', 'Alliance')
         ORDER BY product_group, year
@@ -290,7 +299,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount
         FROM ${baseSalesSubquery} s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
@@ -298,7 +307,8 @@ export async function GET(request: Request) {
         WHERE strftime('%Y', s.일자) = '${currentYear}'
           AND strftime('%Y-%m', s.일자) <= '${currentMonthStr}'
           AND ca.업종분류코드 IS NULL
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
           AND c.거래처그룹1명 IS NOT NULL
         GROUP BY b2b_office, b2b_team, ct.산업분류, ct.섹터분류, year_month
         ORDER BY b2b_office, b2b_team, ct.산업분류, ct.섹터분류, year_month
@@ -343,14 +353,15 @@ export async function GET(request: Request) {
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY fps_category, year, year_month
         HAVING fps_category IN ('Flagship', 'Premium', 'Standard')
         ORDER BY fps_category, year, year_month
@@ -370,14 +381,15 @@ export async function GET(request: Request) {
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY fps_category, year
         HAVING fps_category IN ('Flagship', 'Premium', 'Standard')
         ORDER BY fps_category, year
@@ -434,14 +446,15 @@ export async function GET(request: Request) {
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY region, year, year_month
         HAVING region != '기타'
         ORDER BY region, year, year_month
@@ -461,14 +474,15 @@ export async function GET(request: Request) {
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY region, year
         HAVING region != '기타'
         ORDER BY region, year
@@ -535,7 +549,7 @@ export async function GET(request: Request) {
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity,
           COUNT(DISTINCT s.일자) as transaction_days
         FROM clients c
-        LEFT JOIN ${baseSalesSubquery} s ON c.거래처코드 = COALESCE(NULLIF(s.실납업체, ''), s.거래처코드)
+        LEFT JOIN ${baseSalesSubquery} s ON c.거래처코드 = ${clientKeyExpr}
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
@@ -546,7 +560,8 @@ export async function GET(request: Request) {
           AND ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 = 'IL'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY c.거래처코드, c.거래처명, c.신규일, e.사원_담당_명, branch, year
         ORDER BY e.사원_담당_명, c.신규일 DESC, total_weight DESC
       `;
@@ -648,12 +663,13 @@ export async function GET(request: Request) {
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY team, year, year_month
         HAVING team != '미분류'
         ORDER BY team, year, year_month
@@ -671,12 +687,13 @@ export async function GET(request: Request) {
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         WHERE ${sqlSales3YearsThroughMonth('s', currentYear, currentMonthStr)}
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY team, year
         HAVING team != '미분류'
         ORDER BY team, year
@@ -744,7 +761,7 @@ export async function GET(request: Request) {
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as total_amount,
           SUM(CAST(REPLACE(s.수량, ',', '') AS NUMERIC)) as total_quantity
         FROM ${baseSalesSubquery} s
-        LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+        LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
         LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
         LEFT JOIN items i ON s.품목코드 = i.품목코드
@@ -752,7 +769,8 @@ export async function GET(request: Request) {
         WHERE ${sqlSalesYtdThroughMonth('s', lastYear, currentYear, lastYearMonthStr, currentMonthStr)}
           AND ca.업종분류코드 IS NULL
           AND i.품목그룹1코드 = 'IL'
-          AND e.사원_담당_명 != '김도량'
+          ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
         GROUP BY i.품목코드, i.품목명, ct.영일분류, year, year_month
         ORDER BY i.품목코드, year, year_month
       `;

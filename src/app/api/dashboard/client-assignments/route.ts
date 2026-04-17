@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeSQL, updateRows } from '@/egdesk-helpers';
 import { compareEmployees, compareOffices, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
+import {
+  employeeAliasNotSpecialHandlingCondition,
+  sqlAndEmployeeNotSpecialHandling,
+  sqlAndSalesRemarkNotExact,
+  sqlSalesResolvedClientKeyExpr,
+} from '@/lib/special-handling-employees';
 
 type CategoryType = 'tier' | 'division' | 'family' | 'business_type';
 
@@ -26,6 +32,7 @@ interface Client {
 }
 
 async function getClientProductTypes(currentYear: number, categoryType: CategoryType = 'tier'): Promise<Map<string, ProductType[]>> {
+  const clientKeyExpr = sqlSalesResolvedClientKeyExpr('s');
   // Try to read from summary table first
   try {
     const summaryQuery = `
@@ -119,24 +126,25 @@ async function getClientProductTypes(currentYear: number, categoryType: Category
 
   const productQuery = `
     SELECT
-      COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) as client_code,
+      ${clientKeyExpr} as client_code,
       ${caseStatement} as category,
       NULL as product_family,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as total_weight,
       SUM(CAST(REPLACE(s.합계, ',', '') AS NUMERIC)) as total_amount
     FROM (
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM sales
+      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 적요 FROM sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM east_division_sales
+      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 적요 FROM east_division_sales
       UNION ALL
-      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계 FROM west_division_sales
+      SELECT id, 일자, 거래처코드, 실납업체, 담당자코드, 품목코드, 수량, 중량, 단가, 합계, 적요 FROM west_division_sales
     ) s
     LEFT JOIN items i ON s.품목코드 = i.품목코드
-    LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+    LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
     LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
     ${additionalJoins}
     WHERE strftime('%Y', s.일자) = '${currentYear}'
-      AND e.사원_담당_명 != '김도량'
+      ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
       ${categoryType === 'business_type' ? '' : 'AND i.품목코드 IS NOT NULL'}
     GROUP BY client_code, category
     HAVING ${havingClause}
@@ -220,7 +228,7 @@ export async function GET(request: NextRequest) {
         ec.전체사업소 as branch
       FROM employees e
       LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-      WHERE e.사원_담당_명 != '김도량'
+      WHERE ${employeeAliasNotSpecialHandlingCondition('e')}
       ORDER BY e.사원_담당_명
     `;
 
