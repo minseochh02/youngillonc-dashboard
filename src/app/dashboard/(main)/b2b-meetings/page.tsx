@@ -11,6 +11,9 @@ import RegionTab from '@/components/b2b-meetings/RegionTab';
 import NewClientTab from '@/components/b2b-meetings/NewClientTab';
 import AllProductsTab from '@/components/b2b-meetings/AllProductsTab';
 import IndustryDairyTab from '@/components/b2b-meetings/IndustryDairyTab';
+import CumulativeViewTab, {
+  type MeetingTabFilterOption,
+} from '@/components/closing-meeting/CumulativeViewTab';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import VatToggle from '@/components/VatToggle';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
@@ -29,6 +32,68 @@ const tabs = [
   { id: 'new', label: '신규거래처' },
   { id: 'industry-dairy', label: '산업유제품' },
   { id: 'all-products', label: '전제품 판매' },
+  { id: 'cumulative-view', label: '누적 보기' },
+];
+
+const B2B_CUMULATIVE_TAB_FILTERS: MeetingTabFilterOption[] = [
+  {
+    id: 'default',
+    label: '통합 누적 (기본)',
+    description:
+      '품목군별 B2B 합계·사업소·b2b팀이 한 표에 포함된 기본 누적입니다(마감회의 누적 보기 B2B 채널과 동일 SQL).',
+  },
+  {
+    id: 'industry',
+    label: '산업별',
+    description:
+      '산업별 탭은 모빌/산업/영일 분류·거래처 수입니다. 본 표는 품목군·사업소·B2B팀 중량 누적이라 산업 분류와 1:1로 같지 않습니다.',
+  },
+  {
+    id: 'team',
+    label: '팀별',
+    description:
+      '팀별 탭은 산업·섹터·월별 매트릭스입니다. 본 표는 동일 사업소·팀의 연도 누적·당월을 제공하며, 사업소 필터로 한 사업소만 볼 수 있습니다.',
+  },
+  {
+    id: 'product-group',
+    label: '제품군',
+    description:
+      '제품군 탭은 Standard/Premium 등 금액 월별입니다. 본 표는 품목그룹1(MB·PVL 등) 중량 누적입니다.',
+  },
+  {
+    id: 'client',
+    label: '품목별',
+    description:
+      '품목별 탭은 품목코드 단위 전년 대비입니다. 본 표는 품목군·팀 집계입니다.',
+  },
+  {
+    id: 'fps',
+    label: 'FPS',
+    description: 'FPS 탭은 FPS 카테고리·수량 중심입니다. 본 표는 일반 중량 누적과 다릅니다.',
+  },
+  {
+    id: 'region',
+    label: '지역',
+    description:
+      '지역 탭은 서울경기/충청/경남 등 지역 축입니다. 본 표는 사업소(전체사업소) 축입니다.',
+  },
+  {
+    id: 'new',
+    label: '신규거래처',
+    description: '신규거래처 탭은 신규 담당·거래처 수입니다. 본 표는 전체 B2B 매출 누적입니다.',
+  },
+  {
+    id: 'industry-dairy',
+    label: '산업유제품',
+    description:
+      '산업유제품 탭은 품목·영일분류별입니다. 본 표는 품목군(MB~기타) 누적입니다.',
+  },
+  {
+    id: 'all-products',
+    label: '전제품 판매',
+    description:
+      '전제품 판매 탭은 팀·연도별 합계입니다. 본 표는 품목군·사업소·b2b팀 디테일을 제공합니다.',
+  },
 ];
 
 export default function B2BMeetingsPage() {
@@ -273,6 +338,17 @@ export default function B2BMeetingsPage() {
     if (activeTab === 'industry-dairy') {
       return (
         <IndustryDairyTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+      );
+    }
+
+    if (activeTab === 'cumulative-view') {
+      return (
+        <CumulativeViewTab
+          selectedMonth={selectedMonth}
+          onMonthsAvailable={handleMonthsAvailable}
+          cumulativeChannel="b2b"
+          meetingTabFilterOptions={B2B_CUMULATIVE_TAB_FILTERS}
+        />
       );
     }
 

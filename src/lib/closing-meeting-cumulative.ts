@@ -55,6 +55,9 @@ export interface CumulativeMetricBlock {
   yPast1: number;
   yCurrent: number;
   growthRate: number;
+  /** 증감율 계산에 쓴 동기간 YTD(전체 합계 행에서 합산) */
+  growthBaseY1?: number;
+  growthBaseY0?: number;
   cum: {
     priorYear: number;
     target: number;
@@ -96,6 +99,16 @@ export interface CumulativeViewPayload {
   sections: CumulativeSection[];
   availableMonths: string[];
   currentMonth: string;
+}
+
+/** 증감율: 동일 기간 YTD끼리 (전년 동월까지 vs 당해 동월까지) */
+function withYtdYoYGrowth(
+  m: CumulativeMetricBlock,
+  y1Ytd: number,
+  y0Ytd: number
+): CumulativeMetricBlock {
+  const growthRate = y1Ytd !== 0 ? (y0Ytd - y1Ytd) / y1Ytd : 0;
+  return { ...m, growthRate, growthBaseY1: y1Ytd, growthBaseY0: y0Ytd };
 }
 
 function blk(
@@ -147,14 +160,25 @@ function getYtdYearFilter(y3: number, y2: number, y1: number, y0: number, monthN
   )`;
 }
 
+export type CumulativeViewChannel = 'combined' | 'b2c' | 'b2b';
+
 export async function buildCumulativeViewPayload(params: {
   currentMonthStr: string;
   currentYear: number;
   availableMonths: string[];
   baseSalesSubquery: string;
   basePurchasesSubquery: string;
+  /** `combined` = 마감회의 전체(기본). `b2c` / `b2b` = 해당 채널만. */
+  cumulativeChannel?: CumulativeViewChannel;
 }): Promise<CumulativeViewPayload> {
-  const { currentMonthStr, currentYear, availableMonths, baseSalesSubquery, basePurchasesSubquery } = params;
+  const {
+    currentMonthStr,
+    currentYear,
+    availableMonths,
+    baseSalesSubquery,
+    basePurchasesSubquery,
+    cumulativeChannel = 'combined',
+  } = params;
   const monthNum = currentMonthStr.split('-')[1];
   const monthInt = parseInt(monthNum, 10);
   const y0 = currentYear;
@@ -168,6 +192,72 @@ export async function buildCumulativeViewPayload(params: {
 
   const salesYtdFilter = getYtdYearFilter(y3, y2, y1, y0, monthNum, 's');
   const purYtdFilter = getYtdYearFilter(y3, y2, y1, y0, monthNum, 'p');
+
+  /** 과거 3개 연도: 연간 전체(1~12월). 실적 23·24·25년 컬럼용. 당해 연도(y0)는 YTD만 별도 쿼리. */
+  const threePastYearsIn = `('${y3}', '${y2}', '${y1}')`;
+
+  const salesAnnualSql = `
+    SELECT
+      CAST(substr(s.일자, 1, 4) AS INTEGER) as year,
+      ${SALES_CAT} as category,
+      (${BRANCH_FROM_EC}) as branch,
+      ec.b2c_팀 as team,
+      SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
+    FROM (${baseSalesSubquery}) s
+    LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(s.일자, 1, 4) IN ${threePastYearsIn}
+      AND ${WHERE_B2C}
+      AND e.사원_담당_명 != '김도량'
+      AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
+    GROUP BY 1, 2, 3, 4
+  `;
+
+  const purAnnualSql = `
+    SELECT
+      CAST(substr(p.일자, 1, 4) AS INTEGER) as year,
+      ${PUR_CAT} as category,
+      SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as weight
+    FROM (${basePurchasesSubquery}) p
+    LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(p.일자, 1, 4) IN ${threePastYearsIn}
+      AND ${WHERE_B2C}
+    GROUP BY 1, 2
+  `;
+
+  const b2bSalesAnnualSql = `
+    SELECT
+      CAST(substr(s.일자, 1, 4) AS INTEGER) as year,
+      ${SALES_CAT} as category,
+      (${BRANCH_FROM_EC}) as branch,
+      ${B2B_TEAM} as team,
+      SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight
+    FROM (${baseSalesSubquery}) s
+    LEFT JOIN clients c ON COALESCE(NULLIF(s.실납업체, ''), s.거래처코드) = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(s.일자, 1, 4) IN ${threePastYearsIn}
+      AND ${WHERE_B2B}
+      AND e.사원_담당_명 != '김도량'
+    GROUP BY 1, 2, 3, 4
+  `;
+
+  const b2bPurAnnualSql = `
+    SELECT
+      CAST(substr(p.일자, 1, 4) AS INTEGER) as year,
+      ${PUR_CAT} as category,
+      SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as weight
+    FROM (${basePurchasesSubquery}) p
+    LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(p.일자, 1, 4) IN ${threePastYearsIn}
+      AND ${WHERE_B2B}
+    GROUP BY 1, 2
+  `;
 
   const salesYtdSql = `
     SELECT
@@ -359,33 +449,91 @@ export async function buildCumulativeViewPayload(params: {
     GROUP BY sg.category, 2, 3, sg.year
   `;
 
-  const [
-    salesYtdRes,
-    purYtdRes,
-    salesMoRes,
-    purMoRes,
-    goalsYtdRes,
-    goalsMoRes,
-    b2bSalesYtdRes,
-    b2bPurYtdRes,
-    b2bSalesMoRes,
-    b2bPurMoRes,
-    b2bGoalsYtdRes,
-    b2bGoalsMoRes,
-  ] = await Promise.all([
-    executeSQL(salesYtdSql),
-    executeSQL(purYtdSql),
-    executeSQL(salesMonthSql),
-    executeSQL(purMonthSql),
-    executeSQL(goalsYtdSql),
-    executeSQL(goalsMonthSql),
-    executeSQL(b2bSalesYtdSql),
-    executeSQL(b2bPurYtdSql),
-    executeSQL(b2bSalesMonthSql),
-    executeSQL(b2bPurMonthSql),
-    executeSQL(b2bGoalsYtdSql),
-    executeSQL(b2bGoalsMonthSql),
-  ]);
+  type SqlResult = Awaited<ReturnType<typeof executeSQL>>;
+  const empty = { rows: [] } as SqlResult;
+
+  let salesYtdRes: SqlResult;
+  let purYtdRes: SqlResult;
+  let salesMoRes: SqlResult;
+  let purMoRes: SqlResult;
+  let goalsYtdRes: SqlResult;
+  let goalsMoRes: SqlResult;
+  let b2bSalesYtdRes: SqlResult;
+  let b2bPurYtdRes: SqlResult;
+  let b2bSalesMoRes: SqlResult;
+  let b2bPurMoRes: SqlResult;
+  let b2bGoalsYtdRes: SqlResult;
+  let b2bGoalsMoRes: SqlResult;
+  let salesAnnualRes: SqlResult;
+  let purAnnualRes: SqlResult;
+  let b2bSalesAnnualRes: SqlResult;
+  let b2bPurAnnualRes: SqlResult;
+
+  if (cumulativeChannel === 'combined') {
+    [
+      salesYtdRes,
+      purYtdRes,
+      salesMoRes,
+      purMoRes,
+      goalsYtdRes,
+      goalsMoRes,
+      b2bSalesYtdRes,
+      b2bPurYtdRes,
+      b2bSalesMoRes,
+      b2bPurMoRes,
+      b2bGoalsYtdRes,
+      b2bGoalsMoRes,
+      salesAnnualRes,
+      purAnnualRes,
+      b2bSalesAnnualRes,
+      b2bPurAnnualRes,
+    ] = await Promise.all([
+      executeSQL(salesYtdSql),
+      executeSQL(purYtdSql),
+      executeSQL(salesMonthSql),
+      executeSQL(purMonthSql),
+      executeSQL(goalsYtdSql),
+      executeSQL(goalsMonthSql),
+      executeSQL(b2bSalesYtdSql),
+      executeSQL(b2bPurYtdSql),
+      executeSQL(b2bSalesMonthSql),
+      executeSQL(b2bPurMonthSql),
+      executeSQL(b2bGoalsYtdSql),
+      executeSQL(b2bGoalsMonthSql),
+      executeSQL(salesAnnualSql),
+      executeSQL(purAnnualSql),
+      executeSQL(b2bSalesAnnualSql),
+      executeSQL(b2bPurAnnualSql),
+    ]);
+  } else if (cumulativeChannel === 'b2c') {
+    [salesYtdRes, purYtdRes, salesMoRes, purMoRes, goalsYtdRes, goalsMoRes, salesAnnualRes, purAnnualRes] =
+      await Promise.all([
+        executeSQL(salesYtdSql),
+        executeSQL(purYtdSql),
+        executeSQL(salesMonthSql),
+        executeSQL(purMonthSql),
+        executeSQL(goalsYtdSql),
+        executeSQL(goalsMonthSql),
+        executeSQL(salesAnnualSql),
+        executeSQL(purAnnualSql),
+      ]);
+    b2bSalesYtdRes = b2bPurYtdRes = b2bSalesMoRes = b2bPurMoRes = b2bGoalsYtdRes = b2bGoalsMoRes = empty;
+    b2bSalesAnnualRes = b2bPurAnnualRes = empty;
+  } else {
+    [b2bSalesYtdRes, b2bPurYtdRes, b2bSalesMoRes, b2bPurMoRes, b2bGoalsYtdRes, b2bGoalsMoRes, b2bSalesAnnualRes, b2bPurAnnualRes] =
+      await Promise.all([
+        executeSQL(b2bSalesYtdSql),
+        executeSQL(b2bPurYtdSql),
+        executeSQL(b2bSalesMonthSql),
+        executeSQL(b2bPurMonthSql),
+        executeSQL(b2bGoalsYtdSql),
+        executeSQL(b2bGoalsMonthSql),
+        executeSQL(b2bSalesAnnualSql),
+        executeSQL(b2bPurAnnualSql),
+      ]);
+    salesYtdRes = purYtdRes = salesMoRes = purMoRes = goalsYtdRes = goalsMoRes = empty;
+    salesAnnualRes = purAnnualRes = empty;
+  }
 
   /** year → category → branch → team → weight */
   const teamSalesYtd = new Map<number, Map<string, Map<string, Map<string, number>>>>();
@@ -404,6 +552,14 @@ export async function buildCumulativeViewPayload(params: {
   const b2bPurMo = new Map<number, Map<string, number>>();
   const goalsB2bYtd = new Map<string, number>();
   const goalsB2bMo = new Map<string, number>();
+
+  /** 과거 3개 연도 연간 합계 — 실적 열만 (누적/월은 YTD 맵 유지) */
+  const catSalesFull = new Map<number, Map<string, number>>();
+  const purFull = new Map<number, Map<string, number>>();
+  const teamSalesFull = new Map<number, Map<string, Map<string, Map<string, number>>>>();
+  const b2bCatSalesFull = new Map<number, Map<string, number>>();
+  const b2bPurFull = new Map<number, Map<string, number>>();
+  const teamB2bSalesFull = new Map<number, Map<string, Map<string, Map<string, number>>>>();
 
   const ensureYCat = (m: Map<number, Map<string, number>>, y: number, cat: string) => {
     if (!m.has(y)) m.set(y, new Map());
@@ -556,6 +712,45 @@ export async function buildCumulativeViewPayload(params: {
     const tw = Number(r.target_weight) || 0;
     const gk = `${y}\t${cat}\t${branch}\t${team}`;
     goalsB2bMo.set(gk, (goalsB2bMo.get(gk) || 0) + tw);
+  }
+
+  for (const r of salesAnnualRes?.rows || []) {
+    const y = Number(r.year);
+    const cat = String(r.category);
+    const branch = normBranch(r.branch);
+    const team = normTeam(r.team);
+    if (!team) continue;
+    const w = Number(r.weight) || 0;
+    const catInner = ensureYCat(catSalesFull, y, cat);
+    catInner.set(cat, (catInner.get(cat) || 0) + w);
+    const bm = ensureYCatBranchTeam(teamSalesFull, y, cat, branch, team);
+    bm.set(team, (bm.get(team) || 0) + w);
+  }
+  for (const r of purAnnualRes?.rows || []) {
+    const y = Number(r.year);
+    const cat = String(r.category);
+    const w = Number(r.weight) || 0;
+    const inner = ensureYCat(purFull, y, cat);
+    inner.set(cat, (inner.get(cat) || 0) + w);
+  }
+  for (const r of b2bSalesAnnualRes?.rows || []) {
+    const y = Number(r.year);
+    const cat = String(r.category);
+    const branch = normBranch(r.branch);
+    const team = normTeam(r.team);
+    if (!team) continue;
+    const w = Number(r.weight) || 0;
+    const catInnerB2b = ensureYCat(b2bCatSalesFull, y, cat);
+    catInnerB2b.set(cat, (catInnerB2b.get(cat) || 0) + w);
+    const bmB2b = ensureYCatBranchTeam(teamB2bSalesFull, y, cat, branch, team);
+    bmB2b.set(team, (bmB2b.get(team) || 0) + w);
+  }
+  for (const r of b2bPurAnnualRes?.rows || []) {
+    const y = Number(r.year);
+    const cat = String(r.category);
+    const w = Number(r.weight) || 0;
+    const inner = ensureYCat(b2bPurFull, y, cat);
+    inner.set(cat, (inner.get(cat) || 0) + w);
   }
 
   const getCatSales = (m: Map<number, Map<string, number>>, y: number, cat: string) =>
@@ -754,77 +949,173 @@ export async function buildCumulativeViewPayload(params: {
     const branchGroupsB2b = collectBranchGroupsB2b(cat);
     const rows: CumulativeRow[] = [];
 
-    const y3s = invCombined(y3, cat);
-    const y2s = invCombined(y2, cat);
-    const y1s = invCombined(y1, cat);
-    const y0s = invCombined(y0, cat);
+    const invForYear = (y: number) => {
+      if (cumulativeChannel === 'combined') return invCombined(y, cat);
+      if (cumulativeChannel === 'b2c') return inv(y, cat);
+      return b2bInv(y, cat);
+    };
+
+    const purSellinYtd = (y: number) => {
+      if (cumulativeChannel === 'combined') return purCombined(purYtd, b2bPurYtd, y, cat);
+      if (cumulativeChannel === 'b2c') return getPur(purYtd, y, cat);
+      return getPur(b2bPurYtd, y, cat);
+    };
+
+    const invMonthSnapshot = (y: number) => {
+      if (cumulativeChannel === 'combined') {
+        return (
+          purCombined(purMo, b2bPurMo, y, cat) -
+          getCatSales(catSalesMo, y, cat) -
+          getCatSales(b2bCatSalesMo, y, cat)
+        );
+      }
+      if (cumulativeChannel === 'b2c') {
+        return getPur(purMo, y, cat) - getCatSales(catSalesMo, y, cat);
+      }
+      return getPur(b2bPurMo, y, cat) - getCatSales(b2bCatSalesMo, y, cat);
+    };
+
+    const sellinMonthPur = (y: number) => {
+      if (cumulativeChannel === 'combined') return purCombined(purMo, b2bPurMo, y, cat);
+      if (cumulativeChannel === 'b2c') return getPur(purMo, y, cat);
+      return getPur(b2bPurMo, y, cat);
+    };
+
+    /** 실적 23·24·25년: 연간 — 재고 행 */
+    const invFullForYear = (y: number) => {
+      if (cumulativeChannel === 'combined') {
+        return (
+          getPur(purFull, y, cat) +
+          getPur(b2bPurFull, y, cat) -
+          getCatSales(catSalesFull, y, cat) -
+          getCatSales(b2bCatSalesFull, y, cat)
+        );
+      }
+      if (cumulativeChannel === 'b2c') return getPur(purFull, y, cat) - getCatSales(catSalesFull, y, cat);
+      return getPur(b2bPurFull, y, cat) - getCatSales(b2bCatSalesFull, y, cat);
+    };
+
+    /** 실적 23·24·25년: 연간 매입 — sell-in 행 */
+    const purSellinFullYear = (y: number) => {
+      if (cumulativeChannel === 'combined') return getPur(purFull, y, cat) + getPur(b2bPurFull, y, cat);
+      if (cumulativeChannel === 'b2c') return getPur(purFull, y, cat);
+      return getPur(b2bPurFull, y, cat);
+    };
+
+    const y3s = invForYear(y3);
+    const y2s = invForYear(y2);
+    const y1s = invForYear(y1);
+    const y0s = invForYear(y0);
     rows.push({
       rowKind: 'inventory',
       label: '재고',
-      metrics: blk(
-        y3s,
-        y2s,
-        y1s,
-        y0s,
-        y1s,
-        0,
-        y0s,
-        purCombined(purMo, b2bPurMo, y1, cat) -
-          getCatSales(catSalesMo, y1, cat) -
-          getCatSales(b2bCatSalesMo, y1, cat),
-        0,
-        purCombined(purMo, b2bPurMo, y0, cat) -
-          getCatSales(catSalesMo, y0, cat) -
-          getCatSales(b2bCatSalesMo, y0, cat)
+      metrics: withYtdYoYGrowth(
+        blk(
+          invFullForYear(y3),
+          invFullForYear(y2),
+          invFullForYear(y1),
+          0,
+          y1s,
+          0,
+          y0s,
+          invMonthSnapshot(y1),
+          0,
+          invMonthSnapshot(y0)
+        ),
+        invForYear(y1),
+        invForYear(y0)
       ),
     });
 
-    const p3 = purCombined(purYtd, b2bPurYtd, y3, cat);
-    const p2 = purCombined(purYtd, b2bPurYtd, y2, cat);
-    const p1 = purCombined(purYtd, b2bPurYtd, y1, cat);
-    const p0 = purCombined(purYtd, b2bPurYtd, y0, cat);
+    const p3 = purSellinYtd(y3);
+    const p2 = purSellinYtd(y2);
+    const p1 = purSellinYtd(y1);
+    const p0 = purSellinYtd(y0);
     rows.push({
       rowKind: 'sellin',
       label: 'sell-in',
-      metrics: blk(
-        p3,
-        p2,
+      metrics: withYtdYoYGrowth(
+        blk(
+          purSellinFullYear(y3),
+          purSellinFullYear(y2),
+          purSellinFullYear(y1),
+          0,
+          p1,
+          0,
+          p0,
+          sellinMonthPur(y1),
+          0,
+          sellinMonthPur(y0)
+        ),
         p1,
-        p0,
-        p1,
-        0,
-        p0,
-        purCombined(purMo, b2bPurMo, y1, cat),
-        0,
-        purCombined(purMo, b2bPurMo, y0, cat)
+        p0
       ),
     });
 
-    const s3 = getCatSales(catSalesYtd, y3, cat);
-    const s2 = getCatSales(catSalesYtd, y2, cat);
-    const s1 = getCatSales(catSalesYtd, y1, cat);
-    const s0 = getCatSales(catSalesYtd, y0, cat);
-    const gt = categoryGoalYtd(cat);
-    rows.push({
-      rowKind: 'total',
-      label: '합계 (B2C)',
-      metrics: blk(
-        s3,
-        s2,
-        s1,
-        s0,
-        s1,
-        gt,
-        s0,
-        getCatSales(catSalesMo, y1, cat),
-        categoryGoalMo(y0, cat),
-        getCatSales(catSalesMo, y0, cat)
-      ),
-    });
+    if (cumulativeChannel !== 'b2b') {
+      const s3 = getCatSales(catSalesYtd, y3, cat);
+      const s2 = getCatSales(catSalesYtd, y2, cat);
+      const s1 = getCatSales(catSalesYtd, y1, cat);
+      const s0 = getCatSales(catSalesYtd, y0, cat);
+      const gt = categoryGoalYtd(cat);
 
-    for (const { branch, teams } of branchGroups) {
-      let st3 = 0;
-      let st2 = 0;
+      if (cumulativeChannel === 'combined') {
+        const b1 = getCatSales(b2bCatSalesYtd, y1, cat);
+        const b0 = getCatSales(b2bCatSalesYtd, y0, cat);
+        const b2gYtd = b2bCategoryGoalYtd(cat);
+        const s3f = getCatSales(catSalesFull, y3, cat) + getCatSales(b2bCatSalesFull, y3, cat);
+        const s2f = getCatSales(catSalesFull, y2, cat) + getCatSales(b2bCatSalesFull, y2, cat);
+        const s1f = getCatSales(catSalesFull, y1, cat) + getCatSales(b2bCatSalesFull, y1, cat);
+        rows.push({
+          rowKind: 'total',
+          label: '합계',
+          metrics: withYtdYoYGrowth(
+            blk(
+              s3f,
+              s2f,
+              s1f,
+              gt + b2gYtd,
+              s1 + b1,
+              gt + b2gYtd,
+              s0 + b0,
+              getCatSales(catSalesMo, y1, cat) + getCatSales(b2bCatSalesMo, y1, cat),
+              categoryGoalMo(y0, cat) + b2bCategoryGoalMo(y0, cat),
+              getCatSales(catSalesMo, y0, cat) + getCatSales(b2bCatSalesMo, y0, cat)
+            ),
+            s1 + b1,
+            s0 + b0
+          ),
+        });
+      } else {
+        const s3f = getCatSales(catSalesFull, y3, cat);
+        const s2f = getCatSales(catSalesFull, y2, cat);
+        const s1f = getCatSales(catSalesFull, y1, cat);
+        rows.push({
+          rowKind: 'total',
+          label: '합계 (B2C)',
+          metrics: withYtdYoYGrowth(
+            blk(
+              s3f,
+              s2f,
+              s1f,
+              gt,
+              s1,
+              gt,
+              s0,
+              getCatSales(catSalesMo, y1, cat),
+              categoryGoalMo(y0, cat),
+              getCatSales(catSalesMo, y0, cat)
+            ),
+            s1,
+            s0
+          ),
+        });
+      }
+
+      for (const { branch, teams } of branchGroups) {
+      let st3f = 0;
+      let st2f = 0;
+      let st1f = 0;
       let st1 = 0;
       let st0 = 0;
       let sct = 0;
@@ -832,8 +1123,9 @@ export async function buildCumulativeViewPayload(params: {
       let smt = 0;
       let smc = 0;
       for (const team of teams) {
-        st3 += getBranchTeamSales(teamSalesYtd, y3, cat, branch, team);
-        st2 += getBranchTeamSales(teamSalesYtd, y2, cat, branch, team);
+        st3f += getBranchTeamSales(teamSalesFull, y3, cat, branch, team);
+        st2f += getBranchTeamSales(teamSalesFull, y2, cat, branch, team);
+        st1f += getBranchTeamSales(teamSalesFull, y1, cat, branch, team);
         st1 += getBranchTeamSales(teamSalesYtd, y1, cat, branch, team);
         st0 += getBranchTeamSales(teamSalesYtd, y0, cat, branch, team);
         sct += goalsYtd.get(goalKey(cat, branch, team)) || 0;
@@ -844,54 +1136,77 @@ export async function buildCumulativeViewPayload(params: {
       rows.push({
         rowKind: 'branch_subtotal',
         label: `${branch} 소계`,
-        metrics: blk(st3, st2, st1, st0, st1, sct, st0, smp, smt, smc),
+        metrics: withYtdYoYGrowth(
+          blk(st3f, st2f, st1f, sct, st1, sct, st0, smp, smt, smc),
+          st1,
+          st0
+        ),
       });
       for (const team of teams) {
-        const t3 = getBranchTeamSales(teamSalesYtd, y3, cat, branch, team);
-        const t2 = getBranchTeamSales(teamSalesYtd, y2, cat, branch, team);
-        const t1 = getBranchTeamSales(teamSalesYtd, y1, cat, branch, team);
-        const t0 = getBranchTeamSales(teamSalesYtd, y0, cat, branch, team);
+        const t3f = getBranchTeamSales(teamSalesFull, y3, cat, branch, team);
+        const t2f = getBranchTeamSales(teamSalesFull, y2, cat, branch, team);
+        const t1f = getBranchTeamSales(teamSalesFull, y1, cat, branch, team);
+        const t1y = getBranchTeamSales(teamSalesYtd, y1, cat, branch, team);
+        const t0y = getBranchTeamSales(teamSalesYtd, y0, cat, branch, team);
         const tgt = goalsYtd.get(goalKey(cat, branch, team)) || 0;
         rows.push({
           rowKind: 'team',
           label: team,
-          metrics: blk(
-            t3,
-            t2,
-            t1,
-            t0,
-            t1,
-            tgt,
-            t0,
-            getBranchTeamSales(teamSalesMo, y1, cat, branch, team),
-            goalsMo.get(goalMoKey(y0, cat, branch, team)) || 0,
-            getBranchTeamSales(teamSalesMo, y0, cat, branch, team)
+          metrics: withYtdYoYGrowth(
+            blk(
+              t3f,
+              t2f,
+              t1f,
+              tgt,
+              t1y,
+              tgt,
+              t0y,
+              getBranchTeamSales(teamSalesMo, y1, cat, branch, team),
+              goalsMo.get(goalMoKey(y0, cat, branch, team)) || 0,
+              getBranchTeamSales(teamSalesMo, y0, cat, branch, team)
+            ),
+            t1y,
+            t0y
           ),
         });
       }
     }
+    }
 
-    const b2gYtd = b2bCategoryGoalYtd(cat);
-    rows.push({
-      rowKind: 'b2b_total',
-      label: '합계 (B2B)',
-      metrics: blk(
-        getCatSales(b2bCatSalesYtd, y3, cat),
-        getCatSales(b2bCatSalesYtd, y2, cat),
-        getCatSales(b2bCatSalesYtd, y1, cat),
-        getCatSales(b2bCatSalesYtd, y0, cat),
-        getCatSales(b2bCatSalesYtd, y1, cat),
-        b2gYtd,
-        getCatSales(b2bCatSalesYtd, y0, cat),
-        getCatSales(b2bCatSalesMo, y1, cat),
-        b2bCategoryGoalMo(y0, cat),
-        getCatSales(b2bCatSalesMo, y0, cat)
-      ),
-    });
+    if (cumulativeChannel !== 'b2c') {
+    if (cumulativeChannel !== 'combined') {
+      const b2gYtd = b2bCategoryGoalYtd(cat);
+      const b3f = getCatSales(b2bCatSalesFull, y3, cat);
+      const b2f = getCatSales(b2bCatSalesFull, y2, cat);
+      const b1f = getCatSales(b2bCatSalesFull, y1, cat);
+      const b1 = getCatSales(b2bCatSalesYtd, y1, cat);
+      const b0 = getCatSales(b2bCatSalesYtd, y0, cat);
+      rows.push({
+        rowKind: 'b2b_total',
+        label: '합계 (B2B)',
+        metrics: withYtdYoYGrowth(
+          blk(
+            b3f,
+            b2f,
+            b1f,
+            b2gYtd,
+            b1,
+            b2gYtd,
+            b0,
+            getCatSales(b2bCatSalesMo, y1, cat),
+            b2bCategoryGoalMo(y0, cat),
+            getCatSales(b2bCatSalesMo, y0, cat)
+          ),
+          b1,
+          b0
+        ),
+      });
+    }
 
     for (const { branch, teams } of branchGroupsB2b) {
-      let st3 = 0;
-      let st2 = 0;
+      let st3f = 0;
+      let st2f = 0;
+      let st1f = 0;
       let st1 = 0;
       let st0 = 0;
       let sct = 0;
@@ -899,8 +1214,9 @@ export async function buildCumulativeViewPayload(params: {
       let smt = 0;
       let smc = 0;
       for (const team of teams) {
-        st3 += getBranchTeamSales(teamB2bSalesYtd, y3, cat, branch, team);
-        st2 += getBranchTeamSales(teamB2bSalesYtd, y2, cat, branch, team);
+        st3f += getBranchTeamSales(teamB2bSalesFull, y3, cat, branch, team);
+        st2f += getBranchTeamSales(teamB2bSalesFull, y2, cat, branch, team);
+        st1f += getBranchTeamSales(teamB2bSalesFull, y1, cat, branch, team);
         st1 += getBranchTeamSales(teamB2bSalesYtd, y1, cat, branch, team);
         st0 += getBranchTeamSales(teamB2bSalesYtd, y0, cat, branch, team);
         sct += goalsB2bYtd.get(goalKey(cat, branch, team)) || 0;
@@ -911,31 +1227,41 @@ export async function buildCumulativeViewPayload(params: {
       rows.push({
         rowKind: 'b2b_branch_subtotal',
         label: `${branch} 소계 (B2B)`,
-        metrics: blk(st3, st2, st1, st0, st1, sct, st0, smp, smt, smc),
+        metrics: withYtdYoYGrowth(
+          blk(st3f, st2f, st1f, sct, st1, sct, st0, smp, smt, smc),
+          st1,
+          st0
+        ),
       });
       for (const team of teams) {
-        const t3 = getBranchTeamSales(teamB2bSalesYtd, y3, cat, branch, team);
-        const t2 = getBranchTeamSales(teamB2bSalesYtd, y2, cat, branch, team);
-        const t1 = getBranchTeamSales(teamB2bSalesYtd, y1, cat, branch, team);
-        const t0 = getBranchTeamSales(teamB2bSalesYtd, y0, cat, branch, team);
+        const t3f = getBranchTeamSales(teamB2bSalesFull, y3, cat, branch, team);
+        const t2f = getBranchTeamSales(teamB2bSalesFull, y2, cat, branch, team);
+        const t1f = getBranchTeamSales(teamB2bSalesFull, y1, cat, branch, team);
+        const t1y = getBranchTeamSales(teamB2bSalesYtd, y1, cat, branch, team);
+        const t0y = getBranchTeamSales(teamB2bSalesYtd, y0, cat, branch, team);
         const tgt = goalsB2bYtd.get(goalKey(cat, branch, team)) || 0;
         rows.push({
           rowKind: 'b2b_team',
           label: team,
-          metrics: blk(
-            t3,
-            t2,
-            t1,
-            t0,
-            t1,
-            tgt,
-            t0,
-            getBranchTeamSales(teamB2bSalesMo, y1, cat, branch, team),
-            goalsB2bMo.get(goalMoKey(y0, cat, branch, team)) || 0,
-            getBranchTeamSales(teamB2bSalesMo, y0, cat, branch, team)
+          metrics: withYtdYoYGrowth(
+            blk(
+              t3f,
+              t2f,
+              t1f,
+              tgt,
+              t1y,
+              tgt,
+              t0y,
+              getBranchTeamSales(teamB2bSalesMo, y1, cat, branch, team),
+              goalsB2bMo.get(goalMoKey(y0, cat, branch, team)) || 0,
+              getBranchTeamSales(teamB2bSalesMo, y0, cat, branch, team)
+            ),
+            t1y,
+            t0y
           ),
         });
       }
+    }
     }
 
     sections.push({ category: cat, rows });

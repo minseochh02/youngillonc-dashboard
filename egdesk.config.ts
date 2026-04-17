@@ -1,6 +1,6 @@
 /**
  * EGDesk User Data Configuration
- * Generated at: 2026-04-16T09:49:30.216Z
+ * Generated at: 2026-04-17T00:51:45.156Z
  *
  * This file contains type-safe definitions for your EGDesk tables.
  */
@@ -83,44 +83,44 @@ export const TABLES = {
   table9: {
     name: 'east_division_purchases',
     displayName: '동부구매현황',
-    rowCount: 574,
-    columnCount: 12,
-    columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '단가', '중량', '공급가액', '합계', '적요', '적요1']
+    rowCount: 4048,
+    columnCount: 13,
+    columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '단가', '중량', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
   table10: {
     name: 'east_division_sales',
     displayName: '동부판매현황',
-    rowCount: 5086,
-    columnCount: 14,
-    columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체']
+    rowCount: 37827,
+    columnCount: 15,
+    columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
   } as TableDefinition,
   table11: {
     name: 'west_division_purchases',
     displayName: '서부구매현황',
-    rowCount: 655,
-    columnCount: 12,
-    columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1']
+    rowCount: 4956,
+    columnCount: 13,
+    columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
   table12: {
     name: 'west_division_sales',
     displayName: '서부판매현황',
-    rowCount: 7039,
-    columnCount: 14,
-    columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체']
+    rowCount: 49728,
+    columnCount: 15,
+    columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
   } as TableDefinition,
   table13: {
     name: 'purchases',
     displayName: '구매현황',
-    rowCount: 3697,
-    columnCount: 12,
-    columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1']
+    rowCount: 103085,
+    columnCount: 13,
+    columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
   table14: {
     name: 'sales',
     displayName: '판매현황',
-    rowCount: 14858,
-    columnCount: 14,
-    columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체']
+    rowCount: 210379,
+    columnCount: 15,
+    columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
   } as TableDefinition,
   table15: {
     name: 'sales_goals',

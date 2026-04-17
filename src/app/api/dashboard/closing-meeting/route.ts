@@ -899,12 +899,16 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'cumulative-view') {
+      const ch = searchParams.get('cumulativeChannel');
+      const cumulativeChannel =
+        ch === 'b2c' || ch === 'b2b' || ch === 'combined' ? ch : 'combined';
       const cumulativeData = await buildCumulativeViewPayload({
         currentMonthStr,
         currentYear,
         availableMonths,
         baseSalesSubquery,
         basePurchasesSubquery,
+        cumulativeChannel,
       });
       return NextResponse.json({ success: true, data: cumulativeData });
     }

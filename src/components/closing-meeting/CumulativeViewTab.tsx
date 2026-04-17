@@ -1,15 +1,38 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Loader2 } from "lucide-react";
 import { useVatInclude } from "@/contexts/VatIncludeContext";
 import { apiFetch } from "@/lib/api";
 import { withIncludeVat } from "@/lib/vat-query";
-import type { CumulativeMetricBlock, CumulativeViewPayload } from "@/lib/closing-meeting-cumulative";
+import {
+  extractBranchesFromSections,
+  filterSectionsByBranch,
+} from "@/lib/cumulative-view-filters";
+import type {
+  CumulativeMetricBlock,
+  CumulativeViewChannel,
+  CumulativeViewPayload,
+} from "@/lib/closing-meeting-cumulative";
+
+export interface MeetingTabFilterOption {
+  /** 다른 탭 `id`와 맞추면 사용자가 탭과 대응하기 쉬움. `default` = 통합 기준 */
+  id: string;
+  label: string;
+  /** 해당 탭 화면의 필터·집계 조건 요약 */
+  description?: string;
+}
 
 interface Props {
   selectedMonth?: string;
   onMonthsAvailable?: (months: string[], currentMonth: string) => void;
+  /** 기본 `combined`(마감회의). B2C/B2B 회의 페이지에서는 각각 `b2c` / `b2b`. */
+  cumulativeChannel?: CumulativeViewChannel;
+  /**
+   * B2C/B2B 회의 페이지 전용: 각 탭과 동일한 ‘필터 관점’을 드롭다운으로 안내하고,
+   * 사업소 선택 시 표의 사업소 상세 행만 좁힙니다(재고·합계 등 상단 요약은 전사 기준 유지).
+   */
+  meetingTabFilterOptions?: MeetingTabFilterOption[];
 }
 
 function formatInt(n: number) {
@@ -35,12 +58,21 @@ const thSub =
 const thCat =
   "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 bg-zinc-50 dark:bg-zinc-800";
 
-/** Sum B2C + B2B “합계” rows per category, then recompute rates (전체 매출 요약). */
-function aggregateB2cB2bTotals(sections: CumulativeViewPayload["sections"]): CumulativeMetricBlock | null {
+/** Sum per-category 합계 rows, then recompute rates (전체 매출 요약). */
+function aggregateGrandTotals(
+  sections: CumulativeViewPayload["sections"],
+  cumulativeChannel: CumulativeViewChannel
+): CumulativeMetricBlock | null {
   const blocks: CumulativeMetricBlock[] = [];
   for (const sec of sections) {
     for (const row of sec.rows) {
-      if (row.rowKind === "total" || row.rowKind === "b2b_total") blocks.push(row.metrics);
+      const include =
+        cumulativeChannel === "combined"
+          ? row.rowKind === "total"
+          : cumulativeChannel === "b2c"
+            ? row.rowKind === "total"
+            : row.rowKind === "b2b_total";
+      if (include) blocks.push(row.metrics);
     }
   }
   if (blocks.length === 0) return null;
@@ -54,7 +86,15 @@ function aggregateB2cB2bTotals(sections: CumulativeViewPayload["sections"]): Cum
   const mp = blocks.reduce((s, m) => s + m.mo.priorYear, 0);
   const mt = blocks.reduce((s, m) => s + m.mo.target, 0);
   const mc = blocks.reduce((s, m) => s + m.mo.currentYear, 0);
-  const growthRate = y1 !== 0 ? (y0 - y1) / y1 : 0;
+  const g1 = blocks.reduce((s, m) => s + (m.growthBaseY1 ?? 0), 0);
+  const g0 = blocks.reduce((s, m) => s + (m.growthBaseY0 ?? 0), 0);
+  const allHaveGrowthBases =
+    blocks.length > 0 &&
+    blocks.every(
+      (m) => typeof m.growthBaseY1 === "number" && typeof m.growthBaseY0 === "number"
+    );
+  const growthRate =
+    allHaveGrowthBases && g1 !== 0 ? (g0 - g1) / g1 : y1 !== 0 ? (y0 - y1) / y1 : 0;
   const achievementRate = ct !== 0 ? cc / ct : 0;
   const yoyRate = cp !== 0 ? (cc - cp) / cp : 0;
   const moAchievement = mt !== 0 ? mc / mt : 0;
@@ -82,23 +122,39 @@ function aggregateB2cB2bTotals(sections: CumulativeViewPayload["sections"]): Cum
   };
 }
 
-export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: Props) {
+export default function CumulativeViewTab({
+  selectedMonth,
+  onMonthsAvailable,
+  cumulativeChannel = "combined",
+  meetingTabFilterOptions,
+}: Props) {
   const { includeVat } = useVatInclude();
   const [data, setData] = useState<CumulativeViewPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [subHeaderTopPx, setSubHeaderTopPx] = useState(40);
   const [grandStickyTopPx, setGrandStickyTopPx] = useState(80);
+  const [selectedMeetingTabId, setSelectedMeetingTabId] = useState<string>("default");
+  const [branchFilter, setBranchFilter] = useState<string>("");
   const reportedMonths = useRef(false);
   const firstHeadRowRef = useRef<HTMLTableRowElement>(null);
   const secondHeadRowRef = useRef<HTMLTableRowElement>(null);
+
+  const meetingTabOptions = meetingTabFilterOptions?.length
+    ? meetingTabFilterOptions
+    : null;
+  const selectedMeetingTab = meetingTabOptions?.find((o) => o.id === selectedMeetingTabId);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
+        const ch =
+          cumulativeChannel && cumulativeChannel !== "combined"
+            ? `&cumulativeChannel=${encodeURIComponent(cumulativeChannel)}`
+            : "";
         const url = withIncludeVat(
-          `/api/dashboard/closing-meeting?tab=cumulative-view${selectedMonth ? `&month=${selectedMonth}` : ""}`,
+          `/api/dashboard/closing-meeting?tab=cumulative-view${selectedMonth ? `&month=${selectedMonth}` : ""}${ch}`,
           includeVat
         );
         const res = await apiFetch(url);
@@ -123,7 +179,7 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
     return () => {
       cancelled = true;
     };
-  }, [selectedMonth, includeVat, onMonthsAvailable]);
+  }, [selectedMonth, includeVat, onMonthsAvailable, cumulativeChannel]);
 
   useLayoutEffect(() => {
     const r1 = firstHeadRowRef.current;
@@ -143,7 +199,17 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
     ro.observe(r1);
     ro.observe(r2);
     return () => ro.disconnect();
-  }, [data, loading]);
+  }, [data, loading, branchFilter]);
+
+  const displaySections = useMemo(() => {
+    if (!data?.sections?.length) return [];
+    return filterSectionsByBranch(data.sections, branchFilter || null);
+  }, [data?.sections, branchFilter]);
+
+  const availableBranches = useMemo(
+    () => (data?.sections?.length ? extractBranchesFromSections(data.sections) : []),
+    [data?.sections]
+  );
 
   if (loading) {
     return (
@@ -169,7 +235,16 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
   const rowB2bCell = `${tdNum} bg-sky-100 dark:bg-sky-950/35`;
   const rowB2bSub = `${thSub} bg-sky-100 dark:bg-sky-950/35 font-medium`;
 
-  const grand = aggregateB2cB2bTotals(data.sections);
+  const showGrandRow = !branchFilter;
+  const grand = showGrandRow
+    ? aggregateGrandTotals(data.sections, cumulativeChannel)
+    : null;
+  const grandLabel =
+    cumulativeChannel === "b2c"
+      ? "전체 합계 (B2C)"
+      : cumulativeChannel === "b2b"
+        ? "전체 합계 (B2B)"
+        : "전체 합계";
   const grandStickyStyle: CSSProperties = { top: grandStickyTopPx };
   const thGrand =
     "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-bold text-zinc-900 dark:text-zinc-100 bg-[#b4c6e7] dark:bg-zinc-600 align-middle sticky z-[22]";
@@ -177,7 +252,67 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
     "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-right text-xs font-semibold tabular-nums text-zinc-900 dark:text-zinc-100 bg-[#b4c6e7] dark:bg-zinc-600 align-middle sticky z-[22]";
 
   return (
-    <div className="max-h-[min(75vh,920px)] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm">
+    <div className="space-y-3">
+      {meetingTabOptions ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/50 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <div className="flex min-w-[200px] flex-1 flex-col gap-1">
+            <label
+              htmlFor="cumulative-meeting-tab-preset"
+              className="text-xs font-semibold text-zinc-600 dark:text-zinc-400"
+            >
+              보기 기준 (다른 탭 필터와 대응)
+            </label>
+            <select
+              id="cumulative-meeting-tab-preset"
+              value={selectedMeetingTabId}
+              onChange={(e) => setSelectedMeetingTabId(e.target.value)}
+              className="rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-2 text-sm font-medium text-zinc-900 dark:text-zinc-100"
+            >
+              {meetingTabOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {availableBranches.length > 0 ? (
+            <div className="flex min-w-[160px] flex-col gap-1">
+              <label
+                htmlFor="cumulative-branch-filter"
+                className="text-xs font-semibold text-zinc-600 dark:text-zinc-400"
+              >
+                사업소 (상세 행만)
+              </label>
+              <select
+                id="cumulative-branch-filter"
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className="rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-2 text-sm font-medium text-zinc-900 dark:text-zinc-100"
+              >
+                <option value="">전체</option>
+                {availableBranches.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {selectedMeetingTab?.description ? (
+        <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400 border-l-2 border-blue-400/70 pl-3">
+          <span className="font-semibold text-zinc-700 dark:text-zinc-300">선택한 탭 조건 요약: </span>
+          {selectedMeetingTab.description}
+        </p>
+      ) : null}
+      {branchFilter ? (
+        <p className="text-xs text-amber-800 dark:text-amber-200/90 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800 rounded-md px-3 py-2">
+          사업소 &ldquo;{branchFilter}&rdquo;만 표시합니다. 재고·sell-in·합계 행은 전사 기준이며, 전체 합계 요약 행은 숨깁니다.
+        </p>
+      ) : null}
+
+      <div className="max-h-[min(75vh,920px)] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm">
       <table className="w-full min-w-[1100px] border-collapse">
         <thead className="[&_th]:box-border">
           <tr ref={firstHeadRowRef}>
@@ -238,10 +373,10 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
               전년대비
             </th>
           </tr>
-          {grand ? (
+          {showGrandRow && grand ? (
             <tr>
               <th colSpan={2} className={thGrand} style={grandStickyStyle}>
-                전체 합계
+                {grandLabel}
               </th>
               <th scope="col" className={tdGrand} style={grandStickyStyle}>
                 {formatInt(grand.yPast3)}
@@ -292,7 +427,7 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
           ) : null}
         </thead>
         <tbody>
-          {data.sections.map((sec) =>
+          {displaySections.map((sec) =>
             sec.rows.map((row, ri) => {
               const isInv = row.rowKind === "inventory";
               const isB2b = row.rowKind.startsWith("b2b_");
@@ -388,6 +523,7 @@ export default function CumulativeViewTab({ selectedMonth, onMonthsAvailable }: 
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

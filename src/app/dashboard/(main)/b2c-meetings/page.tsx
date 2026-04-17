@@ -13,6 +13,9 @@ import TeamStrategyTab from '@/components/b2c-meetings/TeamStrategyTab';
 import TeamVolumeTab from '@/components/b2c-meetings/TeamVolumeTab';
 import TeamSalesTab from '@/components/b2c-meetings/TeamSalesTab';
 import ComingSoonTab from '@/components/b2c-meetings/ComingSoonTab';
+import CumulativeViewTab, {
+  type MeetingTabFilterOption,
+} from '@/components/closing-meeting/CumulativeViewTab';
 import VatToggle from '@/components/VatToggle';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { apiFetch } from '@/lib/api';
@@ -32,7 +35,83 @@ const tabs = [
   { id: 'team-strategy', label: '팀및전략딜러' },
   { id: 'team-volume', label: '팀물량' },
   { id: 'team-sales', label: '팀매출액' },
+  { id: 'cumulative-view', label: '누적 보기' },
   { id: 'shopping-mall', label: '쇼핑몰판매현황' },
+];
+
+/** 누적 보기 탭: 다른 탭의 필터 관점을 드롭다운으로 안내 (데이터는 동일 API·표, 사업소만 상세 행 필터) */
+const B2C_CUMULATIVE_TAB_FILTERS: MeetingTabFilterOption[] = [
+  {
+    id: 'default',
+    label: '통합 누적 (기본)',
+    description:
+      '품목군(MB~기타)별로 재고·sell-in·B2C/B2B 합계와 사업소·팀이 한 표에 모두 포함된 기본 누적입니다.',
+  },
+  {
+    id: 'business',
+    label: '사업소별',
+    description:
+      '사업소별 탭과 같이 담당자 사원분류(전체사업소) 기준 사업소 축으로 읽을 때 참고하세요. 사업소를 고르면 해당 사업소 소계·팀 행만 표시됩니다.',
+  },
+  {
+    id: 'manager-sales',
+    label: '담당자별매출',
+    description:
+      '담당자별매출 탭과 같이 사업소·채널(Fleet/LCC 등) 관점이 필요할 때 참고합니다. 사업소 필터로 한 사업소의 팀/담당 행만 볼 수 있습니다.',
+  },
+  {
+    id: 'sales-amount',
+    label: '매출액',
+    description:
+      '매출액 탭과 같이 금액·채널별 매출을 볼 때의 필터(거래처그룹2·업종코드 등)는 본 누적 표와 다릅니다. 중량·품목군 누적만 제공합니다.',
+  },
+  {
+    id: 'sales-analysis',
+    label: '매출분석-채널',
+    description:
+      '매출분석-채널 탭은 AUTO 채널·PVL/CVL 조합입니다. 본 표는 품목군·사업소·팀 중량 누적이므로 채널 세분과 1:1로 맞지 않을 수 있습니다.',
+  },
+  {
+    id: 'customer-reason',
+    label: '거래처별원인',
+    description:
+      '거래처별원인 탭은 거래처 단위 증감입니다. 본 표는 품목군·사업소·팀 집계로 동일하지 않을 수 있습니다.',
+  },
+  {
+    id: 'new',
+    label: '신규',
+    description: '신규 거래처 탭은 신규일 기준 거래처만 다룹니다. 본 표는 전체 매출 누적입니다.',
+  },
+  {
+    id: 'product-status',
+    label: '제품별현황',
+    description:
+      '제품별현황 탭은 분기별 재고·판매 등 별도 API입니다. 본 표는 마감회의와 동일한 품목군 누적 중량입니다.',
+  },
+  {
+    id: 'team-strategy',
+    label: '팀및전략딜러',
+    description:
+      '팀·전략딜러·남부지사 등 전략 뷰와 함께 볼 때 참고하세요. 사업소 필터로 팀 상세를 좁힐 수 있습니다.',
+  },
+  {
+    id: 'team-volume',
+    label: '팀물량',
+    description:
+      '팀물량 탭은 팀·담당자·월별 물량입니다. 본 표는 동일 품목군·사업소·팀의 연도 누적·당월 열을 제공합니다.',
+  },
+  {
+    id: 'team-sales',
+    label: '팀매출액',
+    description:
+      '팀매출액 탭은 금액·월별입니다. 본 표는 중량 기준 누적이며, 사업소 필터로 팀 행에 집중할 수 있습니다.',
+  },
+  {
+    id: 'shopping-mall',
+    label: '쇼핑몰판매현황',
+    description:
+      '쇼핑몰 탭은 shopping_sales 등 별도 소스입니다. 본 표는 일반 매출·매입 집계와 다릅니다.',
+  },
 ];
 
 export default function B2CMeetingsPage() {
@@ -439,6 +518,13 @@ export default function B2CMeetingsPage() {
           <TeamVolumeTab selectedMonth={selectedMonth} />
         ) : activeTab === 'team-sales' ? (
           <TeamSalesTab selectedMonth={selectedMonth} />
+        ) : activeTab === 'cumulative-view' ? (
+          <CumulativeViewTab
+            selectedMonth={selectedMonth}
+            onMonthsAvailable={handleMonthsAvailable}
+            cumulativeChannel="b2c"
+            meetingTabFilterOptions={B2C_CUMULATIVE_TAB_FILTERS}
+          />
         ) : activeTab === 'shopping-mall' ? (
           <ShoppingMallTab selectedMonth={selectedMonth} />
         ) : (
