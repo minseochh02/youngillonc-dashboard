@@ -9,11 +9,8 @@ import {
   extractBranchesFromSections,
   filterSectionsByBranch,
 } from "@/lib/cumulative-view-filters";
-import type {
-  CumulativeMetricBlock,
-  CumulativeViewChannel,
-  CumulativeViewPayload,
-} from "@/lib/closing-meeting-cumulative";
+import type { CumulativeViewChannel, CumulativeViewPayload } from "@/lib/closing-meeting-cumulative";
+import { aggregateSectionTotals } from "@/lib/cumulative-section-aggregate";
 
 export interface MeetingTabFilterOption {
   /** 다른 탭 `id`와 맞추면 사용자가 탭과 대응하기 쉬움. `default` = 통합 기준 */
@@ -57,70 +54,6 @@ const thSub =
   "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-medium text-zinc-800 dark:text-zinc-200 bg-white dark:bg-zinc-900";
 const thCat =
   "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 bg-zinc-50 dark:bg-zinc-800";
-
-/** Sum per-category 합계 rows, then recompute rates (전체 매출 요약). */
-function aggregateGrandTotals(
-  sections: CumulativeViewPayload["sections"],
-  cumulativeChannel: CumulativeViewChannel
-): CumulativeMetricBlock | null {
-  const blocks: CumulativeMetricBlock[] = [];
-  for (const sec of sections) {
-    for (const row of sec.rows) {
-      const include =
-        cumulativeChannel === "combined"
-          ? row.rowKind === "total"
-          : cumulativeChannel === "b2c"
-            ? row.rowKind === "total"
-            : row.rowKind === "b2b_total";
-      if (include) blocks.push(row.metrics);
-    }
-  }
-  if (blocks.length === 0) return null;
-  const y3 = blocks.reduce((s, m) => s + m.yPast3, 0);
-  const y2 = blocks.reduce((s, m) => s + m.yPast2, 0);
-  const y1 = blocks.reduce((s, m) => s + m.yPast1, 0);
-  const y0 = blocks.reduce((s, m) => s + m.yCurrent, 0);
-  const cp = blocks.reduce((s, m) => s + m.cum.priorYear, 0);
-  const ct = blocks.reduce((s, m) => s + m.cum.target, 0);
-  const cc = blocks.reduce((s, m) => s + m.cum.currentYear, 0);
-  const mp = blocks.reduce((s, m) => s + m.mo.priorYear, 0);
-  const mt = blocks.reduce((s, m) => s + m.mo.target, 0);
-  const mc = blocks.reduce((s, m) => s + m.mo.currentYear, 0);
-  const g1 = blocks.reduce((s, m) => s + (m.growthBaseY1 ?? 0), 0);
-  const g0 = blocks.reduce((s, m) => s + (m.growthBaseY0 ?? 0), 0);
-  const allHaveGrowthBases =
-    blocks.length > 0 &&
-    blocks.every(
-      (m) => typeof m.growthBaseY1 === "number" && typeof m.growthBaseY0 === "number"
-    );
-  const growthRate =
-    allHaveGrowthBases && g1 !== 0 ? (g0 - g1) / g1 : y1 !== 0 ? (y0 - y1) / y1 : 0;
-  const achievementRate = ct !== 0 ? cc / ct : 0;
-  const yoyRate = cp !== 0 ? (cc - cp) / cp : 0;
-  const moAchievement = mt !== 0 ? mc / mt : 0;
-  const moYoy = mp !== 0 ? (mc - mp) / mp : 0;
-  return {
-    yPast3: Math.round(y3),
-    yPast2: Math.round(y2),
-    yPast1: Math.round(y1),
-    yCurrent: Math.round(y0),
-    growthRate,
-    cum: {
-      priorYear: Math.round(cp),
-      target: Math.round(ct),
-      currentYear: Math.round(cc),
-      achievementRate,
-      yoyRate,
-    },
-    mo: {
-      priorYear: Math.round(mp),
-      target: Math.round(mt),
-      currentYear: Math.round(mc),
-      achievementRate: moAchievement,
-      yoyRate: moYoy,
-    },
-  };
-}
 
 export default function CumulativeViewTab({
   selectedMonth,
@@ -237,7 +170,7 @@ export default function CumulativeViewTab({
 
   const showGrandRow = !branchFilter;
   const grand = showGrandRow
-    ? aggregateGrandTotals(data.sections, cumulativeChannel)
+    ? aggregateSectionTotals(data.sections, cumulativeChannel)
     : null;
   const grandLabel =
     cumulativeChannel === "b2c"

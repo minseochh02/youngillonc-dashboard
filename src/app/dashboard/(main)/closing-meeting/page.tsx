@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import OverviewTab from '@/components/closing-meeting/OverviewTab';
 import MonthlySummaryTab from '@/components/closing-meeting/MonthlySummaryTab';
 import B2CAutoAnalysisTab from '@/components/closing-meeting/B2CAutoAnalysisTab';
 import B2BILAnalysisTab from '@/components/closing-meeting/B2BILAnalysisTab';
@@ -17,6 +18,7 @@ import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { generateFilename, type IslandTable, type IslandSheetData } from '@/lib/excel-export';
 
 const tabs = [
+  { id: 'overview', label: '개요' },
   { id: 'monthly-summary', label: '월간총괄' },
   { id: 'b2c-auto', label: 'B2C 분석' },
   { id: 'b2b-il', label: 'B2B 분석' },
@@ -293,7 +295,9 @@ export default function ClosingMeetingPage() {
       </div>
 
       <div className="min-h-[400px]">
-        {activeTab === 'monthly-summary' ? (
+        {activeTab === 'overview' ? (
+          <OverviewTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+        ) : activeTab === 'monthly-summary' ? (
           <MonthlySummaryTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'b2c-auto' ? (
           <B2CAutoAnalysisTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
