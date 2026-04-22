@@ -92,6 +92,7 @@ export type OverviewSegmentPersist = {
   teamRowIds: string[] | null;
   teamsSectionHidden: boolean;
   b2cBlockCollapsed: boolean;
+  b2bBlockCollapsed: boolean;
   collapsedBranchKeys: string[];
 };
 
@@ -106,6 +107,7 @@ function defaultSegmentPersist(): OverviewSegmentPersist {
     teamRowIds: null,
     teamsSectionHidden: false,
     b2cBlockCollapsed: false,
+    b2bBlockCollapsed: false,
     collapsedBranchKeys: [],
   };
 }
@@ -148,6 +150,7 @@ export function loadOverviewOrderV2(month: string): OverviewOrderPersistV2 | nul
           teamRowIds: Array.isArray(j.teamRowIds) ? j.teamRowIds : null,
           teamsSectionHidden: teamsHidden,
           b2cBlockCollapsed: typeof j.b2cBlockCollapsed === "boolean" ? j.b2cBlockCollapsed : false,
+          b2bBlockCollapsed: false,
           collapsedBranchKeys: (Array.isArray(j.collapsedBranchKeys) ? j.collapsedBranchKeys : [])
             .filter((k): k is string => typeof k === "string")
             .map((k) => (k.startsWith("pvl-cvl-il\t") ? k : `pvl-cvl-il\t${k}`)),

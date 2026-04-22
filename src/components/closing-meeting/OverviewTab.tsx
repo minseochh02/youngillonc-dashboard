@@ -62,6 +62,7 @@ type OverviewSegmentUiState = {
   summarySectionFirst: boolean;
   teamsSectionHidden: boolean;
   b2cBlockCollapsed: boolean;
+  b2bBlockCollapsed: boolean;
   collapsedBranches: string[];
 };
 
@@ -378,6 +379,8 @@ function OverviewTeamsSection({
   autoColJoinBelow,
   b2cBlockCollapsed,
   onToggleB2cBlock,
+  b2bBlockCollapsed,
+  onToggleB2bBlock,
 }: {
   groupId: OverviewProductGroupId;
   groupLabel: string;
@@ -397,6 +400,8 @@ function OverviewTeamsSection({
   autoColJoinBelow?: boolean;
   b2cBlockCollapsed: boolean;
   onToggleB2cBlock: () => void;
+  b2bBlockCollapsed: boolean;
+  onToggleB2bBlock: () => void;
 }) {
   const sectionSortable = useSortable({ id: sortableSectionTeamsId });
 
@@ -406,13 +411,14 @@ function OverviewTeamsSection({
   );
 
   const sortableTeamIds = useMemo(() => {
-    if (b2cBlockCollapsed) {
-      return orderedTeams
-        .filter((t) => t.channel !== "b2c")
-        .map((t) => overviewTeamSortableId(groupId, teamRowStableId(t)));
-    }
-    return allTeamSortableIds;
-  }, [b2cBlockCollapsed, orderedTeams, groupId, allTeamSortableIds]);
+    return orderedTeams
+      .filter((t) => {
+        if (t.channel === "b2c" && b2cBlockCollapsed) return false;
+        if (t.channel === "b2b" && b2bBlockCollapsed) return false;
+        return true;
+      })
+      .map((t) => overviewTeamSortableId(groupId, teamRowStableId(t)));
+  }, [b2cBlockCollapsed, b2bBlockCollapsed, orderedTeams, groupId]);
 
   /** 채널이 바뀌는 지점마다 AUTO 열 블록을 나눔 (팀 순서 드래그 유지) */
   const channelBlocks = useMemo(() => {
@@ -455,11 +461,19 @@ function OverviewTeamsSection({
           const joinTop = isFirstBlock && autoColJoinAbove;
           const joinBot = isLastBlock && autoColJoinBelow;
 
-          if (block.channel === "b2c" && b2cBlockCollapsed && block.rows.length > 0) {
+          const isCollapsed =
+            (block.channel === "b2c" && b2cBlockCollapsed) ||
+            (block.channel === "b2b" && b2bBlockCollapsed);
+          const onToggleChannelBlock =
+            block.channel === "b2c" ? onToggleB2cBlock : onToggleB2bBlock;
+
+          if (isCollapsed && block.rows.length > 0) {
             const merged = mergeMetricBlocks(block.rows.map((r) => r.metrics));
             if (!merged) return [];
+            const chLabel = autoGroupLabelForChannel(groupLabel, block.channel);
+            const totalLabel = block.channel === "b2c" ? "B2C 합계" : "B2B 합계";
             return [
-              <tr key="ov-b2c-block-total">
+              <tr key={`ov-${block.channel}-block-total`}>
                 <th
                   className={`${thCatProduct}${joinTop ? ` ${autoColJoinAboveCls}` : ""}${joinBot ? ` ${autoColJoinBelowCls}` : ""}`}
                 >
@@ -480,21 +494,21 @@ function OverviewTeamsSection({
                     <span className="flex w-full min-w-0 flex-col items-center gap-0.5">
                       <button
                         type="button"
-                        onClick={onToggleB2cBlock}
+                        onClick={onToggleChannelBlock}
                         className={b2cBlockToggleBtn}
                         aria-expanded={false}
-                        title="B2C 지사·팀 펼치기"
+                        title={`${block.channel.toUpperCase()} 지사·팀 펼치기`}
                       >
                         <ChevronRight className="h-3.5 w-3.5" />
                       </button>
                       <span className="block w-full min-w-0 text-center">
-                        {autoGroupLabelForChannel(groupLabel, "b2c")}
+                        {chLabel}
                       </span>
                     </span>
                   </span>
                 </th>
                 <th colSpan={2} className={b2cTotalLabelCls}>
-                  B2C 합계
+                  {totalLabel}
                 </th>
                 <MetricCells block={merged} tdClass={teamMetricCls} />
               </tr>,
@@ -538,26 +552,20 @@ function OverviewTeamsSection({
                       <span className="h-[26px] shrink-0" aria-hidden />
                     )}
                     <span className="flex w-full min-w-0 flex-col items-center gap-0.5">
-                      {block.channel === "b2c" ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={onToggleB2cBlock}
-                            className={b2cBlockToggleBtn}
-                            aria-expanded
-                            title="B2C 합계만 보기"
-                          >
-                            <ChevronDown className="h-3.5 w-3.5" />
-                          </button>
-                          <span className="block w-full min-w-0 text-center">
-                        {autoGroupLabelForChannel(groupLabel, "b2c")}
-                      </span>
-                        </>
-                      ) : (
-                        <span className="block w-full min-w-0">
+                      <>
+                        <button
+                          type="button"
+                          onClick={onToggleChannelBlock}
+                          className={b2cBlockToggleBtn}
+                          aria-expanded
+                          title={`${block.channel.toUpperCase()} 합계만 보기`}
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="block w-full min-w-0 text-center">
                           {autoGroupLabelForChannel(groupLabel, block.channel)}
                         </span>
-                      )}
+                      </>
                     </span>
                   </span>
                 </th>
@@ -732,6 +740,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
         summarySectionFirst: s.summaryFirst,
         teamsSectionHidden: s.teamsSectionHidden,
         b2cBlockCollapsed: s.b2cBlockCollapsed,
+        b2bBlockCollapsed: s.b2bBlockCollapsed,
         collapsedBranches: s.collapsedBranchKeys.filter((k) => validKeys.has(k)),
       };
     }
@@ -798,6 +807,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
         teamRowIds: rows.map(teamRowStableId),
         teamsSectionHidden: st.teamsSectionHidden,
         b2cBlockCollapsed: st.b2cBlockCollapsed,
+        b2bBlockCollapsed: st.b2bBlockCollapsed,
         collapsedBranchKeys: st.collapsedBranches,
       };
     }
@@ -1117,10 +1127,15 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
                             setSegmentState((p) => {
                               const c = p[g.id] ?? hydratedDefaults?.[g.id];
                               if (!c) return p;
-                              return {
-                                ...p,
-                                [g.id]: { ...c, b2cBlockCollapsed: !c.b2cBlockCollapsed },
-                              };
+                              return { ...p, [g.id]: { ...c, b2cBlockCollapsed: !c.b2cBlockCollapsed } };
+                            })
+                          }
+                          b2bBlockCollapsed={st.b2bBlockCollapsed}
+                          onToggleB2bBlock={() =>
+                            setSegmentState((p) => {
+                              const c = p[g.id] ?? hydratedDefaults?.[g.id];
+                              if (!c) return p;
+                              return { ...p, [g.id]: { ...c, b2bBlockCollapsed: !c.b2bBlockCollapsed } };
                             })
                           }
                         />
@@ -1162,10 +1177,15 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
                             setSegmentState((p) => {
                               const c = p[g.id] ?? hydratedDefaults?.[g.id];
                               if (!c) return p;
-                              return {
-                                ...p,
-                                [g.id]: { ...c, b2cBlockCollapsed: !c.b2cBlockCollapsed },
-                              };
+                              return { ...p, [g.id]: { ...c, b2cBlockCollapsed: !c.b2cBlockCollapsed } };
+                            })
+                          }
+                          b2bBlockCollapsed={st.b2bBlockCollapsed}
+                          onToggleB2bBlock={() =>
+                            setSegmentState((p) => {
+                              const c = p[g.id] ?? hydratedDefaults?.[g.id];
+                              if (!c) return p;
+                              return { ...p, [g.id]: { ...c, b2bBlockCollapsed: !c.b2bBlockCollapsed } };
                             })
                           }
                         />
