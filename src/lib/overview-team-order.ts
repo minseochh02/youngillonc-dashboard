@@ -97,6 +97,7 @@ export type OverviewSegmentPersist = {
 
 export type OverviewOrderPersistV2 = {
   segments: Partial<Record<OverviewProductGroupId, OverviewSegmentPersist>>;
+  groupOrder?: OverviewProductGroupId[];
 };
 
 function defaultSegmentPersist(): OverviewSegmentPersist {
@@ -115,8 +116,14 @@ export function loadOverviewOrderV2(month: string): OverviewOrderPersistV2 | nul
   try {
     const rawV2 = localStorage.getItem(`${LS_PREFIX_V2}:${month}`);
     if (rawV2) {
-      const j = JSON.parse(rawV2) as { segments?: OverviewOrderPersistV2["segments"] };
-      return { segments: j.segments && typeof j.segments === "object" ? j.segments : {} };
+      const j = JSON.parse(rawV2) as {
+        segments?: OverviewOrderPersistV2["segments"];
+        groupOrder?: OverviewProductGroupId[];
+      };
+      return {
+        segments: j.segments && typeof j.segments === "object" ? j.segments : {},
+        groupOrder: Array.isArray(j.groupOrder) ? j.groupOrder : undefined,
+      };
     }
     const rawV1 = localStorage.getItem(`${LS_PREFIX_V1}:${month}`);
     if (!rawV1) return null;
@@ -146,6 +153,7 @@ export function loadOverviewOrderV2(month: string): OverviewOrderPersistV2 | nul
             .map((k) => (k.startsWith("pvl-cvl-il\t") ? k : `pvl-cvl-il\t${k}`)),
         },
       },
+      groupOrder: undefined,
     };
   } catch {
     return null;

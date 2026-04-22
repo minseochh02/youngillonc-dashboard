@@ -65,6 +65,23 @@ type OverviewSegmentUiState = {
   collapsedBranches: string[];
 };
 
+function normalizeGroupOrder(raw: unknown): OverviewProductGroupId[] {
+  const all = OVERVIEW_PRODUCT_GROUPS.map((g) => g.id);
+  if (!Array.isArray(raw)) return all;
+  const seen = new Set<OverviewProductGroupId>();
+  const out: OverviewProductGroupId[] = [];
+  for (const id of raw) {
+    if (typeof id !== "string") continue;
+    if (!all.includes(id as OverviewProductGroupId)) continue;
+    const gid = id as OverviewProductGroupId;
+    if (seen.has(gid)) continue;
+    seen.add(gid);
+    out.push(gid);
+  }
+  for (const id of all) if (!seen.has(id)) out.push(id);
+  return out;
+}
+
 function formatInt(n: number) {
   if (Number.isNaN(n)) return "—";
   return Math.round(n).toLocaleString("ko-KR");
@@ -252,12 +269,15 @@ function OverviewSummarySection({
               type="button"
               className={dragHandleBtn}
               aria-label="요약 블록과 팀 블록 순서 바꾸기"
+              title="드래그: 요약/팀 순서 이동 (다른 품목군 요약으로 드롭 시 품목군 순서 이동)"
               {...sortable.listeners}
               {...sortable.attributes}
             >
               <GripVertical className="h-3.5 w-3.5" />
             </button>
-            <span className="block w-full min-w-0">{groupLabel}</span>
+            <span className="block w-full min-w-0">
+              {groupLabel}
+            </span>
           </span>
         </th>
         <th className={rowInvSub} colSpan={2}>
@@ -408,6 +428,20 @@ function OverviewTeamsSection({
 
   const b2cTotalLabelCls = `${thSub} bg-violet-50/80 font-semibold dark:bg-violet-950/25`;
 
+  /**
+   * `collapsedBranchKeys` stores full keys (`${groupId}\t${channel}\t${branch}`).
+   * `visibleTeamRowCountInBlock` / `rowsToBranchBlocks` uses short keys (`${channel}\t${branch}`).
+   * Convert here so rowSpan is calculated correctly.
+   */
+  const shortCollapsedBranchKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const k of collapsedBranchKeys) {
+      const parsed = parseOverviewBranchBlockKey(k);
+      s.add(parsed ? parsed.branchKey : k);
+    }
+    return s;
+  }, [collapsedBranchKeys]);
+
   return (
     <tbody
       ref={sectionSortable.setNodeRef}
@@ -468,7 +502,7 @@ function OverviewTeamsSection({
           }
 
           const mergeMeta = branchMergeMeta(block.rows);
-          const blockTeamCount = visibleTeamRowCountInBlock(block.rows, collapsedBranchKeys);
+          const blockTeamCount = visibleTeamRowCountInBlock(block.rows, shortCollapsedBranchKeys);
           return block.rows.map((tr, ti) => {
             const merge = mergeMeta[ti]!;
             const sid = overviewTeamSortableId(groupId, teamRowStableId(tr));
@@ -642,6 +676,9 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
   const [segmentState, setSegmentState] = useState<
     Partial<Record<OverviewProductGroupId, OverviewSegmentUiState>>
   >({});
+  const [groupOrder, setGroupOrder] = useState<OverviewProductGroupId[]>(
+    OVERVIEW_PRODUCT_GROUPS.map((g) => g.id)
+  );
   const reportedMonths = useRef(false);
   const firstHeadRowRef = useRef<HTMLTableRowElement>(null);
   const secondHeadRowRef = useRef<HTMLTableRowElement>(null);
@@ -700,6 +737,11 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
     }
     return next;
   }, [selectedMonth, segmentBaselinesFingerprint, segmentBaselines]);
+
+  useEffect(() => {
+    const loaded = loadOverviewOrderV2(selectedMonth);
+    setGroupOrder(normalizeGroupOrder(loaded?.groupOrder));
+  }, [selectedMonth, segmentBaselinesFingerprint]);
 
   useEffect(() => {
     setSegmentState({});
@@ -764,8 +806,8 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
 
   useEffect(() => {
     if (!selectedMonth || !mergedForPersist) return;
-    saveOverviewOrderV2(selectedMonth, { segments: mergedForPersist });
-  }, [selectedMonth, mergedForPersist]);
+    saveOverviewOrderV2(selectedMonth, { segments: mergedForPersist, groupOrder });
+  }, [selectedMonth, mergedForPersist, groupOrder]);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -776,6 +818,15 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
 
       const sa = parseOverviewSectionDragId(aid);
       const so = parseOverviewSectionDragId(oid);
+      if (sa && so && sa.kind === "summary" && so.kind === "summary" && sa.gid !== so.gid) {
+        setGroupOrder((prev) => {
+          const fromIdx = prev.indexOf(sa.gid);
+          const toIdx = prev.indexOf(so.gid);
+          if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return prev;
+          return arrayMove(prev, fromIdx, toIdx);
+        });
+        return;
+      }
       if (sa && so && sa.gid === so.gid && sa.kind !== so.kind) {
         const gid = sa.gid;
         setSegmentState((prev) => {
@@ -981,7 +1032,9 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
                 </th>
               </tr>
             </thead>
-            {OVERVIEW_PRODUCT_GROUPS.map((g) => {
+            {groupOrder.map((gid) => {
+              const g = OVERVIEW_PRODUCT_GROUPS.find((x) => x.id === gid);
+              if (!g) return null;
               const sd = segmentBaselines.get(g.id);
               const st = segmentState[g.id] ?? hydratedDefaults?.[g.id];
               if (!sd || !st) return null;
