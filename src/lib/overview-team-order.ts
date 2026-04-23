@@ -6,15 +6,9 @@ export function teamRowStableId(tr: TeamSalesBreakdownRow): string {
   return `${tr.channel}\t${tr.branch}\t${tr.team}`;
 }
 
-/**
- * 지사 열 병합·블록 id용 라벨.
- * `사무실`은 **지사명(branch)** 또는 **팀명(team)** 에 들어가면 같은 지사로 묶음(동부/서부/중부 등이 달라도 연속 행 병합).
- */
+/** 지사 열 병합·블록 id용 라벨 — 지사명(branch) 그대로 사용. */
 export function normalizeOverviewBranchLabel(tr: TeamSalesBreakdownRow): string {
-  const b = tr.branch.trim();
-  const team = tr.team.trim();
-  if (team.includes("사무실") || b.includes("사무실")) return "사무실";
-  return b;
+  return tr.branch.trim();
 }
 
 export function branchBlockKey(tr: TeamSalesBreakdownRow): string {

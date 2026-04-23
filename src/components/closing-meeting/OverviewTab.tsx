@@ -501,9 +501,6 @@ function OverviewTeamsSection({
                       >
                         <ChevronRight className="h-3.5 w-3.5" />
                       </button>
-                      <span className="block w-full min-w-0 text-center">
-                        {chLabel}
-                      </span>
                     </span>
                   </span>
                 </th>
@@ -552,20 +549,15 @@ function OverviewTeamsSection({
                       <span className="h-[26px] shrink-0" aria-hidden />
                     )}
                     <span className="flex w-full min-w-0 flex-col items-center gap-0.5">
-                      <>
-                        <button
-                          type="button"
-                          onClick={onToggleChannelBlock}
-                          className={b2cBlockToggleBtn}
-                          aria-expanded
-                          title={`${block.channel.toUpperCase()} 합계만 보기`}
-                        >
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        </button>
-                        <span className="block w-full min-w-0 text-center">
-                          {autoGroupLabelForChannel(groupLabel, block.channel)}
-                        </span>
-                      </>
+                      <button
+                        type="button"
+                        onClick={onToggleChannelBlock}
+                        className={b2cBlockToggleBtn}
+                        aria-expanded
+                        title={`${block.channel.toUpperCase()} 합계만 보기`}
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
                     </span>
                   </span>
                 </th>
