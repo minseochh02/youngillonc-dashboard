@@ -457,16 +457,15 @@ function OverviewSummaryBreakdown({
                         <SortableBreakdownRow key={sid} id={sid}>
                           {({ listeners }) => (
                             <>
-                              <th className={thCatProduct}>
-                                <span className="flex items-center gap-1">
+                              <th className={thSub} colSpan={3}>
+                                <span className="flex items-center gap-2 pl-1 text-left">
                                   <button type="button" className={dragHandleBtn} {...listeners}>
                                     <GripVertical className="h-3 w-3" />
                                   </button>
-                                  <span className="flex-1 truncate">{g.label}</span>
+                                  <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                                    {g.label}
+                                  </span>
                                 </span>
-                              </th>
-                              <th className={thSub} colSpan={2}>
-                                sell-in
                               </th>
                               <MetricCells block={sellin} tdClass={tdNum} />
                             </>
@@ -478,15 +477,10 @@ function OverviewSummaryBreakdown({
                   {totalSellin && (
                     <tr className="border-t-2 border-zinc-800 dark:border-zinc-200">
                       <th
-                        className={`${thCatProduct} bg-zinc-200 dark:bg-zinc-800 font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
+                        className={`${thSub} bg-zinc-200 dark:bg-zinc-800 font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
+                        colSpan={3}
                       >
                         합계
-                      </th>
-                      <th
-                        className={`${thSub} bg-zinc-100 dark:bg-zinc-900 font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
-                        colSpan={2}
-                      >
-                        sell-in
                       </th>
                       <MetricCells
                         block={totalSellin}
@@ -538,16 +532,15 @@ function OverviewSummaryBreakdown({
                         <SortableBreakdownRow key={sid} id={sid}>
                           {({ listeners }) => (
                             <>
-                              <th className={thCatProduct}>
-                                <span className="flex items-center gap-1">
+                              <th className={salesLabelCls} colSpan={3}>
+                                <span className="flex items-center gap-2 pl-1 text-left">
                                   <button type="button" className={dragHandleBtn} {...listeners}>
                                     <GripVertical className="h-3 w-3" />
                                   </button>
-                                  <span className="flex-1 truncate">{g.label}</span>
+                                  <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                                    {g.label}
+                                  </span>
                                 </span>
-                              </th>
-                              <th className={salesLabelCls} colSpan={2}>
-                                판매량
                               </th>
                               <MetricCells block={sales} tdClass={salesMetricCls} />
                             </>
@@ -559,15 +552,10 @@ function OverviewSummaryBreakdown({
                   {totalSales && (
                     <tr className="border-t-2 border-zinc-800 dark:border-zinc-200">
                       <th
-                        className={`${thCatProduct} bg-violet-100 dark:bg-violet-900 font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
+                        className={`${salesLabelCls} font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
+                        colSpan={3}
                       >
                         합계
-                      </th>
-                      <th
-                        className={`${salesLabelCls} font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
-                        colSpan={2}
-                      >
-                        판매량
                       </th>
                       <MetricCells
                         block={totalSales}
