@@ -36,11 +36,15 @@ export function overviewSectionTeamsId(gid: OverviewProductGroupId, channel?: "b
 export function parseOverviewSectionDragId(id: string):
   | { kind: "summary"; gid: OverviewProductGroupId }
   | { kind: "teams"; gid: OverviewProductGroupId; channel?: "b2c" | "b2b" }
+  | { kind: "breakdown"; type: "sellin" | "sales" }
+  | { kind: "breakdown-row"; type: "sellin" | "sales"; rowId: string }
   | null {
   const sumP = "overview-section-summary:";
   const teamP = "overview-section-teams:";
   const teamB2cP = "overview-section-teams-b2c:";
   const teamB2bP = "overview-section-teams-b2b:";
+  const rowSellinP = "breakdown-row:sellin:";
+  const rowSalesP = "breakdown-row:sales:";
 
   if (id.startsWith(sumP)) return { kind: "summary", gid: id.slice(sumP.length) as OverviewProductGroupId };
   if (id.startsWith(teamB2cP))
@@ -49,6 +53,14 @@ export function parseOverviewSectionDragId(id: string):
     return { kind: "teams", gid: id.slice(teamB2bP.length) as OverviewProductGroupId, channel: "b2b" };
   if (id.startsWith(teamP))
     return { kind: "teams", gid: id.slice(teamP.length) as OverviewProductGroupId };
+
+  if (id === "breakdown:sellin") return { kind: "breakdown", type: "sellin" };
+  if (id === "breakdown:sales") return { kind: "breakdown", type: "sales" };
+
+  if (id.startsWith(rowSellinP))
+    return { kind: "breakdown-row", type: "sellin", rowId: id.slice(rowSellinP.length) };
+  if (id.startsWith(rowSalesP))
+    return { kind: "breakdown-row", type: "sales", rowId: id.slice(rowSalesP.length) };
 
   return null;
 }

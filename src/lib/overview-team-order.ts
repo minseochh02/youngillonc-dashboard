@@ -94,6 +94,8 @@ export type OverviewSegmentPersist = {
 export type OverviewOrderPersistV2 = {
   segments: Partial<Record<OverviewProductGroupId, OverviewSegmentPersist>>;
   groupOrder?: OverviewProductGroupId[];
+  breakdownOrder?: ("sellin" | "sales")[];
+  breakdownRowOrder?: string[];
 };
 
 function defaultSegmentPersist(): OverviewSegmentPersist {
@@ -117,10 +119,14 @@ export function loadOverviewOrderV2(month: string): OverviewOrderPersistV2 | nul
       const j = JSON.parse(rawV2) as {
         segments?: OverviewOrderPersistV2["segments"];
         groupOrder?: OverviewProductGroupId[];
+        breakdownOrder?: ("sellin" | "sales")[];
+        breakdownRowOrder?: string[];
       };
       return {
         segments: j.segments && typeof j.segments === "object" ? j.segments : {},
         groupOrder: Array.isArray(j.groupOrder) ? j.groupOrder : undefined,
+        breakdownOrder: Array.isArray(j.breakdownOrder) ? j.breakdownOrder : undefined,
+        breakdownRowOrder: Array.isArray(j.breakdownRowOrder) ? j.breakdownRowOrder : undefined,
       };
     }
     const rawV1 = localStorage.getItem(`${LS_PREFIX_V1}:${month}`);

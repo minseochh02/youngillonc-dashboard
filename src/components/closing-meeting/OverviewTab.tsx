@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, GripVertical, Loader2 } from "lucide-react";
 import {
   DndContext,
@@ -379,6 +379,234 @@ function OverviewTeamsHiddenPlaceholder({
   );
 }
 
+const BREAKDOWN_ROWS = [
+  { id: "mb", label: "MB", cats: new Set(["MB"]) },
+  { id: "avi", label: "AVI", cats: new Set(["AVI"]) },
+  { id: "mar", label: "MAR", cats: new Set(["MAR"]) },
+  { id: "auto", label: "AUTO", cats: new Set(["PVL", "CVL"]) },
+  { id: "il", label: "IL", cats: new Set(["IL"]) },
+  { id: "others", label: "기타/Alliance", cats: new Set(["기타"]) },
+] as const;
+
+function OverviewSummaryBreakdown({
+  sections,
+  salesMetricCls,
+  salesLabelCls,
+  breakdownOrder,
+  breakdownRowOrder,
+}: {
+  sections: CumulativeSection[];
+  salesMetricCls: string;
+  salesLabelCls: string;
+  breakdownOrder: ("sellin" | "sales")[];
+  breakdownRowOrder: string[];
+}) {
+  const allCats = new Set(sections.map((s) => s.category));
+  const totalSellin = aggregateSectionRowsOfKind(sections, allCats, "sellin");
+  const totalSales = aggregateSectionRowsOfKind(sections, allCats, "total");
+
+  const orderedRows = breakdownRowOrder
+    .map((rid) => BREAKDOWN_ROWS.find((r) => r.id === rid))
+    .filter((r): r is (typeof BREAKDOWN_ROWS)[number] => !!r);
+
+  return (
+    <>
+      <SortableContext
+        items={breakdownOrder.map((o) => `breakdown:${o}`)}
+        strategy={verticalListSortingStrategy}
+      >
+        {breakdownOrder.map((type) => {
+          if (type === "sellin") {
+            const sellinSortable = useSortable({ id: "breakdown:sellin" });
+            const rowIds = orderedRows.map((r) => `breakdown-row:sellin:${r.id}`);
+
+            return (
+              <Fragment key="breakdown:sellin">
+                {/* Sell-in Section */}
+                <tbody
+                  ref={sellinSortable.setNodeRef}
+                  style={{ opacity: sellinSortable.isDragging ? 0.55 : undefined }}
+                  className="border-t-4 border-zinc-400 dark:border-zinc-500"
+                >
+                  <tr>
+                    <th
+                      colSpan={18}
+                      className="bg-zinc-100 dark:bg-zinc-900 text-center py-2 font-bold text-sm tracking-tight"
+                    >
+                      <span className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          className={dragHandleBtn}
+                          {...sellinSortable.listeners}
+                          {...sellinSortable.attributes}
+                        >
+                          <GripVertical className="h-3.5 w-3.5" />
+                        </button>
+                        1. sell-in (전체 품목군 Breakdown)
+                      </span>
+                    </th>
+                  </tr>
+                </tbody>
+                <tbody className="border-b border-zinc-300 dark:border-zinc-700">
+                  <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+                    {orderedRows.map((g) => {
+                      const sellin = aggregateSectionRowsOfKind(sections, g.cats, "sellin");
+                      if (!sellin) return null;
+                      const sid = `breakdown-row:sellin:${g.id}`;
+                      return (
+                        <SortableBreakdownRow key={sid} id={sid}>
+                          {({ listeners }) => (
+                            <>
+                              <th className={thCatProduct}>
+                                <span className="flex items-center gap-1">
+                                  <button type="button" className={dragHandleBtn} {...listeners}>
+                                    <GripVertical className="h-3 w-3" />
+                                  </button>
+                                  <span className="flex-1 truncate">{g.label}</span>
+                                </span>
+                              </th>
+                              <th className={thSub} colSpan={2}>
+                                sell-in
+                              </th>
+                              <MetricCells block={sellin} tdClass={tdNum} />
+                            </>
+                          )}
+                        </SortableBreakdownRow>
+                      );
+                    })}
+                  </SortableContext>
+                  {totalSellin && (
+                    <tr className="border-t-2 border-zinc-800 dark:border-zinc-200">
+                      <th
+                        className={`${thCatProduct} bg-zinc-200 dark:bg-zinc-800 font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
+                      >
+                        합계
+                      </th>
+                      <th
+                        className={`${thSub} bg-zinc-100 dark:bg-zinc-900 font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
+                        colSpan={2}
+                      >
+                        sell-in
+                      </th>
+                      <MetricCells
+                        block={totalSellin}
+                        tdClass={`${tdNum} font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
+                      />
+                    </tr>
+                  )}
+                </tbody>
+              </Fragment>
+            );
+          } else {
+            const salesSortable = useSortable({ id: "breakdown:sales" });
+            const rowIds = orderedRows.map((r) => `breakdown-row:sales:${r.id}`);
+
+            return (
+              <Fragment key="breakdown:sales">
+                {/* Sales Section */}
+                <tbody
+                  ref={salesSortable.setNodeRef}
+                  style={{ opacity: salesSortable.isDragging ? 0.55 : undefined }}
+                  className="border-t-4 border-zinc-400 dark:border-zinc-500"
+                >
+                  <tr>
+                    <th
+                      colSpan={18}
+                      className="bg-violet-50 dark:bg-violet-950/20 text-center py-2 font-bold text-sm tracking-tight"
+                    >
+                      <span className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          className={dragHandleBtn}
+                          {...salesSortable.listeners}
+                          {...salesSortable.attributes}
+                        >
+                          <GripVertical className="h-3.5 w-3.5" />
+                        </button>
+                        2. 판매량 (전체 품목군 Breakdown)
+                      </span>
+                    </th>
+                  </tr>
+                </tbody>
+                <tbody className="border-b border-zinc-300 dark:border-zinc-700">
+                  <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+                    {orderedRows.map((g) => {
+                      const sales = aggregateSectionRowsOfKind(sections, g.cats, "total");
+                      if (!sales) return null;
+                      const sid = `breakdown-row:sales:${g.id}`;
+                      return (
+                        <SortableBreakdownRow key={sid} id={sid}>
+                          {({ listeners }) => (
+                            <>
+                              <th className={thCatProduct}>
+                                <span className="flex items-center gap-1">
+                                  <button type="button" className={dragHandleBtn} {...listeners}>
+                                    <GripVertical className="h-3 w-3" />
+                                  </button>
+                                  <span className="flex-1 truncate">{g.label}</span>
+                                </span>
+                              </th>
+                              <th className={salesLabelCls} colSpan={2}>
+                                판매량
+                              </th>
+                              <MetricCells block={sales} tdClass={salesMetricCls} />
+                            </>
+                          )}
+                        </SortableBreakdownRow>
+                      );
+                    })}
+                  </SortableContext>
+                  {totalSales && (
+                    <tr className="border-t-2 border-zinc-800 dark:border-zinc-200">
+                      <th
+                        className={`${thCatProduct} bg-violet-100 dark:bg-violet-900 font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
+                      >
+                        합계
+                      </th>
+                      <th
+                        className={`${salesLabelCls} font-bold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
+                        colSpan={2}
+                      >
+                        판매량
+                      </th>
+                      <MetricCells
+                        block={totalSales}
+                        tdClass={`${salesMetricCls} font-extrabold border-t-2 border-t-zinc-800 dark:border-t-zinc-200`}
+                      />
+                    </tr>
+                  )}
+                </tbody>
+              </Fragment>
+            );
+          }
+        })}
+      </SortableContext>
+    </>
+  );
+}
+
+function SortableBreakdownRow({
+  id,
+  children,
+}: {
+  id: string;
+  children: (a: { listeners: Record<string, unknown> }) => ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.55 : undefined,
+  };
+  return (
+    <tr ref={setNodeRef} style={style} {...attributes}>
+      {children({ listeners: listeners as Record<string, unknown> })}
+    </tr>
+  );
+}
+
 function OverviewChannelTeamsSection({
   groupId,
   groupLabel,
@@ -648,6 +876,13 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
   const [groupOrder, setGroupOrder] = useState<OverviewProductGroupId[]>(
     OVERVIEW_PRODUCT_GROUPS.map((g) => g.id)
   );
+  const [breakdownOrder, setBreakdownOrder] = useState<("sellin" | "sales")[]>([
+    "sellin",
+    "sales",
+  ]);
+  const [breakdownRowOrder, setBreakdownRowOrder] = useState<string[]>(
+    BREAKDOWN_ROWS.map((r) => r.id)
+  );
   const reportedMonths = useRef(false);
   const firstHeadRowRef = useRef<HTMLTableRowElement>(null);
   const secondHeadRowRef = useRef<HTMLTableRowElement>(null);
@@ -712,6 +947,8 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
   useEffect(() => {
     const loaded = loadOverviewOrderV2(selectedMonth);
     setGroupOrder(normalizeGroupOrder(loaded?.groupOrder));
+    if (loaded?.breakdownOrder) setBreakdownOrder(loaded.breakdownOrder);
+    if (loaded?.breakdownRowOrder) setBreakdownRowOrder(loaded.breakdownRowOrder);
   }, [selectedMonth, segmentBaselinesFingerprint]);
 
   useEffect(() => {
@@ -779,8 +1016,13 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
 
   useEffect(() => {
     if (!selectedMonth || !mergedForPersist) return;
-    saveOverviewOrderV2(selectedMonth, { segments: mergedForPersist, groupOrder });
-  }, [selectedMonth, mergedForPersist, groupOrder]);
+    saveOverviewOrderV2(selectedMonth, {
+      segments: mergedForPersist,
+      groupOrder,
+      breakdownOrder,
+      breakdownRowOrder,
+    });
+  }, [selectedMonth, mergedForPersist, groupOrder, breakdownOrder, breakdownRowOrder]);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -791,6 +1033,27 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
 
       const sa = parseOverviewSectionDragId(aid);
       const so = parseOverviewSectionDragId(oid);
+
+      if (sa?.kind === "breakdown-row" && so?.kind === "breakdown-row" && sa.rowId !== so.rowId) {
+        setBreakdownRowOrder((prev) => {
+          const fromIdx = prev.indexOf(sa.rowId);
+          const toIdx = prev.indexOf(so.rowId);
+          if (fromIdx < 0 || toIdx < 0) return prev;
+          return arrayMove(prev, fromIdx, toIdx);
+        });
+        return;
+      }
+
+      if (sa?.kind === "breakdown" && so?.kind === "breakdown" && sa.type !== so.type) {
+        setBreakdownOrder((prev) => {
+          const fromIdx = prev.indexOf(sa.type);
+          const toIdx = prev.indexOf(so.type);
+          if (fromIdx < 0 || toIdx < 0) return prev;
+          return arrayMove(prev, fromIdx, toIdx);
+        });
+        return;
+      }
+
       if (sa && so && sa.gid !== so.gid) {
         setGroupOrder((prev) => {
           const fromIdx = prev.indexOf(sa.gid);
@@ -1138,6 +1401,13 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
                 </SortableContext>
               );
             })}
+            <OverviewSummaryBreakdown
+              sections={data.sections}
+              salesMetricCls={salesMetricCls}
+              salesLabelCls={salesLabelCls}
+              breakdownOrder={breakdownOrder}
+              breakdownRowOrder={breakdownRowOrder}
+            />
           </table>
         </DndContext>
       </div>
