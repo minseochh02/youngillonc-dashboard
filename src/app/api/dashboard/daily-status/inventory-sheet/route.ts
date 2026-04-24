@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareOffices, loadOfficeOrderMap } from '@/lib/display-order';
 import { combinedInventoryUnionSql } from '@/lib/inventory-snapshot-combined';
+import { sqlAndPurchaseExcludeCounterpartyCodes } from '@/lib/special-handling-employees';
 
 /**
  * API Endpoint for Daily Inventory Status Sheet (일일재고파악시트)
@@ -109,6 +110,7 @@ export async function GET(request: Request) {
             }
           )
           AND ${warehouseFilter('w.창고명')}
+          ${sqlAndPurchaseExcludeCounterpartyCodes('p')}
 
           UNION ALL
 
@@ -168,6 +170,7 @@ export async function GET(request: Request) {
         LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
         WHERE p.일자 = '${date}'
           AND ${warehouseFilter('w.창고명')}
+          ${sqlAndPurchaseExcludeCounterpartyCodes('p')}
 
         UNION ALL
 

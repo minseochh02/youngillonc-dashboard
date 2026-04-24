@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareOffices, compareTeams, loadFullDisplayOrderContext } from '@/lib/display-order';
-import { sqlAndEmployeeNotSpecialHandling, sqlAndSalesRemarkNotExact } from '@/lib/special-handling-employees';
+import {
+  sqlAndEmployeeNotSpecialHandling,
+  sqlAndSalesRemarkNotExact,
+  sqlPurchaseExcludedClientPredicate,
+} from '@/lib/special-handling-employees';
 
 /**
  * API Endpoint for Product Status
@@ -18,7 +22,7 @@ export async function GET(request: Request) {
         SELECT 일자 FROM sales
         UNION ALL SELECT 일자 FROM east_division_sales
         UNION ALL SELECT 일자 FROM west_division_sales
-        UNION ALL SELECT 일자 FROM purchases
+        UNION ALL SELECT 일자 FROM purchases WHERE ${sqlPurchaseExcludedClientPredicate('거래처코드')}
       ) WHERE 일자 IS NOT NULL AND 일자 != '' AND 일자 LIKE '202%'
       ORDER BY month ASC
     `;

@@ -82,6 +82,7 @@ const LS_PREFIX_V1 = "closing-meeting-overview-order:v1";
 const LS_PREFIX_V2 = "closing-meeting-overview-order:v2";
 
 export type OverviewSegmentPersist = {
+  sectionOrder?: ("summary" | "b2c" | "b2b")[] | null;
   summaryFirst: boolean;
   teamRowIds: string[] | null;
   teamsSectionHidden: boolean;
@@ -97,6 +98,7 @@ export type OverviewOrderPersistV2 = {
 
 function defaultSegmentPersist(): OverviewSegmentPersist {
   return {
+    sectionOrder: ["summary", "b2c", "b2b"],
     summaryFirst: true,
     teamRowIds: null,
     teamsSectionHidden: false,
@@ -140,6 +142,9 @@ export function loadOverviewOrderV2(month: string): OverviewOrderPersistV2 | nul
     return {
       segments: {
         "pvl-cvl-il": {
+          sectionOrder: typeof j.summaryFirst === "boolean"
+            ? (j.summaryFirst ? ["summary", "b2c", "b2b"] : ["b2c", "b2b", "summary"])
+            : ["summary", "b2c", "b2b"],
           summaryFirst: typeof j.summaryFirst === "boolean" ? j.summaryFirst : true,
           teamRowIds: Array.isArray(j.teamRowIds) ? j.teamRowIds : null,
           teamsSectionHidden: teamsHidden,

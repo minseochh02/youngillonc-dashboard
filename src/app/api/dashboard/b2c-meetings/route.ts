@@ -4,7 +4,9 @@ import { compareEmployees, compareTeams, loadFullDisplayOrderContext } from '@/l
 import {
   sqlAndClientKeyNotAssignedToSpecialHandling,
   sqlAndEmployeeNotSpecialHandling,
+  sqlAndPurchaseExcludeCounterpartyCodes,
   sqlAndSalesRemarkNotExact,
+  sqlPurchaseExcludedClientPredicate,
 } from '@/lib/special-handling-employees';
 import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
@@ -23,7 +25,7 @@ export async function GET(request: Request) {
         SELECT 일자 FROM sales
         UNION ALL SELECT 일자 FROM east_division_sales
         UNION ALL SELECT 일자 FROM west_division_sales
-        UNION ALL SELECT 일자 FROM purchases
+        UNION ALL SELECT 일자 FROM purchases WHERE ${sqlPurchaseExcludedClientPredicate('거래처코드')}
       ) WHERE 일자 IS NOT NULL AND 일자 != '' AND 일자 LIKE '202%'
       ORDER BY month ASC
     `;
@@ -1197,6 +1199,7 @@ export async function GET(request: Request) {
           )
           AND c.거래처그룹1명 LIKE '%남부%'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
+          ${sqlAndPurchaseExcludeCounterpartyCodes('p')}
         GROUP BY year
       `;
 
@@ -1269,6 +1272,7 @@ export async function GET(request: Request) {
           )
           AND c.거래처그룹1명 LIKE '%남부%'
           AND i.품목그룹1코드 IN ('PVL', 'CVL')
+          ${sqlAndPurchaseExcludeCounterpartyCodes('p')}
         GROUP BY strftime('%Y', p.일자), strftime('%Y-%m', p.일자)
       `;
 

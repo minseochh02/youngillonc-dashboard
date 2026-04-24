@@ -25,6 +25,7 @@ import {
   SNAPSHOT_IMPORTED_AT,
   combinedInventoryUnionSql,
 } from '../src/lib/inventory-snapshot-combined';
+import { sqlPurchaseExcludedClientPredicate } from '../src/lib/special-handling-employees';
 
 const TABLE_NAME = 'computed_inventory_monthly';
 const DISPLAY_NAME = 'computed 재고(월말)';
@@ -141,6 +142,7 @@ async function main() {
       SELECT p.일자, i.품목그룹1코드, p.중량
       FROM purchases p
       LEFT JOIN items i ON p.품목코드 = i.품목코드
+      WHERE ${sqlPurchaseExcludedClientPredicate('p.거래처코드')}
     ) p
     WHERE p.일자 IS NOT NULL AND p.일자 != '' AND LENGTH(p.일자) >= 7
     GROUP BY 1, 2

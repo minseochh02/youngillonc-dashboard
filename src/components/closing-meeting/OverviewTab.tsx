@@ -36,6 +36,7 @@ import {
   overviewSectionTeamsId,
   overviewTeamSortableId,
   parseOverviewTeamSortableId,
+  parseOverviewSectionDragId,
 } from "@/lib/overview-product-groups";
 import {
   applySavedTeamOrder,
@@ -59,6 +60,7 @@ interface OverviewTabProps {
 
 type OverviewSegmentUiState = {
   orderedTeams: TeamSalesBreakdownRow[];
+  sectionOrder: ("summary" | "b2c" | "b2b")[];
   summarySectionFirst: boolean;
   teamsSectionHidden: boolean;
   b2cBlockCollapsed: boolean;
@@ -331,12 +333,15 @@ function OverviewTeamsHiddenPlaceholder({
   sortableSectionTeamsId,
   autoColJoinAbove,
   autoColJoinBelow,
+  channel,
 }: {
   sortableSectionTeamsId: string;
   autoColJoinAbove?: boolean;
   autoColJoinBelow?: boolean;
+  channel: "b2c" | "b2b";
 }) {
   const sectionSortable = useSortable({ id: sortableSectionTeamsId });
+  const label = channel === "b2c" ? "B2C 지사·팀 표 숨김" : "B2B 지사·팀 표 숨김";
   return (
     <tbody
       ref={sectionSortable.setNodeRef}
@@ -347,12 +352,24 @@ function OverviewTeamsHiddenPlaceholder({
         <th
           className={`${thCatProduct}${autoColJoinAbove ? ` ${autoColJoinAboveCls}` : ""}${autoColJoinBelow ? ` ${autoColJoinBelowCls}` : ""}`}
           aria-hidden
-        />
+        >
+          <span className="flex flex-col items-center gap-1">
+            <button
+              type="button"
+              className={dragHandleBtn}
+              aria-label="요약 블록과 팀 블록 순서 바꾸기"
+              {...sectionSortable.listeners}
+              {...sectionSortable.attributes}
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        </th>
         <th
           colSpan={2}
           className={`${thSub} text-left text-zinc-500 dark:text-zinc-400`}
         >
-          <span className="px-1 text-[10px]">지사·팀 표 숨김</span>
+          <span className="px-1 text-[10px]">{label}</span>
         </th>
         <td colSpan={15} className={`${tdNum} text-center text-zinc-500 dark:text-zinc-400`}>
           위 &ldquo;합계 판매량&rdquo; 줄의 ◀ 버튼으로 다시 표시할 수 있습니다.
@@ -362,10 +379,11 @@ function OverviewTeamsHiddenPlaceholder({
   );
 }
 
-function OverviewTeamsSection({
+function OverviewChannelTeamsSection({
   groupId,
   groupLabel,
   sortableSectionTeamsId,
+  channel,
   orderedTeams,
   teamLabelCls,
   teamBranchCls,
@@ -377,14 +395,13 @@ function OverviewTeamsSection({
   onBranchDrop,
   autoColJoinAbove,
   autoColJoinBelow,
-  b2cBlockCollapsed,
-  onToggleB2cBlock,
-  b2bBlockCollapsed,
-  onToggleB2bBlock,
+  channelCollapsed,
+  onToggleChannelCollapsed,
 }: {
   groupId: OverviewProductGroupId;
   groupLabel: string;
   sortableSectionTeamsId: string;
+  channel: "b2c" | "b2b";
   orderedTeams: TeamSalesBreakdownRow[];
   teamLabelCls: string;
   teamBranchCls: string;
@@ -394,43 +411,22 @@ function OverviewTeamsSection({
   onBranchDragStart: (e: React.DragEvent, key: string) => void;
   onBranchDragOver: (e: React.DragEvent) => void;
   onBranchDrop: (e: React.DragEvent, targetKey: string) => void;
-  /** 요약이 위에 있을 때 첫 채널(B2C) 블록 AUTO 셀 상단 */
   autoColJoinAbove?: boolean;
-  /** 요약이 아래에 있을 때 마지막 채널 블록 AUTO 셀 하단 */
   autoColJoinBelow?: boolean;
-  b2cBlockCollapsed: boolean;
-  onToggleB2cBlock: () => void;
-  b2bBlockCollapsed: boolean;
-  onToggleB2bBlock: () => void;
+  channelCollapsed: boolean;
+  onToggleChannelCollapsed: () => void;
 }) {
   const sectionSortable = useSortable({ id: sortableSectionTeamsId });
 
-  const allTeamSortableIds = useMemo(
-    () => orderedTeams.map((t) => overviewTeamSortableId(groupId, teamRowStableId(t))),
-    [groupId, orderedTeams]
+  const channelRows = useMemo(
+    () => orderedTeams.filter((t) => t.channel === channel),
+    [orderedTeams, channel]
   );
 
   const sortableTeamIds = useMemo(() => {
-    return orderedTeams
-      .filter((t) => {
-        if (t.channel === "b2c" && b2cBlockCollapsed) return false;
-        if (t.channel === "b2b" && b2bBlockCollapsed) return false;
-        return true;
-      })
-      .map((t) => overviewTeamSortableId(groupId, teamRowStableId(t)));
-  }, [b2cBlockCollapsed, b2bBlockCollapsed, orderedTeams, groupId]);
-
-  /** 채널이 바뀌는 지점마다 AUTO 열 블록을 나눔 (팀 순서 드래그 유지) */
-  const channelBlocks = useMemo(() => {
-    const blocks: { channel: TeamSalesBreakdownRow["channel"]; rows: TeamSalesBreakdownRow[] }[] =
-      [];
-    for (const tr of orderedTeams) {
-      const last = blocks[blocks.length - 1];
-      if (last && last.channel === tr.channel) last.rows.push(tr);
-      else blocks.push({ channel: tr.channel, rows: [tr] });
-    }
-    return blocks;
-  }, [orderedTeams]);
+    if (channelCollapsed) return [];
+    return channelRows.map((t) => overviewTeamSortableId(groupId, teamRowStableId(t)));
+  }, [channelCollapsed, channelRows, groupId]);
 
   const b2cTotalLabelCls = `${thSub} bg-violet-50/80 font-semibold dark:bg-violet-950/25`;
 
@@ -448,56 +444,44 @@ function OverviewTeamsSection({
     return s;
   }, [collapsedBranchKeys]);
 
+  if (channelRows.length === 0) return null;
+
   return (
     <tbody
       ref={sectionSortable.setNodeRef}
       style={{ opacity: sectionSortable.isDragging ? 0.55 : undefined }}
     >
       <SortableContext items={sortableTeamIds} strategy={verticalListSortingStrategy}>
-        {channelBlocks.flatMap((block, bi) => {
-          const nb = channelBlocks.length;
-          const isFirstBlock = bi === 0;
-          const isLastBlock = bi === nb - 1;
-          const joinTop = isFirstBlock && autoColJoinAbove;
-          const joinBot = isLastBlock && autoColJoinBelow;
+        {(() => {
+          const joinTop = autoColJoinAbove;
+          const joinBot = autoColJoinBelow;
 
-          const isCollapsed =
-            (block.channel === "b2c" && b2cBlockCollapsed) ||
-            (block.channel === "b2b" && b2bBlockCollapsed);
-          const onToggleChannelBlock =
-            block.channel === "b2c" ? onToggleB2cBlock : onToggleB2bBlock;
-
-          if (isCollapsed && block.rows.length > 0) {
-            const merged = mergeMetricBlocks(block.rows.map((r) => r.metrics));
-            if (!merged) return [];
-            const chLabel = autoGroupLabelForChannel(groupLabel, block.channel);
-            const totalLabel = block.channel === "b2c" ? "B2C 합계" : "B2B 합계";
-            return [
-              <tr key={`ov-${block.channel}-block-total`}>
+          if (channelCollapsed && channelRows.length > 0) {
+            const merged = mergeMetricBlocks(channelRows.map((r) => r.metrics));
+            if (!merged) return null;
+            const totalLabel = channel === "b2c" ? "B2C 합계" : "B2B 합계";
+            return (
+              <tr key={`ov-${channel}-block-total`}>
                 <th
                   className={`${thCatProduct}${joinTop ? ` ${autoColJoinAboveCls}` : ""}${joinBot ? ` ${autoColJoinBelowCls}` : ""}`}
                 >
                   <span className="flex flex-col items-center gap-1">
-                    {isFirstBlock ? (
-                      <button
-                        type="button"
-                        className={dragHandleBtn}
-                        aria-label="요약 블록과 팀 블록 순서 바꾸기"
-                        {...sectionSortable.listeners}
-                        {...sectionSortable.attributes}
-                      >
-                        <GripVertical className="h-3.5 w-3.5" />
-                      </button>
-                    ) : (
-                      <span className="h-[26px] shrink-0" aria-hidden />
-                    )}
+                    <button
+                      type="button"
+                      className={dragHandleBtn}
+                      aria-label="요약 블록과 팀 블록 순서 바꾸기"
+                      {...sectionSortable.listeners}
+                      {...sectionSortable.attributes}
+                    >
+                      <GripVertical className="h-3.5 w-3.5" />
+                    </button>
                     <span className="flex w-full min-w-0 flex-col items-center gap-0.5">
                       <button
                         type="button"
-                        onClick={onToggleChannelBlock}
+                        onClick={onToggleChannelCollapsed}
                         className={b2cBlockToggleBtn}
                         aria-expanded={false}
-                        title={`${block.channel.toUpperCase()} 지사·팀 펼치기`}
+                        title={`${channel.toUpperCase()} 지사·팀 펼치기`}
                       >
                         <ChevronRight className="h-3.5 w-3.5" />
                       </button>
@@ -508,13 +492,13 @@ function OverviewTeamsSection({
                   {totalLabel}
                 </th>
                 <MetricCells block={merged} tdClass={teamMetricCls} />
-              </tr>,
-            ];
+              </tr>
+            );
           }
 
-          const mergeMeta = branchMergeMeta(block.rows);
-          const blockTeamCount = visibleTeamRowCountInBlock(block.rows, shortCollapsedBranchKeys);
-          return block.rows.map((tr, ti) => {
+          const mergeMeta = branchMergeMeta(channelRows);
+          const blockTeamCount = visibleTeamRowCountInBlock(channelRows, shortCollapsedBranchKeys);
+          return channelRows.map((tr, ti) => {
             const merge = mergeMeta[ti]!;
             const sid = overviewTeamSortableId(groupId, teamRowStableId(tr));
             const bk = overviewBranchBlockKey(groupId, tr);
@@ -524,7 +508,7 @@ function OverviewTeamsSection({
             const branchMetricsTotal =
               branchCollapsed && merge.showBranchCell
                 ? mergeMetricBlocks(
-                    block.rows.slice(ti, ti + merge.branchRowSpan).map((r) => r.metrics)
+                    channelRows.slice(ti, ti + merge.branchRowSpan).map((r) => r.metrics)
                   )
                 : null;
 
@@ -535,26 +519,22 @@ function OverviewTeamsSection({
                   className={`${thCatProduct}${joinTop ? ` ${autoColJoinAboveCls}` : ""}${joinBot ? ` ${autoColJoinBelowCls}` : ""}`}
                 >
                   <span className="flex flex-col items-center gap-1">
-                    {isFirstBlock ? (
-                      <button
-                        type="button"
-                        className={dragHandleBtn}
-                        aria-label="요약 블록과 팀 블록 순서 바꾸기"
-                        {...sectionSortable.listeners}
-                        {...sectionSortable.attributes}
-                      >
-                        <GripVertical className="h-3.5 w-3.5" />
-                      </button>
-                    ) : (
-                      <span className="h-[26px] shrink-0" aria-hidden />
-                    )}
+                    <button
+                      type="button"
+                      className={dragHandleBtn}
+                      aria-label="요약 블록과 팀 블록 순서 바꾸기"
+                      {...sectionSortable.listeners}
+                      {...sectionSortable.attributes}
+                    >
+                      <GripVertical className="h-3.5 w-3.5" />
+                    </button>
                     <span className="flex w-full min-w-0 flex-col items-center gap-0.5">
                       <button
                         type="button"
-                        onClick={onToggleChannelBlock}
+                        onClick={onToggleChannelCollapsed}
                         className={b2cBlockToggleBtn}
                         aria-expanded
-                        title={`${block.channel.toUpperCase()} 합계만 보기`}
+                        title={`${channel.toUpperCase()} 합계만 보기`}
                       >
                         <ChevronDown className="h-3.5 w-3.5" />
                       </button>
@@ -651,21 +631,10 @@ function OverviewTeamsSection({
               </SortableTeamRow>
             );
           });
-        })}
+        })()}
       </SortableContext>
     </tbody>
   );
-}
-
-function parseOverviewSectionDragId(id: string):
-  | { kind: "summary"; gid: OverviewProductGroupId }
-  | { kind: "teams"; gid: OverviewProductGroupId }
-  | null {
-  const sumP = "overview-section-summary:";
-  const teamP = "overview-section-teams:";
-  if (id.startsWith(sumP)) return { kind: "summary", gid: id.slice(sumP.length) as OverviewProductGroupId };
-  if (id.startsWith(teamP)) return { kind: "teams", gid: id.slice(teamP.length) as OverviewProductGroupId };
-  return null;
 }
 
 export default function OverviewTab({ selectedMonth, onMonthsAvailable }: OverviewTabProps) {
@@ -729,6 +698,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
       );
       next[g.id] = {
         orderedTeams: applySavedTeamOrder(baseline, s.teamRowIds),
+        sectionOrder: s.sectionOrder ?? (s.summaryFirst ? ["summary", "b2c", "b2b"] : ["b2c", "b2b", "summary"]),
         summarySectionFirst: s.summaryFirst,
         teamsSectionHidden: s.teamsSectionHidden,
         b2cBlockCollapsed: s.b2cBlockCollapsed,
@@ -795,6 +765,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
       const base = segmentBaselines.get(g.id)?.baseline ?? [];
       const rows = st.orderedTeams.length > 0 || base.length === 0 ? st.orderedTeams : base;
       segments[g.id] = {
+        sectionOrder: st.sectionOrder,
         summaryFirst: st.summarySectionFirst,
         teamRowIds: rows.map(teamRowStableId),
         teamsSectionHidden: st.teamsSectionHidden,
@@ -820,7 +791,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
 
       const sa = parseOverviewSectionDragId(aid);
       const so = parseOverviewSectionDragId(oid);
-      if (sa && so && sa.kind === "summary" && so.kind === "summary" && sa.gid !== so.gid) {
+      if (sa && so && sa.gid !== so.gid) {
         setGroupOrder((prev) => {
           const fromIdx = prev.indexOf(sa.gid);
           const toIdx = prev.indexOf(so.gid);
@@ -829,14 +800,23 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
         });
         return;
       }
-      if (sa && so && sa.gid === so.gid && sa.kind !== so.kind) {
+      if (sa && so && sa.gid === so.gid && aid !== oid) {
         const gid = sa.gid;
         setSegmentState((prev) => {
           const cur = prev[gid] ?? hydratedDefaults?.[gid];
           if (!cur) return prev;
+          const oldOrder = cur.sectionOrder;
+          const fromIdx = oldOrder.indexOf(sa.kind === "summary" ? "summary" : (sa.channel ?? "b2c"));
+          const toIdx = oldOrder.indexOf(so.kind === "summary" ? "summary" : (so.channel ?? "b2c"));
+          if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return prev;
+          const nextOrder = arrayMove(oldOrder, fromIdx, toIdx);
           return {
             ...prev,
-            [gid]: { ...cur, summarySectionFirst: !cur.summarySectionFirst },
+            [gid]: {
+              ...cur,
+              sectionOrder: nextOrder,
+              summarySectionFirst: nextOrder[0] === "summary",
+            },
           };
         });
         return;
@@ -1051,160 +1031,110 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
               const salesRow = sd.sales;
               if (!invRow || !sellinRow || !salesRow) return null;
 
-              const collapsedSet = new Set(st.collapsedBranches);
               const sumId = overviewSectionSummaryId(g.id);
-              const teamId = overviewSectionTeamsId(g.id);
-              const first = st.summarySectionFirst;
+              const sectionOrder = st.sectionOrder;
+              const sectionItems = sectionOrder.map((s) =>
+                s === "summary" ? sumId : overviewSectionTeamsId(g.id, s)
+              );
+              const collapsedSet = new Set(st.collapsedBranches);
 
               return (
                 <SortableContext
                   key={g.id}
-                  items={first ? [sumId, teamId] : [teamId, sumId]}
+                  items={sectionItems}
                   strategy={verticalListSortingStrategy}
                 >
-                  {first ? (
-                    <>
-                      <OverviewSummarySection
+                  {sectionOrder.map((sectionType, sIdx) => {
+                    const isFirst = sIdx === 0;
+                    const isLast = sIdx === sectionOrder.length - 1;
+                    const autoJoinAbove = !isFirst;
+                    const autoJoinBelow = !isLast;
+
+                    if (sectionType === "summary") {
+                      return (
+                        <OverviewSummarySection
+                          key={sumId}
+                          groupLabel={g.groupLabel}
+                          sortableSectionId={sumId}
+                          invRow={invRow}
+                          sellinRow={sellinRow}
+                          salesRow={salesRow}
+                          salesMetricCls={salesMetricCls}
+                          salesLabelCls={salesLabelCls}
+                          teamsSectionHidden={st.teamsSectionHidden}
+                          onToggleTeamsSection={() =>
+                            setSegmentState((p) => {
+                              const c = p[g.id] ?? hydratedDefaults?.[g.id];
+                              if (!c) return p;
+                              return {
+                                ...p,
+                                [g.id]: { ...c, teamsSectionHidden: !c.teamsSectionHidden },
+                              };
+                            })
+                          }
+                          autoColJoinAbove={autoJoinAbove}
+                          autoColJoinBelow={autoJoinBelow}
+                        />
+                      );
+                    }
+
+                    const channel = sectionType as "b2c" | "b2b";
+                    const teamId = overviewSectionTeamsId(g.id, channel);
+
+                    if (st.teamsSectionHidden) {
+                      return (
+                        <OverviewTeamsHiddenPlaceholder
+                          key={teamId}
+                          sortableSectionTeamsId={teamId}
+                          autoColJoinAbove={autoJoinAbove}
+                          autoColJoinBelow={autoJoinBelow}
+                          channel={channel}
+                        />
+                      );
+                    }
+
+                    return (
+                      <OverviewChannelTeamsSection
+                        key={teamId}
+                        groupId={g.id}
                         groupLabel={g.groupLabel}
-                        sortableSectionId={sumId}
-                        invRow={invRow}
-                        sellinRow={sellinRow}
-                        salesRow={salesRow}
-                        salesMetricCls={salesMetricCls}
-                        salesLabelCls={salesLabelCls}
-                        teamsSectionHidden={st.teamsSectionHidden}
-                        onToggleTeamsSection={() =>
+                        sortableSectionTeamsId={teamId}
+                        channel={channel}
+                        orderedTeams={displayTeams}
+                        teamLabelCls={teamLabelCls}
+                        teamBranchCls={teamBranchCls}
+                        teamMetricCls={teamMetricCls}
+                        collapsedBranchKeys={collapsedSet}
+                        onToggleBranchCollapse={(bk) =>
                           setSegmentState((p) => {
                             const c = p[g.id] ?? hydratedDefaults?.[g.id];
                             if (!c) return p;
-                            return {
-                              ...p,
-                              [g.id]: { ...c, teamsSectionHidden: !c.teamsSectionHidden },
-                            };
+                            const next = c.collapsedBranches.includes(bk)
+                              ? c.collapsedBranches.filter((x) => x !== bk)
+                              : [...c.collapsedBranches, bk];
+                            return { ...p, [g.id]: { ...c, collapsedBranches: next } };
                           })
                         }
-                        autoColJoinBelow
-                      />
-                      {st.teamsSectionHidden ? (
-                        <OverviewTeamsHiddenPlaceholder
-                          sortableSectionTeamsId={teamId}
-                          autoColJoinAbove
-                        />
-                      ) : (
-                        <OverviewTeamsSection
-                          groupId={g.id}
-                          groupLabel={g.groupLabel}
-                          sortableSectionTeamsId={teamId}
-                          orderedTeams={displayTeams}
-                          teamLabelCls={teamLabelCls}
-                          teamBranchCls={teamBranchCls}
-                          teamMetricCls={teamMetricCls}
-                          collapsedBranchKeys={collapsedSet}
-                          onToggleBranchCollapse={(bk) =>
-                            setSegmentState((p) => {
-                              const c = p[g.id] ?? hydratedDefaults?.[g.id];
-                              if (!c) return p;
-                              const next = c.collapsedBranches.includes(bk)
-                                ? c.collapsedBranches.filter((x) => x !== bk)
-                                : [...c.collapsedBranches, bk];
-                              return { ...p, [g.id]: { ...c, collapsedBranches: next } };
-                            })
-                          }
-                          onBranchDragStart={(e, k) => onBranchDragStart(e, g.id, k)}
-                          onBranchDragOver={onBranchDragOver}
-                          onBranchDrop={(e, tk) => onBranchDrop(e, g.id, tk)}
-                          autoColJoinAbove
-                          b2cBlockCollapsed={st.b2cBlockCollapsed}
-                          onToggleB2cBlock={() =>
-                            setSegmentState((p) => {
-                              const c = p[g.id] ?? hydratedDefaults?.[g.id];
-                              if (!c) return p;
-                              return { ...p, [g.id]: { ...c, b2cBlockCollapsed: !c.b2cBlockCollapsed } };
-                            })
-                          }
-                          b2bBlockCollapsed={st.b2bBlockCollapsed}
-                          onToggleB2bBlock={() =>
-                            setSegmentState((p) => {
-                              const c = p[g.id] ?? hydratedDefaults?.[g.id];
-                              if (!c) return p;
-                              return { ...p, [g.id]: { ...c, b2bBlockCollapsed: !c.b2bBlockCollapsed } };
-                            })
-                          }
-                        />
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {st.teamsSectionHidden ? (
-                        <OverviewTeamsHiddenPlaceholder
-                          sortableSectionTeamsId={teamId}
-                          autoColJoinBelow
-                        />
-                      ) : (
-                        <OverviewTeamsSection
-                          groupId={g.id}
-                          groupLabel={g.groupLabel}
-                          sortableSectionTeamsId={teamId}
-                          orderedTeams={displayTeams}
-                          teamLabelCls={teamLabelCls}
-                          teamBranchCls={teamBranchCls}
-                          teamMetricCls={teamMetricCls}
-                          collapsedBranchKeys={collapsedSet}
-                          onToggleBranchCollapse={(bk) =>
-                            setSegmentState((p) => {
-                              const c = p[g.id] ?? hydratedDefaults?.[g.id];
-                              if (!c) return p;
-                              const next = c.collapsedBranches.includes(bk)
-                                ? c.collapsedBranches.filter((x) => x !== bk)
-                                : [...c.collapsedBranches, bk];
-                              return { ...p, [g.id]: { ...c, collapsedBranches: next } };
-                            })
-                          }
-                          onBranchDragStart={(e, k) => onBranchDragStart(e, g.id, k)}
-                          onBranchDragOver={onBranchDragOver}
-                          onBranchDrop={(e, tk) => onBranchDrop(e, g.id, tk)}
-                          autoColJoinBelow
-                          b2cBlockCollapsed={st.b2cBlockCollapsed}
-                          onToggleB2cBlock={() =>
-                            setSegmentState((p) => {
-                              const c = p[g.id] ?? hydratedDefaults?.[g.id];
-                              if (!c) return p;
-                              return { ...p, [g.id]: { ...c, b2cBlockCollapsed: !c.b2cBlockCollapsed } };
-                            })
-                          }
-                          b2bBlockCollapsed={st.b2bBlockCollapsed}
-                          onToggleB2bBlock={() =>
-                            setSegmentState((p) => {
-                              const c = p[g.id] ?? hydratedDefaults?.[g.id];
-                              if (!c) return p;
-                              return { ...p, [g.id]: { ...c, b2bBlockCollapsed: !c.b2bBlockCollapsed } };
-                            })
-                          }
-                        />
-                      )}
-                      <OverviewSummarySection
-                        groupLabel={g.groupLabel}
-                        sortableSectionId={sumId}
-                        invRow={invRow}
-                        sellinRow={sellinRow}
-                        salesRow={salesRow}
-                        salesMetricCls={salesMetricCls}
-                        salesLabelCls={salesLabelCls}
-                        teamsSectionHidden={st.teamsSectionHidden}
-                        onToggleTeamsSection={() =>
+                        onBranchDragStart={(e, k) => onBranchDragStart(e, g.id, k)}
+                        onBranchDragOver={onBranchDragOver}
+                        onBranchDrop={(e, tk) => onBranchDrop(e, g.id, tk)}
+                        autoColJoinAbove={autoJoinAbove}
+                        autoColJoinBelow={autoJoinBelow}
+                        channelCollapsed={channel === "b2c" ? st.b2cBlockCollapsed : st.b2bBlockCollapsed}
+                        onToggleChannelCollapsed={() =>
                           setSegmentState((p) => {
                             const c = p[g.id] ?? hydratedDefaults?.[g.id];
                             if (!c) return p;
-                            return {
-                              ...p,
-                              [g.id]: { ...c, teamsSectionHidden: !c.teamsSectionHidden },
-                            };
+                            if (channel === "b2c") {
+                              return { ...p, [g.id]: { ...c, b2cBlockCollapsed: !c.b2cBlockCollapsed } };
+                            } else {
+                              return { ...p, [g.id]: { ...c, b2bBlockCollapsed: !c.b2bBlockCollapsed } };
+                            }
                           })
                         }
-                        autoColJoinAbove
                       />
-                    </>
-                  )}
+                    );
+                  })}
                 </SortableContext>
               );
             })}

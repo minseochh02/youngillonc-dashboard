@@ -28,8 +28,29 @@ export function overviewSectionSummaryId(gid: OverviewProductGroupId): string {
   return `overview-section-summary:${gid}`;
 }
 
-export function overviewSectionTeamsId(gid: OverviewProductGroupId): string {
-  return `overview-section-teams:${gid}`;
+export function overviewSectionTeamsId(gid: OverviewProductGroupId, channel?: "b2c" | "b2b"): string {
+  if (!channel) return `overview-section-teams:${gid}`;
+  return `overview-section-teams-${channel}:${gid}`;
+}
+
+export function parseOverviewSectionDragId(id: string):
+  | { kind: "summary"; gid: OverviewProductGroupId }
+  | { kind: "teams"; gid: OverviewProductGroupId; channel?: "b2c" | "b2b" }
+  | null {
+  const sumP = "overview-section-summary:";
+  const teamP = "overview-section-teams:";
+  const teamB2cP = "overview-section-teams-b2c:";
+  const teamB2bP = "overview-section-teams-b2b:";
+
+  if (id.startsWith(sumP)) return { kind: "summary", gid: id.slice(sumP.length) as OverviewProductGroupId };
+  if (id.startsWith(teamB2cP))
+    return { kind: "teams", gid: id.slice(teamB2cP.length) as OverviewProductGroupId, channel: "b2c" };
+  if (id.startsWith(teamB2bP))
+    return { kind: "teams", gid: id.slice(teamB2bP.length) as OverviewProductGroupId, channel: "b2b" };
+  if (id.startsWith(teamP))
+    return { kind: "teams", gid: id.slice(teamP.length) as OverviewProductGroupId };
+
+  return null;
 }
 
 const OV_PREFIX = "ov";

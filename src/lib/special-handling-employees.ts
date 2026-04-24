@@ -69,6 +69,26 @@ export function sqlPurchaseOnlyClassifiedGroups(groupAlias: string = 'i'): strin
   return `AND ${groupAlias}.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')`;
 }
 
+/** 매입 집계에서 제외하는 거래처코드 (내부·특수 매입처 등). 목록만 수정하면 전역 적용. */
+export const PURCHASE_EXCLUDED_CLIENT_CODES = ['PR00061'] as const;
+
+function sqlPurchaseExcludedClientCodesList(): string {
+  return PURCHASE_EXCLUDED_CLIENT_CODES.map((c) => `'${sqlEscapeSingleQuotedLiteral(c)}'`).join(', ');
+}
+
+/**
+ * SQL predicate: 거래처코드가 제외 목록에 없음. NULL·빈 문자열은 제외 목록과 매칭되지 않으면 포함.
+ * @param clientCodeColumnExpr 예: `p.거래처코드`, `거래처코드`
+ */
+export function sqlPurchaseExcludedClientPredicate(clientCodeColumnExpr: string): string {
+  return `COALESCE(${clientCodeColumnExpr}, '') NOT IN (${sqlPurchaseExcludedClientCodesList()})`;
+}
+
+/** `AND p.거래처코드 …` — purchases 테이블 별칭 기본 `p` */
+export function sqlAndPurchaseExcludeCounterpartyCodes(purchaseAlias: string = 'p'): string {
+  return `AND ${sqlPurchaseExcludedClientPredicate(`${purchaseAlias}.거래처코드`)}`;
+}
+
 /**
  * 거래처 키가 특별처리 담당에게 배정된 거래처가 아닌 경우(또는 키가 NULL).
  * @param clientKeyExpr SQL 식, 예: `s.거래처코드`, `sqlSalesResolvedClientKeyExpr('s')`

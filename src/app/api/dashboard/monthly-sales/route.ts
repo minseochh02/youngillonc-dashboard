@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { sqlAndPurchaseExcludeCounterpartyCodes } from '@/lib/special-handling-employees';
 import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
@@ -97,6 +98,7 @@ export async function GET(request: Request) {
       LEFT JOIN items i ON p.품목코드 = i.품목코드
       LEFT JOIN clients c1 ON p.거래처코드 = c1.거래처코드
       WHERE p.일자 LIKE '${year}-%'
+        ${sqlAndPurchaseExcludeCounterpartyCodes('p')}
       GROUP BY 1, 2
     `;
 
@@ -107,6 +109,7 @@ export async function GET(request: Request) {
       LEFT JOIN items i ON p.품목코드 = i.품목코드
       LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
       WHERE p.일자 LIKE '${year}-%'
+        ${sqlAndPurchaseExcludeCounterpartyCodes('p')}
       GROUP BY 1, 2
     `;
 

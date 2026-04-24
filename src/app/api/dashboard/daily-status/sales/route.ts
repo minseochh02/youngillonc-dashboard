@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareOffices, loadFullDisplayOrderContext } from '@/lib/display-order';
+import { sqlAndPurchaseExcludeCounterpartyCodes } from '@/lib/special-handling-employees';
 
 /**
  * API Endpoint to fetch Daily Sales and Purchase Status data
@@ -120,6 +121,7 @@ export async function GET(request: Request) {
       LEFT JOIN items i ON p.품목코드 = i.품목코드
       LEFT JOIN clients c1 ON p.거래처코드 = c1.거래처코드
       WHERE p.일자 = '${date}'${editedOnlyPurchaseWhere}
+        ${sqlAndPurchaseExcludeCounterpartyCodes('p')}
       GROUP BY 1
     `;
 
@@ -130,6 +132,7 @@ export async function GET(request: Request) {
       LEFT JOIN items i ON p.품목코드 = i.품목코드
       LEFT JOIN warehouses w ON p.창고코드 = w.창고코드
       WHERE p.일자 = '${date}'${editedOnlyPurchaseWhere}
+        ${sqlAndPurchaseExcludeCounterpartyCodes('p')}
       GROUP BY 1
     `;
 

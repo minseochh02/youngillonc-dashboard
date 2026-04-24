@@ -1,6 +1,6 @@
 /**
  * EGDesk User Data Configuration
- * Generated at: 2026-04-22T07:18:28.663Z
+ * Generated at: 2026-04-24T02:13:24.320Z
  *
  * This file contains type-safe definitions for your EGDesk tables.
  */
@@ -25,6 +25,7 @@ export const TABLES = {
     name: 'user_data_embedding_metadata',
     displayName: 'user_data_embedding_metadata',
     description: 'Imported from user_database_export_2026-04-20.sql',
+    rowCount: 0,
     columnCount: 8,
     columns: ['id', 'table_id', 'column_name', 'total_embeddings', 'embedding_model', 'embedding_dimensions', 'last_updated', 'estimated_cost_usd']
   } as TableDefinition,
@@ -32,6 +33,7 @@ export const TABLES = {
     name: 'user_data_embeddings',
     displayName: 'user_data_embeddings',
     description: 'Imported from user_database_export_2026-04-20.sql',
+    rowCount: 0,
     columnCount: 9,
     columns: ['id', 'table_id', 'row_id', 'column_name', 'embedding_model', 'embedding_dimensions', 'embedding', 'created_at', 'updated_at']
   } as TableDefinition,
@@ -39,6 +41,7 @@ export const TABLES = {
     name: 'sync_activity_log',
     displayName: 'sync_activity_log',
     description: 'Imported from user_database_export_2026-04-20.sql',
+    rowCount: 0,
     columnCount: 12,
     columns: ['id', 'config_id', 'file_name', 'file_path', 'status', 'rows_imported', 'rows_skipped', 'duplicates_skipped', 'error_message', 'started_at', 'completed_at', 'duration_ms']
   } as TableDefinition,
@@ -158,6 +161,7 @@ export const TABLES = {
   table19: {
     name: 'sales_goals',
     displayName: '판매 목표',
+    rowCount: 0,
     columnCount: 10,
     columns: ['id', 'year', 'month', 'employee_name', 'category_type', 'category', 'industry', 'sector', 'target_weight', 'target_amount']
   } as TableDefinition,
@@ -185,7 +189,7 @@ export const TABLES = {
   table23: {
     name: 'pending_purchases',
     displayName: '미구매현황',
-    rowCount: 92,
+    rowCount: 230,
     columnCount: 12,
     columns: ['id', '일자', '품목코드', '수량', '잔량', '잔량_중량_', '단가', '합계', '납기일자', '거래처코드', '창고명', '품목별납기일자']
   } as TableDefinition,
@@ -294,6 +298,7 @@ export const TABLES = {
     name: 'user_data_files',
     displayName: 'user_data_files',
     description: 'Imported from user_database_export_2026-03-12.sql',
+    rowCount: 0,
     columnCount: 15,
     columns: ['id', 'table_id', 'row_id', 'column_name', 'filename', 'mime_type', 'size_bytes', 'storage_type', 'file_data', 'file_path', 'is_compressed', 'compression_type', 'original_size', 'created_at', 'updated_at']
   } as TableDefinition,

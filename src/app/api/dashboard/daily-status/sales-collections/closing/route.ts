@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import { combinedInventoryUnionSql } from '@/lib/inventory-snapshot-combined';
+import { sqlPurchaseExcludedClientPredicate } from '@/lib/special-handling-employees';
 import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
@@ -57,6 +58,7 @@ export async function GET(request: Request) {
     const basePurchSubquery = `
       (
         SELECT 일자, 거래처코드, 품목코드, 중량, 합계, 공급가액, purchases.창고코드 FROM purchases
+        WHERE ${sqlPurchaseExcludedClientPredicate('거래처코드')}
       )
     `;
 
