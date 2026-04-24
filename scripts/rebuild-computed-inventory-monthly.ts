@@ -25,7 +25,11 @@ import {
   SNAPSHOT_IMPORTED_AT,
   combinedInventoryUnionSql,
 } from '../src/lib/inventory-snapshot-combined';
-import { sqlPurchaseExcludedClientPredicate } from '../src/lib/special-handling-employees';
+import { 
+  sqlMeetingPurchaseIncludedClientPredicate,
+  sqlAndEmployeeNotSpecialHandling,
+  sqlAndSalesRemarkNotExact
+} from '../src/lib/special-handling-employees';
 
 const TABLE_NAME = 'computed_inventory_monthly';
 const DISPLAY_NAME = 'computed 재고(월말)';
@@ -142,7 +146,7 @@ async function main() {
       SELECT p.일자, i.품목그룹1코드, p.중량
       FROM purchases p
       LEFT JOIN items i ON p.품목코드 = i.품목코드
-      WHERE ${sqlPurchaseExcludedClientPredicate('p.거래처코드')}
+      WHERE ${sqlMeetingPurchaseIncludedClientPredicate('p.거래처코드')}
     ) p
     WHERE p.일자 IS NOT NULL AND p.일자 != '' AND LENGTH(p.일자) >= 7
     GROUP BY 1, 2
@@ -153,19 +157,23 @@ async function main() {
       ${categoryExpr('s')} as category,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight
     FROM (
-      SELECT s.일자, i.품목그룹1코드, s.중량
+      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
       FROM sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       UNION ALL
-      SELECT s.일자, i.품목그룹1코드, s.중량
+      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
       FROM east_division_sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       UNION ALL
-      SELECT s.일자, i.품목그룹1코드, s.중량
+      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
       FROM west_division_sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
     ) s
+    LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+    LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
     WHERE s.일자 IS NOT NULL AND s.일자 != '' AND LENGTH(s.일자) >= 7
+      ${sqlAndEmployeeNotSpecialHandling()}
+      ${sqlAndSalesRemarkNotExact('s.적요')}
     GROUP BY 1, 2
   `;
 

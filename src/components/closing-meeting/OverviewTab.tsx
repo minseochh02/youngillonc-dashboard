@@ -872,7 +872,8 @@ function OverviewChannelTeamsSection({
 
             // 2. Branch Subtotal Row (Only if multiple teams or collapsed)
             if (hasMultipleTeams) {
-              const subtotalSid = `subtotal:${bb.fullKey}`;
+              // Same 지사 may appear in multiple non-adjacent runs; fullKey matches per run but keys must be unique.
+              const subtotalSid = `subtotal:${bb.fullKey}:${bbi}`;
               const isFirstRowInChannel = isFirstBlockInChannel && branchCollapsed;
 
               const subtotalBg = "bg-orange-100/60 dark:bg-orange-900/30";
