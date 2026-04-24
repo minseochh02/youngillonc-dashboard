@@ -69,24 +69,57 @@ export function sqlPurchaseOnlyClassifiedGroups(groupAlias: string = 'i'): strin
   return `AND ${groupAlias}.품목그룹1코드 IN ('MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL')`;
 }
 
-/** 매입 집계에서 제외하는 거래처코드 (내부·특수 매입처 등). 목록만 수정하면 전역 적용. */
-export const PURCHASE_EXCLUDED_CLIENT_CODES = ['PR00061'] as const;
+/** 
+ * 마감회의 및 각종 회의(B2C, B2B) 매입 집계에서 사용하는 유일한 거래처코드.
+ * 이 목록에 있는 거래처의 매입 데이터만 회의용 매입/계산재고에 반영됩니다.
+ */
+export const MEETING_PURCHASE_INCLUDED_CLIENT_CODES = ['PR00061'] as const;
 
-function sqlPurchaseExcludedClientCodesList(): string {
-  return PURCHASE_EXCLUDED_CLIENT_CODES.map((c) => `'${sqlEscapeSingleQuotedLiteral(c)}'`).join(', ');
+function sqlMeetingPurchaseIncludedClientCodesList(): string {
+  return MEETING_PURCHASE_INCLUDED_CLIENT_CODES.map((c) => `'${sqlEscapeSingleQuotedLiteral(c)}'`).join(', ');
 }
 
 /**
- * SQL predicate: 거래처코드가 제외 목록에 없음. NULL·빈 문자열은 제외 목록과 매칭되지 않으면 포함.
+ * SQL predicate: 거래처코드가 회의용 포함 목록에 있음.
  * @param clientCodeColumnExpr 예: `p.거래처코드`, `거래처코드`
  */
-export function sqlPurchaseExcludedClientPredicate(clientCodeColumnExpr: string): string {
-  return `COALESCE(${clientCodeColumnExpr}, '') NOT IN (${sqlPurchaseExcludedClientCodesList()})`;
+export function sqlMeetingPurchaseIncludedClientPredicate(clientCodeColumnExpr: string): string {
+  return `COALESCE(${clientCodeColumnExpr}, '') IN (${sqlMeetingPurchaseIncludedClientCodesList()})`;
 }
 
-/** `AND p.거래처코드 …` — purchases 테이블 별칭 기본 `p` */
-export function sqlAndPurchaseExcludeCounterpartyCodes(purchaseAlias: string = 'p'): string {
-  return `AND ${sqlPurchaseExcludedClientPredicate(`${purchaseAlias}.거래처코드`)}`;
+/** `AND p.거래처코드 …` — 회의 전용 포함 필터. */
+export function sqlAndPurchaseIncludeMeetingCounterpartyCodes(purchaseAlias: string = 'p'): string {
+  return `AND ${sqlMeetingPurchaseIncludedClientPredicate(`${purchaseAlias}.거래처코드`)}`;
+}
+
+/** 
+ * @deprecated 회의용 매입 필터는 이제 Inclusion(포함) 방식입니다.
+ * 대신 sqlAndPurchaseIncludeMeetingCounterpartyCodes를 사용하세요.
+ */
+export function sqlAndPurchaseExcludeMeetingCounterpartyCodes(purchaseAlias: string = 'p'): string {
+  return sqlAndPurchaseIncludeMeetingCounterpartyCodes(purchaseAlias);
+}
+
+/** 
+ * @deprecated 대신 sqlMeetingPurchaseIncludedClientPredicate를 사용하세요.
+ */
+export function sqlMeetingPurchaseExcludedClientPredicate(clientCodeColumnExpr: string): string {
+  return sqlMeetingPurchaseIncludedClientPredicate(clientCodeColumnExpr);
+}
+
+/** 
+ * @deprecated 대시보드 전체 적용에서 회의 전용 적용으로 변경되었습니다.
+ * 대신 sqlAndPurchaseExcludeMeetingCounterpartyCodes를 사용하세요.
+ */
+export function sqlAndPurchaseExcludeCounterpartyCodes(_purchaseAlias: string = 'p'): string {
+  return '';
+}
+
+/** 
+ * @deprecated 대신 sqlMeetingPurchaseExcludedClientPredicate를 사용하세요.
+ */
+export function sqlPurchaseExcludedClientPredicate(_clientCodeColumnExpr: string): string {
+  return '1=1';
 }
 
 /**

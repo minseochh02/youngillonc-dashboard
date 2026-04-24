@@ -11,9 +11,9 @@ import { buildCumulativeViewPayload } from '@/lib/closing-meeting-cumulative';
 import { SNAPSHOT_IMPORTED_AT, combinedInventoryUnionSql } from '@/lib/inventory-snapshot-combined';
 import {
   sqlAndEmployeeNotSpecialHandling,
-  sqlAndPurchaseExcludeCounterpartyCodes,
+  sqlAndPurchaseExcludeMeetingCounterpartyCodes,
   sqlPurchaseOnlyClassifiedGroups,
-  sqlPurchaseExcludedClientPredicate,
+  sqlMeetingPurchaseExcludedClientPredicate,
   sqlAndSalesRemarkNotExact,
   sqlSalesResolvedClientKeyExpr,
 } from '@/lib/special-handling-employees';
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
         LEFT JOIN items i ON p.품목코드 = i.품목코드
         WHERE 1=1
           ${sqlPurchaseOnlyClassifiedGroups('i')}
-          ${sqlAndPurchaseExcludeCounterpartyCodes('p')}
+          ${sqlAndPurchaseExcludeMeetingCounterpartyCodes('p')}
       )
     `;
 
@@ -88,7 +88,7 @@ export async function GET(request: Request) {
         SELECT 일자 FROM sales
         UNION ALL SELECT 일자 FROM east_division_sales
         UNION ALL SELECT 일자 FROM west_division_sales
-        UNION ALL SELECT 일자 FROM purchases WHERE ${sqlPurchaseExcludedClientPredicate('거래처코드')}
+        UNION ALL SELECT 일자 FROM purchases WHERE ${sqlMeetingPurchaseExcludedClientPredicate('거래처코드')}
       ) WHERE 일자 IS NOT NULL
         AND 일자 != ''
         AND substr(일자, 1, 4) BETWEEN '2017' AND '2099'

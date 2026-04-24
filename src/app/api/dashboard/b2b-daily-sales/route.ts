@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
 import {
   sqlAndEmployeeNotSpecialHandlingCoalescedEmpty,
-  sqlAndPurchaseExcludeCounterpartyCodes,
+  sqlAndPurchaseExcludeMeetingCounterpartyCodes,
 } from '@/lib/special-handling-employees';
 import { sqlPurchaseAmountExpr } from '@/lib/vat-amount-sql';
 
@@ -65,7 +65,7 @@ export async function GET(request: Request) {
       WHERE p.일자 = '${date}'
         AND ec.b2c_팀 = 'B2B'
         ${sqlAndEmployeeNotSpecialHandlingCoalescedEmpty()}
-        ${sqlAndPurchaseExcludeCounterpartyCodes('p')}
+        ${sqlAndPurchaseExcludeMeetingCounterpartyCodes('p')}
         ${branchFilter}
       GROUP BY
         branch,
