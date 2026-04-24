@@ -11,6 +11,10 @@ const WHERE_B2B = `ec.b2c_팀 = 'B2B'`;
 
 const B2B_TEAM = `COALESCE(NULLIF(TRIM(ec.b2b팀), ''), '미분류')`;
 
+/** Simple server-side cache to speed up repeated requests */
+const PAYLOAD_CACHE = new Map<string, { timestamp: number; payload: CumulativeViewPayload }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 /** 담당자 사원분류(전체사업소) → 표시용 사업소 (closing-meeting route와 동일) */
 const BRANCH_FROM_EC = `
   CASE
@@ -185,6 +189,14 @@ export async function buildCumulativeViewPayload(params: {
     basePurchasesSubquery,
     cumulativeChannel = 'combined',
   } = params;
+
+  // 1. Check server-side cache
+  const cacheKey = `${currentMonthStr}:${cumulativeChannel}`;
+  const cached = PAYLOAD_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.payload;
+  }
+
   const monthNum = currentMonthStr.split('-')[1];
   const monthInt = parseInt(monthNum, 10);
   const y0 = currentYear;
@@ -1318,11 +1330,16 @@ export async function buildCumulativeViewPayload(params: {
     sections.push({ category: cat, rows });
   }
 
-  return {
+  const payload: CumulativeViewPayload = {
     yearLabels: { yPast3: y3, yPast2: y2, yPast1: y1, yCurrent: y0 },
     monthLabel: `${monthInt}월`,
     sections,
     availableMonths,
     currentMonth: currentMonthStr,
   };
+
+  // Store in cache
+  PAYLOAD_CACHE.set(cacheKey, { timestamp: Date.now(), payload });
+
+  return payload;
 }

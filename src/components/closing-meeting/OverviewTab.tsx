@@ -243,6 +243,10 @@ function OverviewSummarySection({
   onToggleTeamsSection,
   autoColJoinAbove,
   autoColJoinBelow,
+  salesLabel,
+  extraRows,
+  salesBgClass,
+  salesMetricBgClass,
 }: {
   groupLabel: string;
   sortableSectionId: string;
@@ -258,13 +262,24 @@ function OverviewSummarySection({
   autoColJoinAbove?: boolean;
   /** 팀 블록이 아래에 있을 때 아래쪽 AUTO th와 경계 맞춤 */
   autoColJoinBelow?: boolean;
+  salesLabel?: string;
+  extraRows?: {
+    label: string;
+    metrics: CumulativeMetricBlock;
+    bgClass?: string;
+    metricBgClass?: string;
+  }[];
+  salesBgClass?: string;
+  salesMetricBgClass?: string;
 }) {
   const sortable = useSortable({ id: sortableSectionId });
+  const rowCount = 3 + (extraRows?.length ?? 0);
+
   return (
     <tbody ref={sortable.setNodeRef} style={{ opacity: sortable.isDragging ? 0.55 : undefined }}>
       <tr>
         <th
-          rowSpan={3}
+          rowSpan={rowCount}
           className={`${thCatProduct}${autoColJoinAbove ? ` ${autoColJoinAboveCls}` : ""}${autoColJoinBelow ? ` ${autoColJoinBelowCls}` : ""}`}
         >
           <span className="flex flex-col items-center gap-1">
@@ -295,7 +310,7 @@ function OverviewSummarySection({
         <MetricCells block={sellinRow} tdClass={tdNum} />
       </tr>
       <tr>
-        <th className={salesLabelCls} colSpan={2}>
+        <th className={salesBgClass ? `${thSub} ${salesBgClass} font-bold` : salesLabelCls} colSpan={2}>
           <span className="inline-flex flex-wrap items-center justify-center gap-1">
             <button
               type="button"
@@ -315,15 +330,28 @@ function OverviewSummarySection({
               )}
             </button>
             <span className="inline-flex items-center gap-1.5">
-              <span className="rounded-sm border border-zinc-500/40 dark:border-zinc-400/50 bg-white/70 dark:bg-zinc-900/70 px-1.5 py-0.5 text-[10px] font-bold leading-none">
-                합계
-              </span>
-              <strong>판매량</strong>
+              <strong>{salesLabel || "판매량"}</strong>
             </span>
           </span>
         </th>
-        <MetricCells block={salesRow} tdClass={salesMetricCls} />
+        <MetricCells
+          block={salesRow}
+          tdClass={salesMetricBgClass ? `${tdNum} ${salesMetricBgClass} font-bold text-zinc-900 dark:text-zinc-100` : salesMetricCls}
+        />
       </tr>
+      {extraRows?.map((row) => (
+        <tr key={row.label}>
+          <th className={row.bgClass ? `${thSub} ${row.bgClass} font-bold` : salesLabelCls} colSpan={2}>
+            <span className="inline-flex items-center gap-1.5 pl-6">
+              <strong>{row.label}</strong>
+            </span>
+          </th>
+          <MetricCells
+            block={row.metrics}
+            tdClass={row.metricBgClass ? `${tdNum} ${row.metricBgClass} font-bold text-zinc-900 dark:text-zinc-100` : salesMetricCls}
+          />
+        </tr>
+      ))}
     </tbody>
   );
 }
@@ -858,6 +886,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
   const [data, setData] = useState<CumulativeViewPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [subHeaderTopPx, setSubHeaderTopPx] = useState(40);
+  const cacheRef = useRef<Map<string, CumulativeViewPayload>>(new Map());
   const [segmentState, setSegmentState] = useState<
     Partial<Record<OverviewProductGroupId, OverviewSegmentUiState>>
   >({});
@@ -951,6 +980,13 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const cacheKey = `${selectedMonth}:${includeVat}`;
+      if (cacheRef.current.has(cacheKey)) {
+        setData(cacheRef.current.get(cacheKey)!);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       try {
         const url = withIncludeVat(
@@ -962,6 +998,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
         if (cancelled) return;
         if (json.success && json.data?.sections) {
           setData(json.data);
+          cacheRef.current.set(cacheKey, json.data);
           if (onMonthsAvailable && json.data.availableMonths && !reportedMonths.current) {
             reportedMonths.current = true;
             onMonthsAvailable(json.data.availableMonths, json.data.currentMonth);
@@ -1289,6 +1326,42 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
               );
               const collapsedSet = new Set(st.collapsedBranches);
 
+              // Additional summary rows for AUTO only
+              let salesLabel: string | undefined;
+              let extraRows: {
+                label: string;
+                metrics: CumulativeMetricBlock;
+                bgClass?: string;
+                metricBgClass?: string;
+              }[] | undefined;
+              let salesBgClass: string | undefined;
+              let salesMetricBgClass: string | undefined;
+
+              if (g.id === "pvl-cvl") {
+                salesLabel = "AUTO 합계";
+                salesBgClass = "bg-yellow-100 dark:bg-yellow-900/40";
+                salesMetricBgClass = "bg-yellow-100 dark:bg-yellow-900/40";
+
+                const b2cRows = displayTeams.filter((t) => t.channel === "b2c");
+                const b2cSubtotal = mergeMetricBlocks(b2cRows.map((t) => t.metrics));
+
+                const b2cTeamRows = b2cRows.filter((t) => t.team.trim().endsWith("팀"));
+                const b2cTeamSubtotal = mergeMetricBlocks(b2cTeamRows.map((t) => t.metrics));
+
+                extraRows = [];
+                if (b2cSubtotal) {
+                  extraRows.push({ label: "B2C 소계", metrics: b2cSubtotal });
+                }
+                if (b2cTeamSubtotal) {
+                  extraRows.push({
+                    label: "B2C 팀 소계",
+                    metrics: b2cTeamSubtotal,
+                    bgClass: "bg-[#f5f5dc] dark:bg-[#4a4a3a]", // Tan
+                    metricBgClass: "bg-[#f5f5dc] dark:bg-[#4a4a3a]",
+                  });
+                }
+              }
+
               return (
                 <SortableContext
                   key={g.id}
@@ -1325,6 +1398,10 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
                           }
                           autoColJoinAbove={autoJoinAbove}
                           autoColJoinBelow={autoJoinBelow}
+                          salesLabel={salesLabel}
+                          extraRows={extraRows}
+                          salesBgClass={salesBgClass}
+                          salesMetricBgClass={salesMetricBgClass}
                         />
                       );
                     }
