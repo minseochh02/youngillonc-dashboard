@@ -994,6 +994,7 @@ export async function GET(request: Request) {
 
     if (tab === 'cumulative-view') {
       const ch = searchParams.get('cumulativeChannel');
+      const forceRefresh = searchParams.get('refresh') === 'true';
       const cumulativeChannel =
         ch === 'b2c' || ch === 'b2b' || ch === 'combined' ? ch : 'combined';
       const cumulativeData = await buildCumulativeViewPayload({
@@ -1003,6 +1004,7 @@ export async function GET(request: Request) {
         baseSalesSubquery,
         basePurchasesSubquery,
         cumulativeChannel,
+        refresh: forceRefresh,
       });
       return NextResponse.json({ success: true, data: cumulativeData });
     }

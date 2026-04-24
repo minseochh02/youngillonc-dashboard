@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, GripVertical, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical, Loader2, RotateCw } from "lucide-react";
 import {
   DndContext,
   type DragEndEvent,
@@ -977,46 +977,43 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
+  const fetchOverviewData = useCallback(async (forceRefresh = false) => {
+    setLoading(true);
+    try {
       const cacheKey = `${selectedMonth}:${includeVat}`;
-      if (cacheRef.current.has(cacheKey)) {
+      if (!forceRefresh && cacheRef.current.has(cacheKey)) {
         setData(cacheRef.current.get(cacheKey)!);
         setLoading(false);
         return;
       }
 
-      setLoading(true);
-      try {
-        const url = withIncludeVat(
-          `/api/dashboard/closing-meeting?tab=cumulative-view${selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : ""}`,
-          includeVat
-        );
-        const res = await apiFetch(url);
-        const json = await res.json();
-        if (cancelled) return;
-        if (json.success && json.data?.sections) {
-          setData(json.data);
-          cacheRef.current.set(cacheKey, json.data);
-          if (onMonthsAvailable && json.data.availableMonths && !reportedMonths.current) {
-            reportedMonths.current = true;
-            onMonthsAvailable(json.data.availableMonths, json.data.currentMonth);
-          }
-        } else {
-          setData(null);
+      const url = withIncludeVat(
+        `/api/dashboard/closing-meeting?tab=cumulative-view${selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : ""}${forceRefresh ? "&refresh=true" : ""}`,
+        includeVat
+      );
+      const res = await apiFetch(url);
+      const json = await res.json();
+      if (json.success && json.data?.sections) {
+        setData(json.data);
+        cacheRef.current.set(cacheKey, json.data);
+        if (onMonthsAvailable && json.data.availableMonths && !reportedMonths.current) {
+          reportedMonths.current = true;
+          onMonthsAvailable(json.data.availableMonths, json.data.currentMonth);
         }
-      } catch (e) {
-        console.error("Overview cumulative fetch failed", e);
-        if (!cancelled) setData(null);
-      } finally {
-        if (!cancelled) setLoading(false);
+      } else {
+        setData(null);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    } catch (e) {
+      console.error("Overview cumulative fetch failed", e);
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [selectedMonth, includeVat, onMonthsAvailable]);
+
+  useEffect(() => {
+    fetchOverviewData();
+  }, [fetchOverviewData]);
 
   const mergedForPersist = useMemo(() => {
     if (!segmentBaselines || !hydratedDefaults) return null;
@@ -1229,10 +1226,21 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500 dark:text-zinc-400">
-        구분 열의 <GripVertical className="inline h-3 w-3 align-text-bottom" /> 를 드래그해 요약·팀 블록 순서, 지사
-        블록, 팀 행 순서를 바꿀 수 있습니다. 품목군별로 동일합니다.
-      </p>
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          구분 열의 <GripVertical className="inline h-3 w-3 align-text-bottom" /> 를 드래그해 요약·팀 블록 순서, 지사
+          블록, 팀 행 순서를 바꿀 수 있습니다. 품목군별로 동일합니다.
+        </p>
+        <button
+          type="button"
+          onClick={() => fetchOverviewData(true)}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 shadow-sm hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900"
+        >
+          <RotateCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          데이터 새로고침
+        </button>
+      </div>
       <div className="max-h-[min(75vh,920px)] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <table className="w-full min-w-[1100px] table-fixed border-collapse">

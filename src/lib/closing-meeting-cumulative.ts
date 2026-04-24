@@ -180,6 +180,8 @@ export async function buildCumulativeViewPayload(params: {
   basePurchasesSubquery: string;
   /** `combined` = 마감회의 전체(기본). `b2c` / `b2b` = 해당 채널만. */
   cumulativeChannel?: CumulativeViewChannel;
+  /** If true, ignore and overwrite server-side cache */
+  refresh?: boolean;
 }): Promise<CumulativeViewPayload> {
   const {
     currentMonthStr,
@@ -188,13 +190,16 @@ export async function buildCumulativeViewPayload(params: {
     baseSalesSubquery,
     basePurchasesSubquery,
     cumulativeChannel = 'combined',
+    refresh = false,
   } = params;
 
   // 1. Check server-side cache
   const cacheKey = `${currentMonthStr}:${cumulativeChannel}`;
-  const cached = PAYLOAD_CACHE.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return cached.payload;
+  if (!refresh) {
+    const cached = PAYLOAD_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      return cached.payload;
+    }
   }
 
   const monthNum = currentMonthStr.split('-')[1];
