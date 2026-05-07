@@ -654,7 +654,7 @@ function CustomChannelTeamsSection({
   );
 }
 
-const G3_LABELS: Record<string, string> = { STA: "Standard", PRE: "Premium", FLA: "Flagship" };
+const G3_LABELS: Record<string, string> = { STA: "Standard", PRE: "Premium", FLA: "Flagship", ALL: "Alliance" };
 function g3DisplayLabel(v: string): string {
   return G3_LABELS[v] ?? v;
 }

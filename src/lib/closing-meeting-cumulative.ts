@@ -1369,7 +1369,7 @@ export async function buildCumulativeViewPayload(params: {
 const G3_SALES_EXPR = `TRIM(COALESCE(s.품목그룹3코드, ''))`;
 const G3_PUR_EXPR = `TRIM(COALESCE(p.품목그룹3코드, ''))`;
 // Known tier order — any other codes land after these alphabetically
-const G3_KNOWN_ORDER = ['STA', 'PRE', 'FLA'];
+const G3_KNOWN_ORDER = ['STA', 'PRE', 'FLA', 'ALL'];
 function g3SortIndex(v: string): number {
   const i = G3_KNOWN_ORDER.indexOf(v);
   return i >= 0 ? i : G3_KNOWN_ORDER.length;
