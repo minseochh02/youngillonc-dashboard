@@ -38,6 +38,7 @@ import {
   type TeamSalesBreakdownRow,
 } from "@/lib/cumulative-section-aggregate";
 import {
+  applySavedTeamOrder,
   channelFromBranchBlockKey,
   normalizeOverviewBranchLabel,
   overviewBranchBlockKey,
@@ -654,6 +655,36 @@ function CustomChannelTeamsSection({
   );
 }
 
+// ── Per-filter order persistence ──────────────────────────────────────────
+const CG_LS_PREFIX = "closing-custom-group-v1";
+
+type CustomGroupOrderEntry = {
+  teamRowIds: string[];
+  collapsedBranches: string[];
+};
+
+function buildFilterKey(month: string): string {
+  return `${CG_LS_PREFIX}:${month}`;
+}
+
+function loadCustomGroupOrder(key: string): CustomGroupOrderEntry | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as CustomGroupOrderEntry;
+  } catch {
+    return null;
+  }
+}
+
+function saveCustomGroupOrder(key: string, entry: CustomGroupOrderEntry): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, JSON.stringify(entry));
+  } catch { /* ignore quota */ }
+}
+
 const G3_LABELS: Record<string, string> = { STA: "Standard", PRE: "Premium", FLA: "Flagship", ALL: "Alliance" };
 function g3DisplayLabel(v: string): string {
   return G3_LABELS[v] ?? v;
@@ -680,6 +711,16 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
   const reportedMonths = useRef(false);
   const firstHeadRowRef = useRef<HTMLTableRowElement>(null);
   const secondHeadRowRef = useRef<HTMLTableRowElement>(null);
+
+  // Single global key for this tab — persists across months and filter combos
+  const filterKey = useMemo(() => buildFilterKey("global"), []);
+  // Refs so drag callbacks (memoized with []) can always read current values
+  const filterKeyRef = useRef(filterKey);
+  const orderedTeamsRef = useRef<TeamSalesBreakdownRow[]>([]);
+  const collapsedBranchesRef = useRef<string[]>([]);
+  useEffect(() => { filterKeyRef.current = filterKey; }, [filterKey]);
+  useEffect(() => { orderedTeamsRef.current = orderedTeams; }, [orderedTeams]);
+  useEffect(() => { collapsedBranchesRef.current = collapsedBranches; }, [collapsedBranches]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -780,10 +821,11 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
     );
   }, [filteredSections, selectedCats]);
 
-  // Reset ordered teams and collapsed branches when baseline changes
+  // When filter changes, apply saved order if available; otherwise use baseline as-is
   useEffect(() => {
-    setOrderedTeams(baseline);
-    setCollapsedBranches([]);
+    const saved = loadCustomGroupOrder(filterKeyRef.current);
+    setOrderedTeams(applySavedTeamOrder(baseline, saved?.teamRowIds ?? null));
+    setCollapsedBranches(saved?.collapsedBranches ?? []);
   }, [baseline]);
 
   const aggMetrics = useMemo(() => {
@@ -850,7 +892,12 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
           const newIndex = prev.findIndex((t) => teamRowStableId(t) === po);
           if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return prev;
           if (prev[oldIndex]?.channel !== prev[newIndex]?.channel) return prev;
-          return arrayMove(prev, oldIndex, newIndex);
+          const next = arrayMove(prev, oldIndex, newIndex);
+          saveCustomGroupOrder(filterKeyRef.current, {
+            teamRowIds: next.map(teamRowStableId),
+            collapsedBranches: collapsedBranchesRef.current,
+          });
+          return next;
         });
       }
     },
@@ -885,7 +932,27 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
     const fromCh = channelFromBranchBlockKey(fromInner);
     const toCh = channelFromBranchBlockKey(toInner);
     if (fromCh && toCh && fromCh !== toCh) return;
-    setOrderedTeams((prev) => reorderBranchBlocks(prev, fromInner, toInner));
+    setOrderedTeams((prev) => {
+      const next = reorderBranchBlocks(prev, fromInner, toInner);
+      if (next !== prev) {
+        saveCustomGroupOrder(filterKeyRef.current, {
+          teamRowIds: next.map(teamRowStableId),
+          collapsedBranches: collapsedBranchesRef.current,
+        });
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleBranchCollapse = useCallback((bk: string) => {
+    setCollapsedBranches((prev) => {
+      const next = prev.includes(bk) ? prev.filter((x) => x !== bk) : [...prev, bk];
+      saveCustomGroupOrder(filterKeyRef.current, {
+        teamRowIds: orderedTeamsRef.current.map(teamRowStableId),
+        collapsedBranches: next,
+      });
+      return next;
+    });
   }, []);
 
   const toggleCat = useCallback((cat: string) => {
@@ -1163,11 +1230,7 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
                       teamBranchCls={teamBranchCls}
                       teamMetricCls={teamMetricCls}
                       collapsedBranchKeys={collapsedSet}
-                      onToggleBranchCollapse={(bk) =>
-                        setCollapsedBranches((prev) =>
-                          prev.includes(bk) ? prev.filter((x) => x !== bk) : [...prev, bk]
-                        )
-                      }
+                      onToggleBranchCollapse={toggleBranchCollapse}
                       onBranchDragStart={onBranchDragStart}
                       onBranchDragOver={onBranchDragOver}
                       onBranchDrop={onBranchDrop}
