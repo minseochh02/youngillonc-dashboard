@@ -57,6 +57,14 @@ const PUR_CAT = `
 `;
 
 const CATEGORIES = ['MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL', '기타'] as const;
+// Raw (pass-through) versions for custom-group — no ELSE '기타' fallback
+const SALES_CAT_RAW = `TRIM(COALESCE(s.품목그룹1코드, ''))`;
+const PUR_CAT_RAW = `TRIM(COALESCE(p.품목그룹1코드, ''))`;
+const CAT_KNOWN_ORDER = ['MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL'];
+function catSortIndex(v: string): number {
+  const i = CAT_KNOWN_ORDER.indexOf(v);
+  return i >= 0 ? i : CAT_KNOWN_ORDER.length;
+}
 const SALES_CLIENT_KEY_EXPR = sqlSalesResolvedClientKeyExpr('s');
 
 export interface CumulativeMetricBlock {
@@ -110,6 +118,8 @@ export interface CumulativeViewPayload {
   sections: CumulativeSection[];
   availableMonths: string[];
   currentMonth: string;
+  availableGroup3Codes?: string[];
+  availableGroup1Codes?: string[];
 }
 
 /** 증감율: 동일 기간 YTD끼리 (전년 동월까지 vs 당해 동월까지) */
@@ -1398,7 +1408,7 @@ export async function buildCustomGroupPayload(params: {
 
   const salesAnnualG3Sql = `
     SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
-      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      ${SALES_CAT_RAW} as category, ${G3_SALES_EXPR} as group3,
       (${BRANCH_FROM_EC}) as branch, ec.b2c_팀 as team,
       SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
@@ -1412,7 +1422,7 @@ export async function buildCustomGroupPayload(params: {
 
   const purAnnualG3Sql = `
     SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
-      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      ${PUR_CAT_RAW} as category, ${G3_PUR_EXPR} as group3,
       SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
     FROM (${basePurchasesSubquery}) p
     LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
@@ -1423,7 +1433,7 @@ export async function buildCustomGroupPayload(params: {
 
   const salesYtdG3Sql = `
     SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
-      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      ${SALES_CAT_RAW} as category, ${G3_SALES_EXPR} as group3,
       (${BRANCH_FROM_EC}) as branch, ec.b2c_팀 as team,
       SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
@@ -1437,7 +1447,7 @@ export async function buildCustomGroupPayload(params: {
 
   const purYtdG3Sql = `
     SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
-      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      ${PUR_CAT_RAW} as category, ${G3_PUR_EXPR} as group3,
       SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
     FROM (${basePurchasesSubquery}) p
     LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
@@ -1448,7 +1458,7 @@ export async function buildCustomGroupPayload(params: {
 
   const salesMonthG3Sql = `
     SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
-      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      ${SALES_CAT_RAW} as category, ${G3_SALES_EXPR} as group3,
       (${BRANCH_FROM_EC}) as branch, ec.b2c_팀 as team,
       SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
@@ -1462,7 +1472,7 @@ export async function buildCustomGroupPayload(params: {
 
   const purMonthG3Sql = `
     SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
-      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      ${PUR_CAT_RAW} as category, ${G3_PUR_EXPR} as group3,
       SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
     FROM (${basePurchasesSubquery}) p
     LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
@@ -1473,7 +1483,7 @@ export async function buildCustomGroupPayload(params: {
 
   const b2bSalesAnnualG3Sql = `
     SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
-      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      ${SALES_CAT_RAW} as category, ${G3_SALES_EXPR} as group3,
       (${BRANCH_FROM_EC}) as branch, ${B2B_TEAM} as team,
       SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
@@ -1486,7 +1496,7 @@ export async function buildCustomGroupPayload(params: {
 
   const b2bPurAnnualG3Sql = `
     SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
-      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      ${PUR_CAT_RAW} as category, ${G3_PUR_EXPR} as group3,
       SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
     FROM (${basePurchasesSubquery}) p
     LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
@@ -1497,7 +1507,7 @@ export async function buildCustomGroupPayload(params: {
 
   const b2bSalesYtdG3Sql = `
     SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
-      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      ${SALES_CAT_RAW} as category, ${G3_SALES_EXPR} as group3,
       (${BRANCH_FROM_EC}) as branch, ${B2B_TEAM} as team,
       SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
@@ -1510,7 +1520,7 @@ export async function buildCustomGroupPayload(params: {
 
   const b2bPurYtdG3Sql = `
     SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
-      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      ${PUR_CAT_RAW} as category, ${G3_PUR_EXPR} as group3,
       SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
     FROM (${basePurchasesSubquery}) p
     LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
@@ -1521,7 +1531,7 @@ export async function buildCustomGroupPayload(params: {
 
   const b2bSalesMonthG3Sql = `
     SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
-      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      ${SALES_CAT_RAW} as category, ${G3_SALES_EXPR} as group3,
       (${BRANCH_FROM_EC}) as branch, ${B2B_TEAM} as team,
       SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
     FROM (${baseSalesSubquery}) s
@@ -1534,7 +1544,7 @@ export async function buildCustomGroupPayload(params: {
 
   const b2bPurMonthG3Sql = `
     SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
-      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      ${PUR_CAT_RAW} as category, ${G3_PUR_EXPR} as group3,
       SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
     FROM (${basePurchasesSubquery}) p
     LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
@@ -1687,7 +1697,7 @@ export async function buildCustomGroupPayload(params: {
   const catG3Keys = Array.from(catG3KeySet).sort((a, b) => {
     const [aCat, aG3] = a.split('\t');
     const [bCat, bG3] = b.split('\t');
-    const ci = (CATEGORIES.indexOf(aCat as any) + 1 || 999) - (CATEGORIES.indexOf(bCat as any) + 1 || 999);
+    const ci = catSortIndex(aCat) - catSortIndex(bCat);
     if (ci !== 0) return ci;
     const gi = g3SortIndex(aG3) - g3SortIndex(bG3);
     if (gi !== 0) return gi;
@@ -1896,11 +1906,41 @@ export async function buildCustomGroupPayload(params: {
     sections.push({ category: cat, group3: g3, rows });
   }
 
+  // Fetch all distinct non-empty 품목그룹3코드 values from items table
+  const g3CodesRes = await executeSQL(
+    `SELECT DISTINCT TRIM(품목그룹3코드) as code FROM items
+     WHERE 품목그룹3코드 IS NOT NULL AND TRIM(품목그룹3코드) != ''
+     ORDER BY code`
+  );
+  const availableGroup3Codes: string[] = (g3CodesRes?.rows ?? [])
+    .map((r: any) => String(r.code))
+    .filter(Boolean)
+    .sort((a: string, b: string) => {
+      const d = g3SortIndex(a) - g3SortIndex(b);
+      return d !== 0 ? d : a.localeCompare(b);
+    });
+
+  // Fetch all distinct non-empty 품목그룹1코드 values from items table
+  const g1CodesRes = await executeSQL(
+    `SELECT DISTINCT TRIM(품목그룹1코드) as code FROM items
+     WHERE 품목그룹1코드 IS NOT NULL AND TRIM(품목그룹1코드) != ''
+     ORDER BY code`
+  );
+  const availableGroup1Codes: string[] = (g1CodesRes?.rows ?? [])
+    .map((r: any) => String(r.code))
+    .filter(Boolean)
+    .sort((a: string, b: string) => {
+      const d = catSortIndex(a) - catSortIndex(b);
+      return d !== 0 ? d : a.localeCompare(b);
+    });
+
   return {
     yearLabels: { yPast3: y3, yPast2: y2, yPast1: y1, yCurrent: y0 },
     monthLabel: `${monthInt}월`,
     sections,
     availableMonths,
     currentMonth: currentMonthStr,
+    availableGroup3Codes,
+    availableGroup1Codes,
   };
 }

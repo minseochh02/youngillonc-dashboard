@@ -654,14 +654,9 @@ function CustomChannelTeamsSection({
   );
 }
 
-const G3_KNOWN_ORDER = ["STA", "PRE", "FLA"];
 const G3_LABELS: Record<string, string> = { STA: "Standard", PRE: "Premium", FLA: "Flagship" };
-function g3SortIndex(v: string): number {
-  const i = G3_KNOWN_ORDER.indexOf(v);
-  return i >= 0 ? i : G3_KNOWN_ORDER.length;
-}
 function g3DisplayLabel(v: string): string {
-  return G3_LABELS[v] ?? (v === "" ? "(미분류)" : v);
+  return G3_LABELS[v] ?? v;
 }
 
 export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: CustomGroupTabProps) {
@@ -731,33 +726,17 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
     fetchData();
   }, [fetchData]);
 
-  // Derive available categories from loaded data (preserves DB order)
-  const availableCategories = useMemo(() => {
-    if (!data?.sections) return [];
-    const seen = new Set<string>();
-    const cats: string[] = [];
-    for (const s of data.sections) {
-      if (!seen.has(s.category)) {
-        seen.add(s.category);
-        cats.push(s.category);
-      }
-    }
-    return cats;
-  }, [data?.sections]);
+  // Use the distinct codes fetched directly from the items table (raw, no '기타' mapping)
+  const availableCategories = useMemo(
+    () => data?.availableGroup1Codes ?? [],
+    [data?.availableGroup1Codes]
+  );
 
-  // Derive available 품목그룹3 values from loaded data — all actual codes, sorted
-  const availableGroup3Values = useMemo(() => {
-    if (!data?.sections) return [];
-    const seen = new Set<string>();
-    for (const s of data.sections) {
-      seen.add(s.group3 ?? "");
-    }
-    return Array.from(seen).sort((a, b) => {
-      const d = g3SortIndex(a) - g3SortIndex(b);
-      if (d !== 0) return d;
-      return a.localeCompare(b);
-    });
-  }, [data?.sections]);
+  // Use the distinct codes fetched directly from the items table
+  const availableGroup3Values = useMemo(
+    () => data?.availableGroup3Codes ?? [],
+    [data?.availableGroup3Codes]
+  );
 
   // Auto-select all categories when data first loads (or month changes)
   const initializedRef = useRef<string>("");
@@ -780,12 +759,17 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
   }, [availableGroup3Values]);
 
   // Filter sections by both selectedCats AND selectedGroup3 (AND logic)
+  // Sections with no group3 code are included only when selectedGroup3 is empty (show-all fallback)
   const filteredSections = useMemo(() => {
     if (!data?.sections) return [];
-    return data.sections.filter(
-      (s) => selectedGroup3.has(s.group3 ?? "")
-    );
-  }, [data?.sections, selectedGroup3]);
+    if (selectedGroup3.size === 0) return data.sections;
+    return data.sections.filter((s) => {
+      const code = s.group3 ?? "";
+      // If this section has no code, only include it when ALL codes are selected
+      if (code === "") return selectedGroup3.size === availableGroup3Values.length;
+      return selectedGroup3.has(code);
+    });
+  }, [data?.sections, selectedGroup3, availableGroup3Values.length]);
 
   // Recompute baseline teams when data or selectedCats or selectedGroup3 change
   const baseline = useMemo(() => {
