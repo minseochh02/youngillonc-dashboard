@@ -654,8 +654,15 @@ function CustomChannelTeamsSection({
   );
 }
 
-const G3_ORDER = ["STA", "PRE", "FLA", "기타"];
-const G3_LABELS: Record<string, string> = { STA: "Standard", PRE: "Premium", FLA: "Flagship", "기타": "기타" };
+const G3_KNOWN_ORDER = ["STA", "PRE", "FLA"];
+const G3_LABELS: Record<string, string> = { STA: "Standard", PRE: "Premium", FLA: "Flagship" };
+function g3SortIndex(v: string): number {
+  const i = G3_KNOWN_ORDER.indexOf(v);
+  return i >= 0 ? i : G3_KNOWN_ORDER.length;
+}
+function g3DisplayLabel(v: string): string {
+  return G3_LABELS[v] ?? (v === "" ? "(미분류)" : v);
+}
 
 export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: CustomGroupTabProps) {
   const { includeVat } = useVatInclude();
@@ -738,14 +745,18 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
     return cats;
   }, [data?.sections]);
 
-  // Derive available 품목그룹3 values from loaded data (sorted by G3_ORDER)
+  // Derive available 품목그룹3 values from loaded data — all actual codes, sorted
   const availableGroup3Values = useMemo(() => {
     if (!data?.sections) return [];
     const seen = new Set<string>();
     for (const s of data.sections) {
-      seen.add(s.group3 ?? "기타");
+      seen.add(s.group3 ?? "");
     }
-    return G3_ORDER.filter((v) => seen.has(v));
+    return Array.from(seen).sort((a, b) => {
+      const d = g3SortIndex(a) - g3SortIndex(b);
+      if (d !== 0) return d;
+      return a.localeCompare(b);
+    });
   }, [data?.sections]);
 
   // Auto-select all categories when data first loads (or month changes)
@@ -759,10 +770,10 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
   }, [availableCategories]);
 
   // Auto-select all group3 values when data first loads
-  const initializedG3Ref = useRef<string>("");
+  const initializedG3Ref = useRef<string | null>(null);
   useEffect(() => {
     if (availableGroup3Values.length === 0) return;
-    const key = availableGroup3Values.join(",");
+    const key = availableGroup3Values.join("\0");
     if (initializedG3Ref.current === key) return;
     initializedG3Ref.current = key;
     setSelectedGroup3(new Set(availableGroup3Values));
@@ -772,7 +783,7 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
   const filteredSections = useMemo(() => {
     if (!data?.sections) return [];
     return data.sections.filter(
-      (s) => selectedGroup3.has(s.group3 ?? "기타")
+      (s) => selectedGroup3.has(s.group3 ?? "")
     );
   }, [data?.sections, selectedGroup3]);
 
@@ -984,7 +995,7 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
           <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium shrink-0">등급 선택:</span>
           {availableGroup3Values.map((g3) => (
             <button
-              key={g3}
+              key={g3 || "__empty__"}
               type="button"
               onClick={() => {
                 setSelectedGroup3((prev) => {
@@ -1000,7 +1011,7 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
                   : "bg-white border-zinc-300 text-zinc-500 hover:border-zinc-400 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600"
               }`}
             >
-              {G3_LABELS[g3] ?? g3}
+              {g3DisplayLabel(g3)}
             </button>
           ))}
           <div className="flex items-center gap-1 ml-1">

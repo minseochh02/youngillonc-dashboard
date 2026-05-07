@@ -1356,9 +1356,14 @@ export async function buildCumulativeViewPayload(params: {
 // All goal targets = 0 (sales_goals has no group3 breakdown).
 // baseSalesSubquery / basePurchasesSubquery MUST expose s.품목그룹3코드 / p.품목그룹3코드.
 
-const G3_SALES_EXPR = `COALESCE(NULLIF(TRIM(s.품목그룹3코드), ''), '기타')`;
-const G3_PUR_EXPR = `COALESCE(NULLIF(TRIM(p.품목그룹3코드), ''), '기타')`;
-const G3_ORDER = ['STA', 'PRE', 'FLA', '기타'];
+const G3_SALES_EXPR = `TRIM(COALESCE(s.품목그룹3코드, ''))`;
+const G3_PUR_EXPR = `TRIM(COALESCE(p.품목그룹3코드, ''))`;
+// Known tier order — any other codes land after these alphabetically
+const G3_KNOWN_ORDER = ['STA', 'PRE', 'FLA'];
+function g3SortIndex(v: string): number {
+  const i = G3_KNOWN_ORDER.indexOf(v);
+  return i >= 0 ? i : G3_KNOWN_ORDER.length;
+}
 
 export async function buildCustomGroupPayload(params: {
   currentMonthStr: string;
@@ -1684,8 +1689,9 @@ export async function buildCustomGroupPayload(params: {
     const [bCat, bG3] = b.split('\t');
     const ci = (CATEGORIES.indexOf(aCat as any) + 1 || 999) - (CATEGORIES.indexOf(bCat as any) + 1 || 999);
     if (ci !== 0) return ci;
-    const gi = (G3_ORDER.indexOf(aG3) + 1 || 999) - (G3_ORDER.indexOf(bG3) + 1 || 999);
-    return gi;
+    const gi = g3SortIndex(aG3) - g3SortIndex(bG3);
+    if (gi !== 0) return gi;
+    return aG3.localeCompare(bG3);
   });
 
   // ── Helpers ──
