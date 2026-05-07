@@ -119,6 +119,7 @@ export interface TeamSalesBreakdownRow {
   branch: string;
   team: string;
   metrics: CumulativeMetricBlock;
+  amountMetrics?: CumulativeMetricBlock;
 }
 
 /**
@@ -130,10 +131,15 @@ export function aggregateTeamSalesBreakdownAcrossCategories(
   categoryFilter: ReadonlySet<string>
 ): TeamSalesBreakdownRow[] {
   const keyToBlocks = new Map<string, CumulativeMetricBlock[]>();
+  const keyToAmtBlocks = new Map<string, CumulativeMetricBlock[]>();
 
-  const push = (key: string, m: CumulativeMetricBlock) => {
+  const push = (key: string, m: CumulativeMetricBlock, amtMap: Map<string, CumulativeMetricBlock[]>, amt?: CumulativeMetricBlock) => {
     if (!keyToBlocks.has(key)) keyToBlocks.set(key, []);
     keyToBlocks.get(key)!.push(m);
+    if (amt) {
+      if (!amtMap.has(key)) amtMap.set(key, []);
+      amtMap.get(key)!.push(amt);
+    }
   };
 
   for (const sec of sections) {
@@ -152,10 +158,10 @@ export function aggregateTeamSalesBreakdownAcrossCategories(
         continue;
       }
       if (row.rowKind === "team" && branchB2c) {
-        push(`b2c\t${branchB2c}\t${row.label}`, row.metrics);
+        push(`b2c\t${branchB2c}\t${row.label}`, row.metrics, keyToAmtBlocks, row.amountMetrics);
       }
       if (row.rowKind === "b2b_team" && branchB2b) {
-        push(`b2b\t${branchB2b}\t${row.label}`, row.metrics);
+        push(`b2b\t${branchB2b}\t${row.label}`, row.metrics, keyToAmtBlocks, row.amountMetrics);
       }
     }
   }
@@ -169,7 +175,9 @@ export function aggregateTeamSalesBreakdownAcrossCategories(
     const branch = parts[1] ?? "";
     const team = parts.slice(2).join("\t");
     if (ch !== "b2c" && ch !== "b2b") continue;
-    out.push({ channel: ch, branch, team, metrics: merged });
+    const amtBlocks = keyToAmtBlocks.get(key);
+    const amountMetrics = amtBlocks?.length ? mergeMetricBlocks(amtBlocks) ?? undefined : undefined;
+    out.push({ channel: ch, branch, team, metrics: merged, amountMetrics });
   }
 
   out.sort((a, b) => {

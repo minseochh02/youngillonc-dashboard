@@ -1043,6 +1043,7 @@ export async function GET(request: Request) {
         availableMonths,
         baseSalesSubquery: baseSalesSubqueryG3,
         basePurchasesSubquery: basePurchasesSubqueryG3,
+        includeVat,
       });
       return NextResponse.json({ success: true, data: customGroupData });
     }

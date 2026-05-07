@@ -313,6 +313,7 @@ function CustomTeamsHiddenPlaceholder({
 function CustomChannelTeamsSection({
   channel,
   orderedTeams,
+  viewMode,
   teamLabelCls,
   teamBranchCls,
   teamMetricCls,
@@ -328,6 +329,7 @@ function CustomChannelTeamsSection({
 }: {
   channel: "b2c" | "b2b";
   orderedTeams: TeamSalesBreakdownRow[];
+  viewMode: 'weight' | 'amount';
   teamLabelCls: string;
   teamBranchCls: string;
   teamMetricCls: string;
@@ -354,6 +356,7 @@ function CustomChannelTeamsSection({
       ...b,
       fullKey: overviewBranchBlockKey(SEGMENT_ID, b.rows[0]!),
       metrics: mergeMetricBlocks(b.rows.map((r) => r.metrics))!,
+      amountMetrics: mergeMetricBlocks(b.rows.map((r) => r.amountMetrics ?? r.metrics)),
     }));
   }, [channelRows]);
 
@@ -390,7 +393,9 @@ function CustomChannelTeamsSection({
           const joinBot = autoColJoinBelow;
 
           if (channelCollapsed && channelRows.length > 0) {
-            const merged = mergeMetricBlocks(channelRows.map((r) => r.metrics));
+            const merged = viewMode === 'amount'
+              ? mergeMetricBlocks(channelRows.map((r) => r.amountMetrics ?? r.metrics))
+              : mergeMetricBlocks(channelRows.map((r) => r.metrics));
             if (!merged) return null;
             const totalLabel = channel === "b2c" ? "B2C 합계" : "B2B 합계";
             return (
@@ -543,7 +548,7 @@ function CustomChannelTeamsSection({
                             </span>
                           </span>
                         </th>
-                        <MetricCells block={tr.metrics} tdClass={teamMetricCls} />
+                        <MetricCells block={viewMode === 'amount' ? (tr.amountMetrics ?? tr.metrics) : tr.metrics} tdClass={teamMetricCls} />
                       </>
                     )}
                   </SortableTeamRow>
@@ -642,7 +647,7 @@ function CustomChannelTeamsSection({
                       )}
                     </span>
                   </th>
-                  <MetricCells block={bb.metrics} tdClass={subtotalMetricCls} />
+                  <MetricCells block={viewMode === 'amount' ? (bb.amountMetrics ?? bb.metrics) : bb.metrics} tdClass={subtotalMetricCls} />
                 </tr>
               );
             }
@@ -696,6 +701,8 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
   const [loading, setLoading] = useState(true);
   const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
   const [selectedGroup3, setSelectedGroup3] = useState<Set<string>>(new Set());
+  const [selectedClientGroup2, setSelectedClientGroup2] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<'weight' | 'amount'>('weight');
   const [orderedTeams, setOrderedTeams] = useState<TeamSalesBreakdownRow[]>([]);
   const [sectionOrder, setSectionOrder] = useState<("summary" | "b2c" | "b2b")[]>([
     "summary",
@@ -779,6 +786,11 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
     [data?.availableGroup3Codes]
   );
 
+  const availableClientGroup2Values = useMemo(
+    () => data?.availableClientGroup2Codes ?? [],
+    [data?.availableClientGroup2Codes]
+  );
+
   // Auto-select all categories when data first loads (or month changes)
   const initializedRef = useRef<string>("");
   useEffect(() => {
@@ -799,20 +811,38 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
     setSelectedGroup3(new Set(availableGroup3Values));
   }, [availableGroup3Values]);
 
-  // Filter sections by both selectedCats AND selectedGroup3 (AND logic)
-  // Sections with no group3 code are included only when selectedGroup3 is empty (show-all fallback)
+  // Auto-select all clientGroup2 values when data first loads
+  const initializedCg2Ref = useRef<string | null>(null);
+  useEffect(() => {
+    if (availableClientGroup2Values.length === 0) return;
+    const key = availableClientGroup2Values.join("\0");
+    if (initializedCg2Ref.current === key) return;
+    initializedCg2Ref.current = key;
+    setSelectedClientGroup2(new Set(availableClientGroup2Values));
+  }, [availableClientGroup2Values]);
+
+  // Filter sections by selectedCats AND selectedGroup3 AND selectedClientGroup2 (AND logic)
+  // Sections with no code for a dimension are included only when ALL codes for that dimension are selected
   const filteredSections = useMemo(() => {
     if (!data?.sections) return [];
-    if (selectedGroup3.size === 0) return data.sections;
     return data.sections.filter((s) => {
-      const code = s.group3 ?? "";
-      // If this section has no code, only include it when ALL codes are selected
-      if (code === "") return selectedGroup3.size === availableGroup3Values.length;
-      return selectedGroup3.has(code);
+      if (selectedGroup3.size > 0) {
+        const code = s.group3 ?? "";
+        if (code === "") {
+          if (selectedGroup3.size !== availableGroup3Values.length) return false;
+        } else if (!selectedGroup3.has(code)) return false;
+      }
+      if (selectedClientGroup2.size > 0) {
+        const code = s.clientGroup2 ?? "";
+        if (code === "") {
+          if (selectedClientGroup2.size !== availableClientGroup2Values.length) return false;
+        } else if (!selectedClientGroup2.has(code)) return false;
+      }
+      return true;
     });
-  }, [data?.sections, selectedGroup3, availableGroup3Values.length]);
+  }, [data?.sections, selectedGroup3, availableGroup3Values.length, selectedClientGroup2, availableClientGroup2Values.length]);
 
-  // Recompute baseline teams when data or selectedCats or selectedGroup3 change
+  // Recompute baseline teams when data or selectedCats or selectedGroup3 or selectedClientGroup2 change
   const baseline = useMemo(() => {
     if (!filteredSections.length || selectedCats.size === 0) return [];
     return aggregateTeamSalesBreakdownAcrossCategories(
@@ -836,6 +866,21 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
       sellin: aggregateSectionRowsOfKind(filteredSections, cats, "sellin"),
       sales: aggregateSectionRowsOfKind(filteredSections, cats, "total"),
     };
+  }, [filteredSections, selectedCats]);
+
+  const aggAmountMetrics = useMemo(() => {
+    if (!filteredSections.length || selectedCats.size === 0) return null;
+    const aggregate = (rowKind: "inventory" | "sellin" | "total") => {
+      const blocks: CumulativeMetricBlock[] = [];
+      for (const sec of filteredSections) {
+        if (!selectedCats.has(sec.category)) continue;
+        for (const row of sec.rows) {
+          if (row.rowKind === rowKind && row.amountMetrics) blocks.push(row.amountMetrics);
+        }
+      }
+      return mergeMetricBlocks(blocks);
+    };
+    return { inv: aggregate("inventory"), sellin: aggregate("sellin"), sales: aggregate("total") };
   }, [filteredSections, selectedCats]);
 
   useLayoutEffect(() => {
@@ -1084,20 +1129,90 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
         </div>
       )}
 
+      {/* 거래처그룹2 selector */}
+      {availableClientGroup2Values.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium shrink-0">거래처그룹2 선택:</span>
+          {availableClientGroup2Values.map((cg2) => (
+            <button
+              key={cg2 || "__empty__"}
+              type="button"
+              onClick={() => {
+                setSelectedClientGroup2((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(cg2)) next.delete(cg2);
+                  else next.add(cg2);
+                  return next;
+                });
+              }}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                selectedClientGroup2.has(cg2)
+                  ? "bg-sky-600 border-sky-600 text-white dark:bg-sky-500 dark:border-sky-500"
+                  : "bg-white border-zinc-300 text-zinc-500 hover:border-zinc-400 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600"
+              }`}
+            >
+              {cg2 || "(없음)"}
+            </button>
+          ))}
+          <div className="flex items-center gap-1 ml-1">
+            <button
+              type="button"
+              onClick={() => setSelectedClientGroup2(new Set(availableClientGroup2Values))}
+              className="px-2 py-1 rounded text-xs border border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 transition-colors"
+            >
+              전체 선택
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedClientGroup2(new Set())}
+              className="px-2 py-1 rounded text-xs border border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 transition-colors"
+            >
+              전체 해제
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-4">
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           구분 열의 <GripVertical className="inline h-3 w-3 align-text-bottom" /> 를 드래그해 요약·팀
           블록 순서, 지사 블록, 팀 행 순서를 바꿀 수 있습니다.
         </p>
-        <button
-          type="button"
-          onClick={() => fetchData(true)}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 shadow-sm hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900"
-        >
-          <RotateCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-          데이터 새로고침
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 overflow-hidden text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setViewMode('weight')}
+              className={`px-3 py-1.5 transition-colors ${
+                viewMode === 'weight'
+                  ? 'bg-blue-600 text-white dark:bg-blue-500'
+                  : 'bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800'
+              }`}
+            >
+              중량
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('amount')}
+              className={`px-3 py-1.5 transition-colors border-l border-zinc-200 dark:border-zinc-700 ${
+                viewMode === 'amount'
+                  ? 'bg-blue-600 text-white dark:bg-blue-500'
+                  : 'bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800'
+              }`}
+            >
+              공급가
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => fetchData(true)}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 shadow-sm hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          >
+            <RotateCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            데이터 새로고침
+          </button>
+        </div>
       </div>
 
       {selectedCats.size === 0 ? (
@@ -1107,6 +1222,10 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
       ) : selectedGroup3.size === 0 ? (
         <div className="text-center text-zinc-500 dark:text-zinc-400 p-8 border border-zinc-200 dark:border-zinc-800 rounded-lg">
           <p>등급을 하나 이상 선택해 주세요.</p>
+        </div>
+      ) : selectedClientGroup2.size === 0 && availableClientGroup2Values.length > 0 ? (
+        <div className="text-center text-zinc-500 dark:text-zinc-400 p-8 border border-zinc-200 dark:border-zinc-800 rounded-lg">
+          <p>거래처그룹2를 하나 이상 선택해 주세요.</p>
         </div>
       ) : !aggMetrics?.inv || !aggMetrics?.sellin || !aggMetrics?.sales ? (
         <div className="text-center text-zinc-500 dark:text-zinc-400 p-8 border border-zinc-200 dark:border-zinc-800 rounded-lg">
@@ -1190,13 +1309,14 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
                   const autoJoinBelow = !isLast;
 
                   if (sectionType === "summary") {
+                    const displayMetrics = viewMode === 'amount' && aggAmountMetrics ? aggAmountMetrics : aggMetrics;
                     return (
                       <CustomSummarySection
                         key={SUM_ID}
                         groupLabel={groupLabel}
-                        invRow={aggMetrics.inv!}
-                        sellinRow={aggMetrics.sellin!}
-                        salesRow={aggMetrics.sales!}
+                        invRow={displayMetrics.inv!}
+                        sellinRow={displayMetrics.sellin!}
+                        salesRow={displayMetrics.sales!}
                         salesMetricCls={salesMetricCls}
                         salesLabelCls={salesLabelCls}
                         teamsSectionHidden={teamsSectionHidden}
@@ -1226,6 +1346,7 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
                       key={tid}
                       channel={channel}
                       orderedTeams={orderedTeams}
+                      viewMode={viewMode}
                       teamLabelCls={teamLabelCls}
                       teamBranchCls={teamBranchCls}
                       teamMetricCls={teamMetricCls}
