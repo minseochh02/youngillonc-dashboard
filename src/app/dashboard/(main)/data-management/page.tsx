@@ -131,6 +131,8 @@ export default function DataManagementPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number; currentScript: string } | null>(null);
   const [refreshResult, setRefreshResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
 
   useEffect(() => {
     cancelStaging();
@@ -158,9 +160,8 @@ export default function DataManagementPage() {
   const refreshThisMonth = async () => {
     if (isRefreshing || scriptNames.length === 0) return;
 
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
+    const year = selectedYear;
+    const month = selectedMonth - 1;
     const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month + 1, 0).getDate();
     const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
@@ -626,9 +627,9 @@ export default function DataManagementPage() {
 
       {/* Data Refresh */}
       {(() => {
-        const now = new Date();
-        const yearLabel = now.getFullYear();
-        const monthLabel = now.getMonth() + 1;
+        const currentYear = new Date().getFullYear();
+        const years = Array.from({ length: currentYear - 2022 }, (_, i) => currentYear - i);
+        const months = [1,2,3,4,5,6,7,8,9,10,11,12];
         const noScripts = !scriptsLoading && scriptNames.length === 0;
         return (
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
@@ -636,8 +637,30 @@ export default function DataManagementPage() {
               <div>
                 <h4 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">데이터 새로고침</h4>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  이카운트에서 <span className="font-semibold text-zinc-700 dark:text-zinc-300">{yearLabel}년 {monthLabel}월</span> 데이터를 다시 다운로드합니다.
+                  이카운트에서 선택한 기간의 데이터를 다시 다운로드합니다.
                 </p>
+                <div className="flex items-center gap-2 mt-3">
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => { setSelectedYear(Number(e.target.value)); setRefreshResult(null); }}
+                    disabled={isRefreshing}
+                    className="px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-800 dark:text-zinc-200 disabled:opacity-50"
+                  >
+                    {years.map((y) => (
+                      <option key={y} value={y}>{y}년</option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => { setSelectedMonth(Number(e.target.value)); setRefreshResult(null); }}
+                    disabled={isRefreshing}
+                    className="px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-800 dark:text-zinc-200 disabled:opacity-50"
+                  >
+                    {months.map((m) => (
+                      <option key={m} value={m}>{m}월</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <button
                 type="button"
