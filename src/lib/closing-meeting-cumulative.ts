@@ -100,6 +100,7 @@ export interface CumulativeRow {
 
 export interface CumulativeSection {
   category: string;
+  group3?: string;
   rows: CumulativeRow[];
 }
 
@@ -1347,4 +1348,553 @@ export async function buildCumulativeViewPayload(params: {
   PAYLOAD_CACHE.set(cacheKey, { timestamp: Date.now(), payload });
 
   return payload;
+}
+
+// ─── buildCustomGroupPayload ──────────────────────────────────────────────────
+// Like buildCumulativeViewPayload but adds 품목그룹3 dimension to every section.
+// Inventory = purchase − sales (no computed_inventory_monthly for group3).
+// All goal targets = 0 (sales_goals has no group3 breakdown).
+// baseSalesSubquery / basePurchasesSubquery MUST expose s.품목그룹3코드 / p.품목그룹3코드.
+
+const G3_SALES_EXPR = `COALESCE(NULLIF(TRIM(s.품목그룹3코드), ''), '기타')`;
+const G3_PUR_EXPR = `COALESCE(NULLIF(TRIM(p.품목그룹3코드), ''), '기타')`;
+const G3_ORDER = ['STA', 'PRE', 'FLA', '기타'];
+
+export async function buildCustomGroupPayload(params: {
+  currentMonthStr: string;
+  currentYear: number;
+  availableMonths: string[];
+  baseSalesSubquery: string;
+  basePurchasesSubquery: string;
+}): Promise<CumulativeViewPayload> {
+  const {
+    currentMonthStr,
+    currentYear,
+    availableMonths,
+    baseSalesSubquery,
+    basePurchasesSubquery,
+  } = params;
+
+  const monthNum = currentMonthStr.split('-')[1];
+  const monthInt = parseInt(monthNum, 10);
+  const y0 = currentYear;
+  const y1 = y0 - 1;
+  const y2 = y0 - 2;
+  const y3 = y0 - 3;
+  const monthKeyPrev = `${y1}-${monthNum}`;
+  const monthKeyCur = `${y0}-${monthNum}`;
+  const threePastYearsIn = `('${y3}', '${y2}', '${y1}')`;
+  const salesYtdFilter = getYtdYearFilter(y3, y2, y1, y0, monthNum, 's');
+  const purYtdFilter = getYtdYearFilter(y3, y2, y1, y0, monthNum, 'p');
+
+  const displayOrderMaps = await loadFullDisplayOrderContext();
+
+  // ── SQL Queries (12 total — B2C/B2B × annual/YTD/monthly × sales/purchases) ──
+
+  const salesAnnualG3Sql = `
+    SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
+      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      (${BRANCH_FROM_EC}) as branch, ec.b2c_팀 as team,
+      SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
+    FROM (${baseSalesSubquery}) s
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(s.일자,1,4) IN ${threePastYearsIn}
+      AND ${WHERE_B2C} ${sqlAndEmployeeNotSpecialHandling()} ${sqlAndSalesRemarkNotExact('s.적요')}
+      AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
+    GROUP BY 1,2,3,4,5`;
+
+  const purAnnualG3Sql = `
+    SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
+      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
+    FROM (${basePurchasesSubquery}) p
+    LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(p.일자,1,4) IN ${threePastYearsIn} AND ${WHERE_B2C}
+    GROUP BY 1,2,3`;
+
+  const salesYtdG3Sql = `
+    SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
+      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      (${BRANCH_FROM_EC}) as branch, ec.b2c_팀 as team,
+      SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
+    FROM (${baseSalesSubquery}) s
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE ${salesYtdFilter}
+      AND ${WHERE_B2C} ${sqlAndEmployeeNotSpecialHandling()} ${sqlAndSalesRemarkNotExact('s.적요')}
+      AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
+    GROUP BY 1,2,3,4,5`;
+
+  const purYtdG3Sql = `
+    SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
+      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
+    FROM (${basePurchasesSubquery}) p
+    LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE ${purYtdFilter} AND ${WHERE_B2C}
+    GROUP BY 1,2,3`;
+
+  const salesMonthG3Sql = `
+    SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
+      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      (${BRANCH_FROM_EC}) as branch, ec.b2c_팀 as team,
+      SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
+    FROM (${baseSalesSubquery}) s
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(s.일자,1,7) IN ('${monthKeyPrev}','${monthKeyCur}')
+      AND ${WHERE_B2C} ${sqlAndEmployeeNotSpecialHandling()} ${sqlAndSalesRemarkNotExact('s.적요')}
+      AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
+    GROUP BY 1,2,3,4,5`;
+
+  const purMonthG3Sql = `
+    SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
+      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
+    FROM (${basePurchasesSubquery}) p
+    LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(p.일자,1,7) IN ('${monthKeyPrev}','${monthKeyCur}') AND ${WHERE_B2C}
+    GROUP BY 1,2,3`;
+
+  const b2bSalesAnnualG3Sql = `
+    SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
+      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      (${BRANCH_FROM_EC}) as branch, ${B2B_TEAM} as team,
+      SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
+    FROM (${baseSalesSubquery}) s
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(s.일자,1,4) IN ${threePastYearsIn}
+      AND ${WHERE_B2B} ${sqlAndEmployeeNotSpecialHandling()} ${sqlAndSalesRemarkNotExact('s.적요')}
+    GROUP BY 1,2,3,4,5`;
+
+  const b2bPurAnnualG3Sql = `
+    SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
+      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
+    FROM (${basePurchasesSubquery}) p
+    LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(p.일자,1,4) IN ${threePastYearsIn} AND ${WHERE_B2B}
+    GROUP BY 1,2,3`;
+
+  const b2bSalesYtdG3Sql = `
+    SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
+      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      (${BRANCH_FROM_EC}) as branch, ${B2B_TEAM} as team,
+      SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
+    FROM (${baseSalesSubquery}) s
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE ${salesYtdFilter}
+      AND ${WHERE_B2B} ${sqlAndEmployeeNotSpecialHandling()} ${sqlAndSalesRemarkNotExact('s.적요')}
+    GROUP BY 1,2,3,4,5`;
+
+  const b2bPurYtdG3Sql = `
+    SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
+      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
+    FROM (${basePurchasesSubquery}) p
+    LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE ${purYtdFilter} AND ${WHERE_B2B}
+    GROUP BY 1,2,3`;
+
+  const b2bSalesMonthG3Sql = `
+    SELECT CAST(substr(s.일자,1,4) AS INTEGER) as year,
+      ${SALES_CAT} as category, ${G3_SALES_EXPR} as group3,
+      (${BRANCH_FROM_EC}) as branch, ${B2B_TEAM} as team,
+      SUM(CAST(REPLACE(s.중량,',','') AS NUMERIC)) as weight
+    FROM (${baseSalesSubquery}) s
+    LEFT JOIN clients c ON ${SALES_CLIENT_KEY_EXPR} = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(s.일자,1,7) IN ('${monthKeyPrev}','${monthKeyCur}')
+      AND ${WHERE_B2B} ${sqlAndEmployeeNotSpecialHandling()} ${sqlAndSalesRemarkNotExact('s.적요')}
+    GROUP BY 1,2,3,4,5`;
+
+  const b2bPurMonthG3Sql = `
+    SELECT CAST(substr(p.일자,1,4) AS INTEGER) as year,
+      ${PUR_CAT} as category, ${G3_PUR_EXPR} as group3,
+      SUM(CAST(REPLACE(p.중량,',','') AS NUMERIC)) as weight
+    FROM (${basePurchasesSubquery}) p
+    LEFT JOIN clients c ON p.거래처코드 = c.거래처코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+    WHERE substr(p.일자,1,7) IN ('${monthKeyPrev}','${monthKeyCur}') AND ${WHERE_B2B}
+    GROUP BY 1,2,3`;
+
+  const [
+    salesAnnualRes, purAnnualRes,
+    salesYtdRes, purYtdRes,
+    salesMoRes, purMoRes,
+    b2bSalesAnnualRes, b2bPurAnnualRes,
+    b2bSalesYtdRes, b2bPurYtdRes,
+    b2bSalesMoRes, b2bPurMoRes,
+  ] = await Promise.all([
+    executeSQL(salesAnnualG3Sql),
+    executeSQL(purAnnualG3Sql),
+    executeSQL(salesYtdG3Sql),
+    executeSQL(purYtdG3Sql),
+    executeSQL(salesMonthG3Sql),
+    executeSQL(purMonthG3Sql),
+    executeSQL(b2bSalesAnnualG3Sql),
+    executeSQL(b2bPurAnnualG3Sql),
+    executeSQL(b2bSalesYtdG3Sql),
+    executeSQL(b2bPurYtdG3Sql),
+    executeSQL(b2bSalesMonthG3Sql),
+    executeSQL(b2bPurMonthG3Sql),
+  ]);
+
+  // ── Maps: keyed by catG3 = "category\tgroup3" ──
+  // B2C
+  const g3SalesFull = new Map<number, Map<string, number>>();
+  const g3PurFull = new Map<number, Map<string, number>>();
+  const g3SalesYtd = new Map<number, Map<string, number>>();
+  const g3PurYtd = new Map<number, Map<string, number>>();
+  const g3SalesMo = new Map<number, Map<string, number>>();
+  const g3PurMo = new Map<number, Map<string, number>>();
+  const g3TeamSalesFull = new Map<number, Map<string, Map<string, Map<string, number>>>>();
+  const g3TeamSalesYtd = new Map<number, Map<string, Map<string, Map<string, number>>>>();
+  const g3TeamSalesMo = new Map<number, Map<string, Map<string, Map<string, number>>>>();
+  // B2B
+  const b2bG3SalesFull = new Map<number, Map<string, number>>();
+  const b2bG3PurFull = new Map<number, Map<string, number>>();
+  const b2bG3SalesYtd = new Map<number, Map<string, number>>();
+  const b2bG3PurYtd = new Map<number, Map<string, number>>();
+  const b2bG3SalesMo = new Map<number, Map<string, number>>();
+  const b2bG3PurMo = new Map<number, Map<string, number>>();
+  const b2bG3TeamSalesFull = new Map<number, Map<string, Map<string, Map<string, number>>>>();
+  const b2bG3TeamSalesYtd = new Map<number, Map<string, Map<string, Map<string, number>>>>();
+  const b2bG3TeamSalesMo = new Map<number, Map<string, Map<string, Map<string, number>>>>();
+
+  const addToFlat = (m: Map<number, Map<string, number>>, y: number, key: string, w: number) => {
+    if (!m.has(y)) m.set(y, new Map());
+    const inner = m.get(y)!;
+    inner.set(key, (inner.get(key) || 0) + w);
+  };
+
+  const addToTeam = (
+    m: Map<number, Map<string, Map<string, Map<string, number>>>>,
+    y: number, key: string, branch: string, team: string, w: number
+  ) => {
+    if (!m.has(y)) m.set(y, new Map());
+    const ym = m.get(y)!;
+    if (!ym.has(key)) ym.set(key, new Map());
+    const km = ym.get(key)!;
+    if (!km.has(branch)) km.set(branch, new Map());
+    const bm = km.get(branch)!;
+    bm.set(team, (bm.get(team) || 0) + w);
+  };
+
+  const normB = (b: unknown) => { const s = String(b ?? '').trim(); return s || '미분류'; };
+  const normT = (t: unknown) => String(t ?? '').trim();
+  const normTByBranch = (branch: string, team: unknown) => {
+    const t = normT(team);
+    if (!t) return t;
+    const bc = branch.replace(/\s+/g, '');
+    const tc = t.replace(/\s+/g, '');
+    if (bc && tc === `${bc}팀`) return branch;
+    return t;
+  };
+
+  const processB2cSales = (
+    flatMap: Map<number, Map<string, number>>,
+    teamMap: Map<number, Map<string, Map<string, Map<string, number>>>>,
+    rows: any[]
+  ) => {
+    for (const r of rows || []) {
+      const y = Number(r.year);
+      const key = `${String(r.category)}\t${String(r.group3)}`;
+      const branch = normB(r.branch);
+      const team = normTByBranch(branch, r.team);
+      if (!team) continue;
+      const w = Number(r.weight) || 0;
+      addToFlat(flatMap, y, key, w);
+      addToTeam(teamMap, y, key, branch, team, w);
+    }
+  };
+
+  const processPur = (
+    flatMap: Map<number, Map<string, number>>,
+    rows: any[]
+  ) => {
+    for (const r of rows || []) {
+      const y = Number(r.year);
+      const key = `${String(r.category)}\t${String(r.group3)}`;
+      addToFlat(flatMap, y, key, Number(r.weight) || 0);
+    }
+  };
+
+  const processB2bSales = (
+    flatMap: Map<number, Map<string, number>>,
+    teamMap: Map<number, Map<string, Map<string, Map<string, number>>>>,
+    rows: any[]
+  ) => {
+    for (const r of rows || []) {
+      const y = Number(r.year);
+      const key = `${String(r.category)}\t${String(r.group3)}`;
+      const branch = normB(r.branch);
+      const team = normTByBranch(branch, r.team);
+      if (!team) continue;
+      const w = Number(r.weight) || 0;
+      addToFlat(flatMap, y, key, w);
+      addToTeam(teamMap, y, key, branch, team, w);
+    }
+  };
+
+  processB2cSales(g3SalesFull, g3TeamSalesFull, salesAnnualRes?.rows);
+  processPur(g3PurFull, purAnnualRes?.rows);
+  processB2cSales(g3SalesYtd, g3TeamSalesYtd, salesYtdRes?.rows);
+  processPur(g3PurYtd, purYtdRes?.rows);
+  processB2cSales(g3SalesMo, g3TeamSalesMo, salesMoRes?.rows);
+  processPur(g3PurMo, purMoRes?.rows);
+  processB2bSales(b2bG3SalesFull, b2bG3TeamSalesFull, b2bSalesAnnualRes?.rows);
+  processPur(b2bG3PurFull, b2bPurAnnualRes?.rows);
+  processB2bSales(b2bG3SalesYtd, b2bG3TeamSalesYtd, b2bSalesYtdRes?.rows);
+  processPur(b2bG3PurYtd, b2bPurYtdRes?.rows);
+  processB2bSales(b2bG3SalesMo, b2bG3TeamSalesMo, b2bSalesMoRes?.rows);
+  processPur(b2bG3PurMo, b2bPurMoRes?.rows);
+
+  // ── Collect unique catG3 keys ──
+  const catG3KeySet = new Set<string>();
+  for (const m of [
+    g3SalesFull, g3PurFull, g3SalesYtd, g3PurYtd, g3SalesMo, g3PurMo,
+    b2bG3SalesFull, b2bG3PurFull, b2bG3SalesYtd, b2bG3PurYtd, b2bG3SalesMo, b2bG3PurMo,
+  ]) {
+    for (const inner of m.values()) for (const k of inner.keys()) catG3KeySet.add(k);
+  }
+
+  const catG3Keys = Array.from(catG3KeySet).sort((a, b) => {
+    const [aCat, aG3] = a.split('\t');
+    const [bCat, bG3] = b.split('\t');
+    const ci = (CATEGORIES.indexOf(aCat as any) + 1 || 999) - (CATEGORIES.indexOf(bCat as any) + 1 || 999);
+    if (ci !== 0) return ci;
+    const gi = (G3_ORDER.indexOf(aG3) + 1 || 999) - (G3_ORDER.indexOf(bG3) + 1 || 999);
+    return gi;
+  });
+
+  // ── Helpers ──
+  const flat = (m: Map<number, Map<string, number>>, y: number, key: string) =>
+    m.get(y)?.get(key) || 0;
+  const teamVal = (
+    m: Map<number, Map<string, Map<string, Map<string, number>>>>,
+    y: number, key: string, branch: string, team: string
+  ) => m.get(y)?.get(key)?.get(branch)?.get(team) || 0;
+
+  const addPairToSet = (set: Set<string>, branch: string, team: string) => {
+    const b = normB(branch);
+    const t = String(team || '').trim();
+    if (t) set.add(`${b}\t${t}`);
+  };
+
+  const pairsToGroups = (pairSet: Set<string>, isB2b: boolean): { branch: string; teams: string[] }[] => {
+    const byBranch = new Map<string, Set<string>>();
+    for (const p of pairSet) {
+      const i = p.indexOf('\t');
+      const b = p.slice(0, i);
+      const t = p.slice(i + 1);
+      if (!byBranch.has(b)) byBranch.set(b, new Set());
+      byBranch.get(b)!.add(t);
+    }
+    return Array.from(byBranch.keys())
+      .sort((a, b) => compareOffices(a, b, displayOrderMaps.office))
+      .map((branch) => ({
+        branch,
+        teams: Array.from(byBranch.get(branch)!).sort((a, bb) =>
+          isB2b
+            ? compareTeams(a, bb, displayOrderMaps.teamB2b, displayOrderMaps.teamB2c)
+            : compareTeams(a, bb, displayOrderMaps.teamB2c, displayOrderMaps.teamB2b)
+        ),
+      }));
+  };
+
+  const collectB2cBranchGroups = (key: string) => {
+    const pairSet = new Set<string>();
+    for (const y of [y3, y2, y1, y0]) {
+      g3TeamSalesYtd.get(y)?.get(key)?.forEach((tm, branch) =>
+        tm.forEach((_w, team) => addPairToSet(pairSet, branch, team))
+      );
+    }
+    for (const y of [y1, y0]) {
+      g3TeamSalesMo.get(y)?.get(key)?.forEach((tm, branch) =>
+        tm.forEach((_w, team) => addPairToSet(pairSet, branch, team))
+      );
+    }
+    return pairsToGroups(pairSet, false);
+  };
+
+  const collectB2bBranchGroups = (key: string) => {
+    const pairSet = new Set<string>();
+    for (const y of [y3, y2, y1, y0]) {
+      b2bG3TeamSalesYtd.get(y)?.get(key)?.forEach((tm, branch) =>
+        tm.forEach((_w, team) => addPairToSet(pairSet, branch, team))
+      );
+    }
+    for (const y of [y1, y0]) {
+      b2bG3TeamSalesMo.get(y)?.get(key)?.forEach((tm, branch) =>
+        tm.forEach((_w, team) => addPairToSet(pairSet, branch, team))
+      );
+    }
+    return pairsToGroups(pairSet, true);
+  };
+
+  // ── Build sections ──
+  const sections: CumulativeSection[] = [];
+
+  for (const catG3 of catG3Keys) {
+    const [cat, g3] = catG3.split('\t');
+    const branchGroupsB2c = collectB2cBranchGroups(catG3);
+    const branchGroupsB2b = collectB2bBranchGroups(catG3);
+    const rows: CumulativeRow[] = [];
+
+    // Inventory helpers (purchase − sales, no computed_inventory_monthly for group3)
+    const invFull = (y: number) =>
+      flat(g3PurFull, y, catG3) + flat(b2bG3PurFull, y, catG3)
+      - flat(g3SalesFull, y, catG3) - flat(b2bG3SalesFull, y, catG3);
+    const invYtd = (y: number) =>
+      flat(g3PurYtd, y, catG3) + flat(b2bG3PurYtd, y, catG3)
+      - flat(g3SalesYtd, y, catG3) - flat(b2bG3SalesYtd, y, catG3);
+    const invMo = (y: number) =>
+      flat(g3PurMo, y, catG3) + flat(b2bG3PurMo, y, catG3)
+      - flat(g3SalesMo, y, catG3) - flat(b2bG3SalesMo, y, catG3);
+
+    // ── inventory row ──
+    rows.push({
+      rowKind: 'inventory',
+      label: '재고',
+      metrics: withYtdYoYGrowth(
+        blk(invFull(y3), invFull(y2), invFull(y1), 0, invYtd(y1), 0, invYtd(y0), invMo(y1), 0, invMo(y0)),
+        invYtd(y1), invYtd(y0)
+      ),
+    });
+
+    // ── sellin row ──
+    const purFull = (y: number) => flat(g3PurFull, y, catG3) + flat(b2bG3PurFull, y, catG3);
+    const purYtdVal = (y: number) => flat(g3PurYtd, y, catG3) + flat(b2bG3PurYtd, y, catG3);
+    const purMoVal = (y: number) => flat(g3PurMo, y, catG3) + flat(b2bG3PurMo, y, catG3);
+    rows.push({
+      rowKind: 'sellin',
+      label: 'sell-in',
+      metrics: withYtdYoYGrowth(
+        blk(purFull(y3), purFull(y2), purFull(y1), 0, purYtdVal(y1), 0, purYtdVal(y0), purMoVal(y1), 0, purMoVal(y0)),
+        purYtdVal(y1), purYtdVal(y0)
+      ),
+    });
+
+    // ── total (combined B2C + B2B) row ──
+    const salesFull = (y: number) => flat(g3SalesFull, y, catG3) + flat(b2bG3SalesFull, y, catG3);
+    const salesYtdVal = (y: number) => flat(g3SalesYtd, y, catG3) + flat(b2bG3SalesYtd, y, catG3);
+    const salesMoVal = (y: number) => flat(g3SalesMo, y, catG3) + flat(b2bG3SalesMo, y, catG3);
+    rows.push({
+      rowKind: 'total',
+      label: '합계',
+      metrics: withYtdYoYGrowth(
+        blk(salesFull(y3), salesFull(y2), salesFull(y1), 0, salesYtdVal(y1), 0, salesYtdVal(y0), salesMoVal(y1), 0, salesMoVal(y0)),
+        salesYtdVal(y1), salesYtdVal(y0)
+      ),
+    });
+
+    // ── B2C branch / team rows ──
+    for (const { branch, teams } of branchGroupsB2c) {
+      let st3f = 0, st2f = 0, st1f = 0, st1 = 0, st0 = 0, smp = 0, smc = 0;
+      for (const team of teams) {
+        st3f += teamVal(g3TeamSalesFull, y3, catG3, branch, team);
+        st2f += teamVal(g3TeamSalesFull, y2, catG3, branch, team);
+        st1f += teamVal(g3TeamSalesFull, y1, catG3, branch, team);
+        st1 += teamVal(g3TeamSalesYtd, y1, catG3, branch, team);
+        st0 += teamVal(g3TeamSalesYtd, y0, catG3, branch, team);
+        smp += teamVal(g3TeamSalesMo, y1, catG3, branch, team);
+        smc += teamVal(g3TeamSalesMo, y0, catG3, branch, team);
+      }
+      rows.push({
+        rowKind: 'branch_subtotal',
+        label: `${branch} 소계`,
+        metrics: withYtdYoYGrowth(
+          blk(st3f, st2f, st1f, 0, st1, 0, st0, smp, 0, smc),
+          st1, st0
+        ),
+      });
+      for (const team of teams) {
+        const t3f = teamVal(g3TeamSalesFull, y3, catG3, branch, team);
+        const t2f = teamVal(g3TeamSalesFull, y2, catG3, branch, team);
+        const t1f = teamVal(g3TeamSalesFull, y1, catG3, branch, team);
+        const t1y = teamVal(g3TeamSalesYtd, y1, catG3, branch, team);
+        const t0y = teamVal(g3TeamSalesYtd, y0, catG3, branch, team);
+        rows.push({
+          rowKind: 'team',
+          label: team,
+          metrics: withYtdYoYGrowth(
+            blk(t3f, t2f, t1f, 0, t1y, 0, t0y,
+              teamVal(g3TeamSalesMo, y1, catG3, branch, team), 0,
+              teamVal(g3TeamSalesMo, y0, catG3, branch, team)),
+            t1y, t0y
+          ),
+        });
+      }
+    }
+
+    // ── B2B branch / team rows ──
+    for (const { branch, teams } of branchGroupsB2b) {
+      let bt3f = 0, bt2f = 0, bt1f = 0, bt1 = 0, bt0 = 0, bmp = 0, bmc = 0;
+      for (const team of teams) {
+        bt3f += teamVal(b2bG3TeamSalesFull, y3, catG3, branch, team);
+        bt2f += teamVal(b2bG3TeamSalesFull, y2, catG3, branch, team);
+        bt1f += teamVal(b2bG3TeamSalesFull, y1, catG3, branch, team);
+        bt1 += teamVal(b2bG3TeamSalesYtd, y1, catG3, branch, team);
+        bt0 += teamVal(b2bG3TeamSalesYtd, y0, catG3, branch, team);
+        bmp += teamVal(b2bG3TeamSalesMo, y1, catG3, branch, team);
+        bmc += teamVal(b2bG3TeamSalesMo, y0, catG3, branch, team);
+      }
+      rows.push({
+        rowKind: 'b2b_branch_subtotal',
+        label: `${branch} 소계 (B2B)`,
+        metrics: withYtdYoYGrowth(
+          blk(bt3f, bt2f, bt1f, 0, bt1, 0, bt0, bmp, 0, bmc),
+          bt1, bt0
+        ),
+      });
+      for (const team of teams) {
+        const t3f = teamVal(b2bG3TeamSalesFull, y3, catG3, branch, team);
+        const t2f = teamVal(b2bG3TeamSalesFull, y2, catG3, branch, team);
+        const t1f = teamVal(b2bG3TeamSalesFull, y1, catG3, branch, team);
+        const t1y = teamVal(b2bG3TeamSalesYtd, y1, catG3, branch, team);
+        const t0y = teamVal(b2bG3TeamSalesYtd, y0, catG3, branch, team);
+        rows.push({
+          rowKind: 'b2b_team',
+          label: team,
+          metrics: withYtdYoYGrowth(
+            blk(t3f, t2f, t1f, 0, t1y, 0, t0y,
+              teamVal(b2bG3TeamSalesMo, y1, catG3, branch, team), 0,
+              teamVal(b2bG3TeamSalesMo, y0, catG3, branch, team)),
+            t1y, t0y
+          ),
+        });
+      }
+    }
+
+    sections.push({ category: cat, group3: g3, rows });
+  }
+
+  return {
+    yearLabels: { yPast3: y3, yPast2: y2, yPast1: y1, yCurrent: y0 },
+    monthLabel: `${monthInt}월`,
+    sections,
+    availableMonths,
+    currentMonth: currentMonthStr,
+  };
 }

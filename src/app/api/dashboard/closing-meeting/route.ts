@@ -7,7 +7,7 @@ import {
   loadFullDisplayOrderContext,
   loadOfficeOrderMap,
 } from '@/lib/display-order';
-import { buildCumulativeViewPayload } from '@/lib/closing-meeting-cumulative';
+import { buildCumulativeViewPayload, buildCustomGroupPayload } from '@/lib/closing-meeting-cumulative';
 import { SNAPSHOT_IMPORTED_AT, combinedInventoryUnionSql } from '@/lib/inventory-snapshot-combined';
 import {
   sqlAndEmployeeNotSpecialHandling,
@@ -74,6 +74,33 @@ export async function GET(request: Request) {
     const basePurchasesSubquery = `
       (
         SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합계, p.공급가액, p.창고코드, i.품목그룹1코드
+        FROM purchases p
+        LEFT JOIN items i ON p.품목코드 = i.품목코드
+        WHERE 1=1
+          ${sqlPurchaseOnlyClassifiedGroups('i')}
+          ${sqlAndPurchaseExcludeMeetingCounterpartyCodes('p')}
+      )
+    `;
+
+    // Group3-aware subqueries (same as above but also expose 품목그룹3코드)
+    const baseSalesSubqueryG3 = `
+      (
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.적요, s.출하창고코드, i.품목그룹1코드, i.품목그룹3코드
+        FROM sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        UNION ALL
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.적요, s.출하창고코드, i.품목그룹1코드, i.품목그룹3코드
+        FROM east_division_sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+        UNION ALL
+        SELECT s.일자, s.거래처코드, s.실납업체, s.담당자코드, s.품목코드, s.수량, s.중량, s.단가, s.합계, s.공급가액, s.적요, s.출하창고코드, i.품목그룹1코드, i.품목그룹3코드
+        FROM west_division_sales s
+        LEFT JOIN items i ON s.품목코드 = i.품목코드
+      )
+    `;
+    const basePurchasesSubqueryG3 = `
+      (
+        SELECT p.일자, p.거래처코드, p.품목코드, p.중량, p.합계, p.공급가액, p.창고코드, i.품목그룹1코드, i.품목그룹3코드
         FROM purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
         WHERE 1=1
@@ -1007,6 +1034,17 @@ export async function GET(request: Request) {
         refresh: forceRefresh,
       });
       return NextResponse.json({ success: true, data: cumulativeData });
+    }
+
+    if (tab === 'custom-group') {
+      const customGroupData = await buildCustomGroupPayload({
+        currentMonthStr,
+        currentYear,
+        availableMonths,
+        baseSalesSubquery: baseSalesSubqueryG3,
+        basePurchasesSubquery: basePurchasesSubqueryG3,
+      });
+      return NextResponse.json({ success: true, data: customGroupData });
     }
 
     if (tab === 'b2c-auto') {

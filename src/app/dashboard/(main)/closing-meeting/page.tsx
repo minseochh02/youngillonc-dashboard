@@ -9,6 +9,7 @@ import TargetAchievementTab from '@/components/closing-meeting/TargetAchievement
 import YearOverYearTab from '@/components/closing-meeting/YearOverYearTab';
 import BranchPerformanceTab from '@/components/closing-meeting/BranchPerformanceTab';
 import CumulativeViewTab from '@/components/closing-meeting/CumulativeViewTab';
+import CustomGroupTab from '@/components/closing-meeting/CustomGroupTab';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import VatToggle from '@/components/VatToggle';
 import { apiFetch } from '@/lib/api';
@@ -26,6 +27,7 @@ const tabs = [
   { id: 'yoy-comparison', label: '전년 대비' },
   { id: 'branch-performance', label: '사업소별 실적' },
   { id: 'cumulative-view', label: '누적 보기' },
+  { id: 'custom-group', label: '맞춤 보기' },
 ];
 
 export default function ClosingMeetingPage() {
@@ -311,6 +313,8 @@ export default function ClosingMeetingPage() {
           <BranchPerformanceTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : activeTab === 'cumulative-view' ? (
           <CumulativeViewTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
+        ) : activeTab === 'custom-group' ? (
+          <CustomGroupTab selectedMonth={selectedMonth} onMonthsAvailable={handleMonthsAvailable} />
         ) : null}
       </div>
     </div>
