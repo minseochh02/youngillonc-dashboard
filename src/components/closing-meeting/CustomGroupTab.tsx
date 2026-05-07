@@ -482,7 +482,7 @@ function CustomChannelTeamsSection({
                     }
                     rowSpan={branchSpan}
                     onDragOver={onBranchDragOver}
-                    onDrop={(e) => onBranchDrop(e, bb.key)}
+                    onDrop={(e) => onBranchDrop(e, bb.fullKey)}
                   >
                     <span className="flex w-full min-w-0 flex-col items-center justify-center gap-0.5">
                       <span className="flex items-center gap-0.5">
@@ -595,7 +595,7 @@ function CustomChannelTeamsSection({
                   className={subtotalBranchCls}
                   rowSpan={1}
                   onDragOver={onBranchDragOver}
-                  onDrop={(e) => onBranchDrop(e, bb.key)}
+                  onDrop={(e) => onBranchDrop(e, bb.fullKey)}
                 >
                   <span className="flex w-full min-w-0 flex-col items-center justify-center gap-0.5">
                     <span className="flex items-center gap-0.5">
