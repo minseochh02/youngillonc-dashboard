@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Database, Users, Building2, Package, Tags, MapPin, Settings, Loader2, Save, CheckCircle2, AlertCircle, X, Info, ArrowUp, ArrowDown, ListOrdered, GitCompare, RefreshCw, Play } from 'lucide-react';
+import { Database, Users, Building2, Package, Tags, MapPin, Settings, Loader2, Save, CheckCircle2, AlertCircle, X, Info, ArrowUp, ArrowDown, ListOrdered, GitCompare, RefreshCw } from 'lucide-react';
 import type { DisplayOrderReconcileReport } from '@/lib/display-order-reconcile';
 import { apiFetch } from '@/lib/api';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
@@ -16,18 +16,6 @@ interface StagedDiff {
   changes?: string[];
 }
 
-interface BrowserRecordingRunOptionsInput {
-  startDate?: string;
-  endDate?: string;
-  labeledFieldFills?: (string | undefined)[][];
-}
-
-interface ScriptRunControl {
-  useWeekFromToday: boolean;
-  startDate: string;
-  endDate: string;
-  labeledFieldFillsText: string;
-}
 
 const baselineTables = [
   {
@@ -140,10 +128,9 @@ export default function DataManagementPage() {
   const [selectedChannelTeam, setSelectedChannelTeam] = useState<string>('');
   const [scriptNames, setScriptNames] = useState<string[]>([]);
   const [scriptsLoading, setScriptsLoading] = useState(false);
-  const [scriptsError, setScriptsError] = useState<string | null>(null);
-  const [scriptControls, setScriptControls] = useState<Record<string, ScriptRunControl>>({});
-  const [runningScript, setRunningScript] = useState<string | null>(null);
-  const [scriptRunResult, setScriptRunResult] = useState<Record<string, string>>({});
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number; currentScript: string } | null>(null);
+  const [refreshResult, setRefreshResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
 
   useEffect(() => {
     cancelStaging();
@@ -154,124 +141,61 @@ export default function DataManagementPage() {
     fetchBrowserRecordingScripts();
   }, []);
 
-  const localYmd = (d: Date): string => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
-
-  const getDefaultScriptControl = (): ScriptRunControl => ({
-    useWeekFromToday: false,
-    startDate: '',
-    endDate: '',
-    labeledFieldFillsText: ''
-  });
-
   const fetchBrowserRecordingScripts = async () => {
     setScriptsLoading(true);
-    setScriptsError(null);
     try {
       const response = await apiFetch('/api/dashboard/browser-recording');
       const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || '스크립트 목록을 불러오지 못했습니다.');
-      }
-
-      const scripts = Array.isArray(result.scripts) ? result.scripts as string[] : [];
+      const scripts = result.success && Array.isArray(result.scripts) ? result.scripts as string[] : [];
       setScriptNames(scripts);
-      setScriptControls((prev) => {
-        const next: Record<string, ScriptRunControl> = {};
-        for (const script of scripts) {
-          next[script] = prev[script] ?? getDefaultScriptControl();
-        }
-        return next;
-      });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : '스크립트 목록을 불러오지 못했습니다.';
-      setScriptsError(msg);
+    } catch {
+      // silently fail — scripts list is used internally only
     } finally {
       setScriptsLoading(false);
     }
   };
 
-  const updateScriptControl = (
-    scriptName: string,
-    patch: Partial<ScriptRunControl>
-  ) => {
-    setScriptControls((prev) => ({
-      ...prev,
-      [scriptName]: {
-        ...(prev[scriptName] ?? getDefaultScriptControl()),
-        ...patch
+  const refreshThisMonth = async () => {
+    if (isRefreshing || scriptNames.length === 0) return;
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    setIsRefreshing(true);
+    setRefreshResult(null);
+
+    let successCount = 0;
+    let failedCount = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < scriptNames.length; i++) {
+      const scriptName = scriptNames[i];
+      setRefreshProgress({ current: i + 1, total: scriptNames.length, currentScript: scriptName });
+
+      try {
+        const response = await apiFetch('/api/dashboard/browser-recording', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ testFile: scriptName, runOptions: { startDate, endDate } })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error || '실행 실패');
+        const replay = result.result ?? {};
+        if (replay.success === false) throw new Error(replay.error || '실행 실패');
+        successCount++;
+      } catch (error) {
+        failedCount++;
+        errors.push(`${scriptName}: ${error instanceof Error ? error.message : '실행 실패'}`);
       }
-    }));
-  };
-
-  const buildRunOptions = (control: ScriptRunControl): BrowserRecordingRunOptionsInput => {
-    const options: BrowserRecordingRunOptionsInput = {};
-
-    if (control.useWeekFromToday) {
-      const today = new Date();
-      const end = new Date(today);
-      end.setDate(end.getDate() + 7);
-      options.startDate = localYmd(today);
-      options.endDate = localYmd(end);
-    } else {
-      if (control.startDate.trim()) options.startDate = control.startDate.trim();
-      if (control.endDate.trim()) options.endDate = control.endDate.trim();
     }
 
-    if (control.labeledFieldFillsText.trim()) {
-      const parsed = JSON.parse(control.labeledFieldFillsText) as (string | undefined)[][];
-      if (!Array.isArray(parsed)) {
-        throw new Error('라벨 필드 입력은 JSON 배열 형식이어야 합니다.');
-      }
-      options.labeledFieldFills = parsed;
-    }
-
-    return options;
-  };
-
-  const runBrowserScript = async (scriptName: string) => {
-    const control = scriptControls[scriptName] ?? getDefaultScriptControl();
-    let runOptions: BrowserRecordingRunOptionsInput;
-    try {
-      runOptions = buildRunOptions(control);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : '실행 옵션 파싱에 실패했습니다.';
-      setScriptRunResult((prev) => ({ ...prev, [scriptName]: msg }));
-      return;
-    }
-
-    setRunningScript(scriptName);
-    setScriptRunResult((prev) => ({ ...prev, [scriptName]: '실행 중...' }));
-
-    try {
-      const response = await apiFetch('/api/dashboard/browser-recording', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          testFile: scriptName,
-          runOptions
-        })
-      });
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || '스크립트 실행에 실패했습니다.');
-      }
-      const replay = result.result ?? {};
-      const success = replay.success === true;
-      const replayMessage = success
-        ? replay.message || '실행 완료'
-        : replay.error || '실행 실패';
-      setScriptRunResult((prev) => ({ ...prev, [scriptName]: replayMessage }));
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : '스크립트 실행에 실패했습니다.';
-      setScriptRunResult((prev) => ({ ...prev, [scriptName]: msg }));
-    } finally {
-      setRunningScript(null);
-    }
+    setRefreshProgress(null);
+    setRefreshResult({ success: successCount, failed: failedCount, errors });
+    setIsRefreshing(false);
   };
 
   const fetchTableData = async () => {
@@ -700,108 +624,84 @@ export default function DataManagementPage() {
         </div>
       </div>
 
-      {/* Browser Recorder Scripts */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/50 flex items-center justify-between gap-3">
-          <div>
-            <h4 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Browser Recorder Scripts</h4>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-              사용 가능한 스크립트를 실행해 동기화 데이터를 갱신합니다.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={fetchBrowserRecordingScripts}
-            disabled={scriptsLoading}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
-          >
-            {scriptsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            목록 새로고침
-          </button>
-        </div>
-        <div className="p-6 space-y-4">
-          {scriptsError && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-              <AlertCircle className="w-4 h-4" />
-              {scriptsError}
+      {/* Data Refresh */}
+      {(() => {
+        const now = new Date();
+        const yearLabel = now.getFullYear();
+        const monthLabel = now.getMonth() + 1;
+        const noScripts = !scriptsLoading && scriptNames.length === 0;
+        return (
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h4 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">데이터 새로고침</h4>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  이카운트에서 <span className="font-semibold text-zinc-700 dark:text-zinc-300">{yearLabel}년 {monthLabel}월</span> 데이터를 다시 다운로드합니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={refreshThisMonth}
+                disabled={isRefreshing || noScripts}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+              >
+                {isRefreshing
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <RefreshCw className="w-4 h-4" />
+                }
+                {isRefreshing ? '새로고침 중...' : '데이터 새로고침'}
+              </button>
             </div>
-          )}
-          {scriptsLoading ? (
-            <div className="flex items-center gap-2 text-zinc-500 text-sm">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              스크립트 목록을 불러오는 중...
-            </div>
-          ) : scriptNames.length === 0 ? (
-            <p className="text-sm text-zinc-500">표시할 스크립트가 없습니다.</p>
-          ) : (
-            <div className="space-y-4">
-              {scriptNames.map((scriptName) => {
-                const control = scriptControls[scriptName] ?? getDefaultScriptControl();
-                const isRunning = runningScript === scriptName;
-                return (
+
+            {/* Progress */}
+            {isRefreshing && refreshProgress && (
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center justify-between text-xs text-zinc-500">
+                  <span>{refreshProgress.currentScript}</span>
+                  <span>{refreshProgress.current} / {refreshProgress.total}</span>
+                </div>
+                <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-1.5">
                   <div
-                    key={scriptName}
-                    className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 space-y-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{scriptName}</p>
-                      <button
-                        type="button"
-                        onClick={() => runBrowserScript(scriptName)}
-                        disabled={isRunning}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                        실행
-                      </button>
-                    </div>
+                    className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${(refreshProgress.current / refreshProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300 md:col-span-3">
-                        <input
-                          type="checkbox"
-                          checked={control.useWeekFromToday}
-                          onChange={(e) => updateScriptControl(scriptName, { useWeekFromToday: e.target.checked })}
-                        />
-                        오늘부터 1주일 날짜 범위 자동 설정
-                      </label>
-                      <input
-                        type="text"
-                        value={control.startDate}
-                        onChange={(e) => updateScriptControl(scriptName, { startDate: e.target.value })}
-                        placeholder="startDate (YYYY-MM-DD)"
-                        disabled={control.useWeekFromToday}
-                        className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs"
-                      />
-                      <input
-                        type="text"
-                        value={control.endDate}
-                        onChange={(e) => updateScriptControl(scriptName, { endDate: e.target.value })}
-                        placeholder="endDate (YYYY-MM-DD)"
-                        disabled={control.useWeekFromToday}
-                        className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs"
-                      />
-                      <input
-                        type="text"
-                        value={control.labeledFieldFillsText}
-                        onChange={(e) => updateScriptControl(scriptName, { labeledFieldFillsText: e.target.value })}
-                        placeholder='labeledFieldFills JSON (optional)'
-                        className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs md:col-span-3"
-                      />
-                    </div>
+            {/* Result */}
+            {!isRefreshing && refreshResult && (
+              <div className={`mt-4 flex items-start gap-2 px-4 py-3 rounded-lg text-sm ${
+                refreshResult.failed === 0
+                  ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-200'
+                  : 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200'
+              }`}>
+                {refreshResult.failed === 0
+                  ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                  : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                }
+                <div>
+                  <p className="font-semibold">
+                    {refreshResult.failed === 0
+                      ? `완료 — ${refreshResult.success}개 스크립트 성공`
+                      : `${refreshResult.success}개 성공, ${refreshResult.failed}개 실패`
+                    }
+                  </p>
+                  {refreshResult.errors.length > 0 && (
+                    <ul className="mt-1 space-y-0.5 text-xs opacity-80">
+                      {refreshResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
 
-                    {scriptRunResult[scriptName] && (
-                      <p className="text-xs text-zinc-600 dark:text-zinc-300">
-                        {scriptRunResult[scriptName]}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
+            {noScripts && (
+              <p className="mt-3 text-xs text-zinc-400">등록된 스크립트가 없습니다. Browser Recorder에서 스크립트를 먼저 저장하세요.</p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Table Selection Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-2.5">
