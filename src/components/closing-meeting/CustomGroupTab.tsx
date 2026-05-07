@@ -97,6 +97,11 @@ function formatRate(r: number) {
   return `${(r * 100).toFixed(1)}%`;
 }
 
+function formatK(n: number) {
+  if (!n || Number.isNaN(n)) return "—";
+  return Math.round(n / 1000).toLocaleString("ko-KR") + "K";
+}
+
 function teamOnlyFromLabel(label: string): string {
   const s = label.replace(/^\s*\[(?:B2C|B2B)\]\s*/i, "").trim();
   const dot = s.indexOf("·");
@@ -127,22 +132,30 @@ const dragHandleBtn =
 const b2cBlockToggleBtn =
   "inline-flex shrink-0 items-center rounded border border-violet-400/50 bg-white/80 p-0.5 text-violet-700 hover:bg-violet-50 dark:border-violet-600 dark:bg-zinc-900/80 dark:text-violet-300 dark:hover:bg-zinc-800";
 
-function MetricCells({ block, tdClass }: { block: CumulativeMetricBlock; tdClass: string }) {
+function MetricCells({
+  block,
+  tdClass,
+  formatNum = formatInt,
+}: {
+  block: CumulativeMetricBlock;
+  tdClass: string;
+  formatNum?: (n: number) => string;
+}) {
   return (
     <>
-      <td className={tdClass}>{formatInt(block.yPast3)}</td>
-      <td className={tdClass}>{formatInt(block.yPast2)}</td>
-      <td className={tdClass}>{formatInt(block.yPast1)}</td>
-      <td className={tdClass}>{formatInt(block.yCurrent)}</td>
+      <td className={tdClass}>{formatNum(block.yPast3)}</td>
+      <td className={tdClass}>{formatNum(block.yPast2)}</td>
+      <td className={tdClass}>{formatNum(block.yPast1)}</td>
+      <td className={tdClass}>{formatNum(block.yCurrent)}</td>
       <td className={tdClass}>{formatRate(block.growthRate)}</td>
-      <td className={tdClass}>{formatInt(block.cum.priorYear)}</td>
-      <td className={tdClass}>{formatInt(block.cum.target)}</td>
-      <td className={tdClass}>{formatInt(block.cum.currentYear)}</td>
+      <td className={tdClass}>{formatNum(block.cum.priorYear)}</td>
+      <td className={tdClass}>{formatNum(block.cum.target)}</td>
+      <td className={tdClass}>{formatNum(block.cum.currentYear)}</td>
       <td className={tdClass}>{formatRate(block.cum.achievementRate)}</td>
       <td className={tdClass}>{formatRate(block.cum.yoyRate)}</td>
-      <td className={tdClass}>{formatInt(block.mo.priorYear)}</td>
-      <td className={tdClass}>{formatInt(block.mo.target)}</td>
-      <td className={tdClass}>{formatInt(block.mo.currentYear)}</td>
+      <td className={tdClass}>{formatNum(block.mo.priorYear)}</td>
+      <td className={tdClass}>{formatNum(block.mo.target)}</td>
+      <td className={tdClass}>{formatNum(block.mo.currentYear)}</td>
       <td className={tdClass}>{formatRate(block.mo.achievementRate)}</td>
       <td className={tdClass}>{formatRate(block.mo.yoyRate)}</td>
     </>
@@ -189,6 +202,7 @@ function CustomSummarySection({
   onToggleTeamsSection,
   autoColJoinAbove,
   autoColJoinBelow,
+  viewMode,
 }: {
   groupLabel: string;
   invRow: CumulativeMetricBlock;
@@ -200,6 +214,7 @@ function CustomSummarySection({
   onToggleTeamsSection: () => void;
   autoColJoinAbove?: boolean;
   autoColJoinBelow?: boolean;
+  viewMode?: 'weight' | 'amount';
 }) {
   const sortable = useSortable({ id: SUM_ID });
 
@@ -227,13 +242,13 @@ function CustomSummarySection({
         <th className={rowInvSub} colSpan={2}>
           재고
         </th>
-        <MetricCells block={invRow} tdClass={rowInvCell} />
+        <MetricCells block={invRow} tdClass={rowInvCell} formatNum={viewMode === 'amount' ? formatK : formatInt} />
       </tr>
       <tr>
         <th className={thSub} colSpan={2}>
           <strong>sell-in</strong>
         </th>
-        <MetricCells block={sellinRow} tdClass={tdNum} />
+        <MetricCells block={sellinRow} tdClass={tdNum} formatNum={viewMode === 'amount' ? formatK : formatInt} />
       </tr>
       <tr>
         <th className={salesLabelCls} colSpan={2}>
@@ -260,7 +275,7 @@ function CustomSummarySection({
             </span>
           </span>
         </th>
-        <MetricCells block={salesRow} tdClass={salesMetricCls} />
+        <MetricCells block={salesRow} tdClass={salesMetricCls} formatNum={viewMode === 'amount' ? formatK : formatInt} />
       </tr>
     </tbody>
   );
@@ -429,7 +444,7 @@ function CustomChannelTeamsSection({
                 <th colSpan={2} className={b2cTotalLabelCls}>
                   {totalLabel}
                 </th>
-                <MetricCells block={merged} tdClass={teamMetricCls} />
+                <MetricCells block={merged} tdClass={teamMetricCls} formatNum={viewMode === 'amount' ? formatK : formatInt} />
               </tr>
             );
           }
@@ -548,7 +563,7 @@ function CustomChannelTeamsSection({
                             </span>
                           </span>
                         </th>
-                        <MetricCells block={viewMode === 'amount' ? (tr.amountMetrics ?? tr.metrics) : tr.metrics} tdClass={teamMetricCls} />
+                        <MetricCells block={viewMode === 'amount' ? (tr.amountMetrics ?? tr.metrics) : tr.metrics} tdClass={teamMetricCls} formatNum={viewMode === 'amount' ? formatK : formatInt} />
                       </>
                     )}
                   </SortableTeamRow>
@@ -647,7 +662,7 @@ function CustomChannelTeamsSection({
                       )}
                     </span>
                   </th>
-                  <MetricCells block={viewMode === 'amount' ? (bb.amountMetrics ?? bb.metrics) : bb.metrics} tdClass={subtotalMetricCls} />
+                  <MetricCells block={viewMode === 'amount' ? (bb.amountMetrics ?? bb.metrics) : bb.metrics} tdClass={subtotalMetricCls} formatNum={viewMode === 'amount' ? formatK : formatInt} />
                 </tr>
               );
             }
@@ -1323,6 +1338,7 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
                         onToggleTeamsSection={() => setTeamsSectionHidden((v) => !v)}
                         autoColJoinAbove={autoJoinAbove}
                         autoColJoinBelow={autoJoinBelow}
+                        viewMode={viewMode}
                       />
                     );
                   }
