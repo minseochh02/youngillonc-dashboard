@@ -5,6 +5,10 @@ import {
   sqlAndSalesRemarkNotExact,
   sqlSalesResolvedClientKeyExpr,
 } from '@/lib/special-handling-employees';
+import { rebuildComputedInventoryMonthly, CATEGORIES } from './computed-inventory-utils';
+
+/** Simple lock to prevent multiple concurrent rebuilds */
+let isRebuildingComputedInventory = false;
 
 const WHERE_B2C = `(ec.b2c_팀 IS NULL OR ec.b2c_팀 != 'B2B')`;
 const WHERE_B2B = `ec.b2c_팀 = 'B2B'`;
@@ -56,7 +60,7 @@ const PUR_CAT = `
   END
 `;
 
-const CATEGORIES = ['MB', 'AVI', 'MAR', 'PVL', 'CVL', 'IL', '기타'] as const;
+
 // Raw (pass-through) versions for custom-group — no ELSE '기타' fallback
 const SALES_CAT_RAW = `TRIM(COALESCE(s.품목그룹1코드, ''))`;
 const PUR_CAT_RAW = `TRIM(COALESCE(p.품목그룹1코드, ''))`;
@@ -242,18 +246,71 @@ export async function buildCumulativeViewPayload(params: {
     ])
   );
   const computedInventoryByMonthCat = new Map<string, number>();
+  const computedAtMap = new Map<string, string>();
   const computedInventorySql = `
-    SELECT month, category, inventory_weight
+    SELECT month, category, inventory_weight, computed_at
     FROM computed_inventory_monthly
     WHERE month IN ('${yearlyMonthKeys.join("','")}')
   `;
-  const computedInventoryRes = await executeSQL(computedInventorySql);
-  (computedInventoryRes?.rows || []).forEach((row: any) => {
-    computedInventoryByMonthCat.set(
-      `${String(row.month)}\t${String(row.category)}`,
-      Number(row.inventory_weight) || 0
-    );
-  });
+
+  const fetchComputedInventory = async () => {
+    const res = await executeSQL(computedInventorySql);
+    (res?.rows || []).forEach((row: any) => {
+      const k = `${String(row.month)}\t${String(row.category)}`;
+      computedInventoryByMonthCat.set(k, Number(row.inventory_weight) || 0);
+      computedAtMap.set(k, String(row.computed_at || ''));
+    });
+  };
+
+  await fetchComputedInventory();
+
+  // Check if any required month/category is missing or stale
+  const todayStr = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const currentActualMonth = todayStr.slice(0, 7);
+
+  let needsRebuild = false;
+  for (const m of yearlyMonthKeys) {
+    for (const cat of CATEGORIES) {
+      const k = `${m}\t${cat}`;
+      if (!computedInventoryByMonthCat.has(k)) {
+        needsRebuild = true;
+        break;
+      }
+      // If it's the current month, ensure it was computed today
+      if (m === currentActualMonth && computedAtMap.get(k) !== todayStr) {
+        needsRebuild = true;
+        break;
+      }
+    }
+    if (needsRebuild) break;
+  }
+
+  if (needsRebuild) {
+    if (!isRebuildingComputedInventory) {
+      isRebuildingComputedInventory = true;
+      try {
+        console.log('Missing or stale computed inventory detected. Rebuilding...');
+        await rebuildComputedInventoryMonthly();
+      } catch (e) {
+        console.error('Failed to rebuild computed inventory:', e);
+      } finally {
+        isRebuildingComputedInventory = false;
+      }
+      computedInventoryByMonthCat.clear();
+      computedAtMap.clear();
+      await fetchComputedInventory();
+    } else {
+      // Wait for the other process to finish rebuilding (up to 20s)
+      for (let i = 0; i < 10; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (!isRebuildingComputedInventory) break;
+      }
+      computedInventoryByMonthCat.clear();
+      computedAtMap.clear();
+      await fetchComputedInventory();
+    }
+  }
+
   const getComputedInventory = (y: number, cat: string, monthOverride?: string): number => {
     const m = monthOverride ?? monthNum;
     const k = `${y}-${m}\t${cat}`;
