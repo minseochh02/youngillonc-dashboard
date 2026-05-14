@@ -760,7 +760,7 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
           return;
         }
         const url = withIncludeVat(
-          `/api/dashboard/closing-meeting?tab=custom-group${selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : ""}${forceRefresh ? "&refresh=true" : ""}`,
+          `/api/dashboard/closing-meeting?tab=custom-group${selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : ""}`,
           includeVat
         );
         const res = await apiFetch(url);

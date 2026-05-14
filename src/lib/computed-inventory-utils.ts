@@ -65,13 +65,9 @@ async function ensureTable(): Promise<void> {
       { name: 'month_end_date', type: 'DATE', notNull: true },
       { name: 'category', type: 'TEXT', notNull: true },
       { name: 'purchase_weight', type: 'REAL', notNull: true },
-      { name: 'purchase_amount', type: 'REAL', notNull: true },
       { name: 'sales_weight', type: 'REAL', notNull: true },
-      { name: 'sales_amount', type: 'REAL', notNull: true },
       { name: 'net_weight', type: 'REAL', notNull: true },
-      { name: 'net_amount', type: 'REAL', notNull: true },
       { name: 'inventory_weight', type: 'REAL', notNull: true },
-      { name: 'inventory_amount', type: 'REAL', notNull: true },
       { name: 'snapshot_month', type: 'TEXT', notNull: true },
       { name: 'snapshot_date', type: 'DATE', notNull: true },
       { name: 'computed_at', type: 'DATE' },
@@ -133,10 +129,9 @@ export async function rebuildComputedInventoryMonthly() {
     SELECT
       substr(p.일자, 1, 7) as month,
       ${categoryExpr('p')} as category,
-      SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as purchase_weight,
-      SUM(CAST(REPLACE(p.공급가액, ',', '') AS NUMERIC)) as purchase_amount
+      SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as purchase_weight
     FROM (
-      SELECT p.일자, i.품목그룹1코드, p.중량, p.공급가액, p.거래처코드
+      SELECT p.일자, i.품목그룹1코드, p.중량, p.거래처코드
       FROM purchases p
       LEFT JOIN items i ON p.품목코드 = i.품목코드
       WHERE ${sqlMeetingPurchaseIncludedClientPredicate('p.거래처코드')}
@@ -148,18 +143,17 @@ export async function rebuildComputedInventoryMonthly() {
     SELECT
       substr(s.일자, 1, 7) as month,
       ${categoryExpr('s')} as category,
-      SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight,
-      SUM(CAST(REPLACE(s.공급가액, ',', '') AS NUMERIC)) as sales_amount
+      SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight
     FROM (
-      SELECT s.일자, s.품목코드, s.중량, s.공급가액, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
+      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
       FROM sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       UNION ALL
-      SELECT s.일자, s.품목코드, s.중량, s.공급가액, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
+      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
       FROM east_division_sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       UNION ALL
-      SELECT s.일자, s.품목코드, s.중량, s.공급가액, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
+      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
       FROM west_division_sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
     ) s
@@ -175,30 +169,23 @@ export async function rebuildComputedInventoryMonthly() {
 
   const monthSet = new Set<string>([SNAPSHOT_MONTH]);
   const purchaseByMonthCat = new Map<string, number>();
-  const purchaseAmtByMonthCat = new Map<string, number>();
   const salesByMonthCat = new Map<string, number>();
-  const salesAmtByMonthCat = new Map<string, number>();
   const netByMonthCat = new Map<string, number>();
-  const netAmtByMonthCat = new Map<string, number>();
   const key = (m: string, c: Category) => `${m}\t${c}`;
 
   for (const row of purRes?.rows || []) {
     const m = String(row.month);
     const c = ensureCategory(String(row.category));
     const w = Number(row.purchase_weight) || 0;
-    const a = Number(row.purchase_amount) || 0;
     monthSet.add(m);
     purchaseByMonthCat.set(key(m, c), w);
-    purchaseAmtByMonthCat.set(key(m, c), a);
   }
   for (const row of salesRes?.rows || []) {
     const m = String(row.month);
     const c = ensureCategory(String(row.category));
     const w = Number(row.sales_weight) || 0;
-    const a = Number(row.sales_amount) || 0;
     monthSet.add(m);
     salesByMonthCat.set(key(m, c), w);
-    salesAmtByMonthCat.set(key(m, c), a);
   }
 
   const months = Array.from(monthSet).sort();
@@ -212,10 +199,6 @@ export async function rebuildComputedInventoryMonthly() {
       const pur = purchaseByMonthCat.get(key(m, c)) || 0;
       const sales = salesByMonthCat.get(key(m, c)) || 0;
       netByMonthCat.set(key(m, c), pur - sales);
-
-      const purAmt = purchaseAmtByMonthCat.get(key(m, c)) || 0;
-      const salesAmt = salesAmtByMonthCat.get(key(m, c)) || 0;
-      netAmtByMonthCat.set(key(m, c), purAmt - salesAmt);
     }
   }
 
@@ -224,44 +207,29 @@ export async function rebuildComputedInventoryMonthly() {
 
   for (const c of CATEGORIES) {
     const prefix: number[] = [];
-    const prefixAmt: number[] = [];
     let running = 0;
-    let runningAmt = 0;
     for (const m of months) {
       running += netByMonthCat.get(key(m, c)) || 0;
       prefix.push(running);
-
-      runningAmt += netAmtByMonthCat.get(key(m, c)) || 0;
-      prefixAmt.push(runningAmt);
     }
 
     const snapshot = snapshotMap.get(c) || 0;
     const pSnap = prefix[snapshotIdx] || 0;
 
-    const pSnapAmt = prefixAmt[snapshotIdx] || 0;
-
     months.forEach((m, i) => {
       const pur = purchaseByMonthCat.get(key(m, c)) || 0;
-      const purAmt = purchaseAmtByMonthCat.get(key(m, c)) || 0;
       const sales = salesByMonthCat.get(key(m, c)) || 0;
-      const salesAmt = salesAmtByMonthCat.get(key(m, c)) || 0;
       const net = netByMonthCat.get(key(m, c)) || 0;
-      const netAmt = netAmtByMonthCat.get(key(m, c)) || 0;
       const inv = snapshot + ((prefix[i] || 0) - pSnap);
-      const invAmt = (prefixAmt[i] || 0) - pSnapAmt;
 
       rowsToInsert.push({
         month: m,
         month_end_date: monthEndDate(m),
         category: c,
         purchase_weight: pur,
-        purchase_amount: purAmt,
         sales_weight: sales,
-        sales_amount: salesAmt,
         net_weight: net,
-        net_amount: netAmt,
         inventory_weight: inv,
-        inventory_amount: invAmt,
         snapshot_month: SNAPSHOT_MONTH,
         snapshot_date: SNAPSHOT_IMPORTED_AT,
         computed_at: now,
