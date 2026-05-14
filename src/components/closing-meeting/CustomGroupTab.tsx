@@ -1249,7 +1249,7 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
           <p>선택한 품목의 데이터가 없습니다.</p>
         </div>
       ) : (
-        <div className="max-h-[min(75vh,920px)] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm">
+        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <table className="w-full min-w-[1100px] table-fixed border-collapse">
               <colgroup>

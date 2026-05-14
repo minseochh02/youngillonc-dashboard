@@ -1384,7 +1384,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
           데이터 새로고침
         </button>
       </div>
-      <div className="max-h-[min(75vh,920px)] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm">
+      <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <table className="w-full min-w-[1100px] table-fixed border-collapse">
             <colgroup>
