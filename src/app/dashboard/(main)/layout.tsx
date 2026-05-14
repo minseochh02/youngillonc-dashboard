@@ -1,4 +1,5 @@
 import { VatIncludeProvider } from "@/contexts/VatIncludeContext";
+import { UiSettingsProvider } from "@/contexts/UiSettingsContext";
 
 export default function MainDashboardLayout({
   children,
@@ -6,8 +7,10 @@ export default function MainDashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <VatIncludeProvider>
-      <div className="p-8 min-w-0">{children}</div>
-    </VatIncludeProvider>
+    <UiSettingsProvider>
+      <VatIncludeProvider>
+        <div className="p-8 min-w-0">{children}</div>
+      </VatIncludeProvider>
+    </UiSettingsProvider>
   );
 }

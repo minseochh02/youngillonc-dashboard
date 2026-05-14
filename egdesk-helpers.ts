@@ -464,22 +464,44 @@ export async function getHometaxSyncHistory(limit: number = 50) {
 }
 
 /**
- * Query promissory notes (promissory_notes: 어음, issued/received)
+ * List per-(bank, product) bank-product tables — bank-side product data
+ * downloaded from bank portals that isn't core deposit/card transactions
+ * (loans, receivables, e-bills, etc.). Returns table slugs, displayName,
+ * column schemas, and row counts. ALWAYS call this first to discover
+ * what tables exist before calling queryBankProductTable.
  */
-export async function queryPromissoryNotes(options: {
-  bankId?: string;
-  accountId?: string;
-  status?: string;
-  noteType?: 'issued' | 'received';
-  maturityStart?: string;
-  maturityEnd?: string;
-  issueStart?: string;
-  issueEnd?: string;
-  searchText?: string;
+export async function listBankProductTables() {
+  return callFinanceHubTool('financehub_list_bank_product_tables', {});
+}
+
+/**
+ * Generic safe query against any per-(bank, product) table from
+ * listBankProductTables. Filters use the table's exact column names
+ * (snake_case). Returns rows with totalMatching, limit, offset.
+ *
+ * @example
+ *   queryBankProductTable({
+ *     tableSlug: 'ibk_loan_transactions',
+ *     filters: [
+ *       { column: 'account_number', op: '=', value: '306-063568-04-036' },
+ *       { column: 'transaction_amount', op: '>', value: 1000000 },
+ *     ],
+ *     orderBy: { column: 'transaction_date', direction: 'DESC' },
+ *     limit: 50,
+ *   });
+ */
+export async function queryBankProductTable(options: {
+  tableSlug: string;
+  filters?: Array<{
+    column: string;
+    op: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'like' | 'in';
+    value: string | number | Array<string | number>;
+  }>;
+  orderBy?: { column: string; direction?: 'ASC' | 'DESC' };
   limit?: number;
   offset?: number;
-} = {}) {
-  return callFinanceHubTool('financehub_query_promissory_notes', options);
+}) {
+  return callFinanceHubTool('financehub_query_bank_product_table', options);
 }
 
 // ==========================================
@@ -716,4 +738,279 @@ export async function runBrowserRecording(
     testFile,
     ...options
   });
+}
+
+// ==========================================
+// AI CENTER (workflows, entities, relations, tags)
+// ==========================================
+
+/**
+ * Call EGDesk AI Center MCP tool (workflows, Neuron Layer entities/relations/tags).
+ *
+ * - Server: `POST {apiUrl}/ai-center/tools/call`
+ * - Client: `POST /__ai_center_proxy` (see proxy.ts / middleware)
+ */
+export async function callAICenterTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const body = JSON.stringify({ tool: toolName, arguments: args });
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+
+  const isServer = typeof window === 'undefined';
+
+  let response: Response;
+  if (isServer) {
+    const apiUrl =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_URL) ||
+      EGDESK_CONFIG.apiUrl;
+    const apiKey =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_KEY) ||
+      EGDESK_CONFIG.apiKey;
+    if (apiKey) {
+      headers['X-Api-Key'] = apiKey;
+    }
+    response = await fetch(`${apiUrl}/ai-center/tools/call`, {
+      method: 'POST',
+      headers,
+      body
+    });
+  } else {
+    response = await fetch('/__ai_center_proxy', {
+      method: 'POST',
+      headers,
+      body
+    });
+  }
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+// ── Data Sources ─────────────────────────────────────────────────────────────
+
+/**
+ * List all data sources available for AI processing (user data tables, finance hub accounts,
+ * business identity snapshots, company research records) with processing state.
+ */
+export async function listDataSources() {
+  return callAICenterTool('ai_center_list_data_sources', {});
+}
+
+// ── Workflows ────────────────────────────────────────────────────────────────
+
+/** List all AI workflows */
+export async function listWorkflows() {
+  return callAICenterTool('ai_center_list_workflows', {});
+}
+
+/** Get a single workflow by ID (includes action steps) */
+export async function getWorkflow(id: string) {
+  return callAICenterTool('ai_center_get_workflow', { id });
+}
+
+/** Create a new AI workflow */
+export async function createWorkflow(data: {
+  label: string;
+  inputTypes: string[];
+  hints: string[];
+  outputTables: string[];
+  actions: Array<{ actionId: string; params?: Record<string, any>; stage?: number; position?: number }>;
+  status?: 'active' | 'suggested' | 'draft';
+  suggestedBy?: string;
+  triggerTable?: string | null;
+  notify?: string[];
+}) {
+  return callAICenterTool('ai_center_create_workflow', data);
+}
+
+/** Update metadata fields of an existing workflow */
+export async function updateWorkflow(
+  id: string,
+  data: {
+    label?: string;
+    status?: 'active' | 'suggested' | 'draft';
+    inputTypes?: string[];
+    hints?: string[];
+    outputTables?: string[];
+    triggerTable?: string | null;
+  }
+) {
+  return callAICenterTool('ai_center_update_workflow', { id, ...data });
+}
+
+/** Change the status of a workflow */
+export async function updateWorkflowStatus(
+  id: string,
+  status: 'active' | 'suggested' | 'draft'
+) {
+  return callAICenterTool('ai_center_update_workflow_status', { id, status });
+}
+
+/** Delete a workflow and all its action steps */
+export async function deleteWorkflow(id: string) {
+  return callAICenterTool('ai_center_delete_workflow', { id });
+}
+
+// ── Workflow notify roles ─────────────────────────────────────────────────────
+
+/** Set which roles receive notifications for all activity on a workflow's runs */
+export async function setWorkflowNotifyRoles(workflowId: string, roles: string[]) {
+  return callAICenterTool('ai_center_set_workflow_notify', { workflowId, roles });
+}
+
+// ── Workflow actions ──────────────────────────────────────────────────────────
+
+/** Append or insert an action step into a workflow */
+export async function addWorkflowAction(
+  workflowId: string,
+  actionId: string,
+  params: Record<string, any>,
+  stage: number = 0,
+  position: number = 0
+) {
+  return callAICenterTool('ai_center_add_workflow_action', { workflowId, actionId, params, stage, position });
+}
+
+/** Remove a single action step from a workflow by its row ID */
+export async function removeWorkflowAction(rowId: string) {
+  return callAICenterTool('ai_center_remove_workflow_action', { rowId });
+}
+
+// ── Workflow runs ─────────────────────────────────────────────────────────────
+
+/** Start a new run of a workflow, optionally linked to a source data row */
+export async function createRun(
+  workflowId: string,
+  inputData: Record<string, any>,
+  sourceTable?: string | null,
+  sourceRowId?: string | null
+) {
+  return callAICenterTool('ai_center_create_run', { workflowId, inputData, sourceTable, sourceRowId });
+}
+
+/** Get a single workflow run by ID */
+export async function getRun(runId: string) {
+  return callAICenterTool('ai_center_get_run', { runId });
+}
+
+/** Get all runs for a workflow */
+export async function getRuns(workflowId: string) {
+  return callAICenterTool('ai_center_get_runs', { workflowId });
+}
+
+/** Update the status of a workflow run */
+export async function updateRunStatus(
+  runId: string,
+  status: '정상진행중' | '반려중' | '정상완료' | '취소완료'
+) {
+  return callAICenterTool('ai_center_update_run_status', { runId, status });
+}
+
+/** Advance a workflow run to a new stage */
+export async function advanceRunStage(runId: string, stage: number) {
+  return callAICenterTool('ai_center_advance_run_stage', { runId, stage });
+}
+
+// ── Workflow approvals ────────────────────────────────────────────────────────
+
+/** Create a pending approval record for a run */
+export async function createApproval(
+  runId: string,
+  stage: number,
+  chainPosition: number,
+  role: string
+) {
+  return callAICenterTool('ai_center_create_approval', { runId, stage, chainPosition, role });
+}
+
+/** Get all approval records for a run */
+export async function getApprovals(runId: string) {
+  return callAICenterTool('ai_center_get_approvals', { runId });
+}
+
+/** Record an approval decision */
+export async function recordApprovalDecision(
+  approvalId: string,
+  decision: 'approved' | 'rejected' | 'cancelled'
+) {
+  return callAICenterTool('ai_center_record_approval_decision', { approvalId, decision });
+}
+
+// ── Entities ──────────────────────────────────────────────────────────────────
+
+/** List all Neuron Layer entities, optionally filtered by type */
+export async function listEntities(types?: string[]) {
+  return callAICenterTool('ai_center_list_entities', types ? { types } : {});
+}
+
+/** Create a new entity in the Neuron Layer */
+export async function createEntity(data: {
+  type: string;
+  name: string;
+  source: 'ai' | 'human';
+  id?: string;
+  raw?: string;
+  confidence?: number;
+}) {
+  return callAICenterTool('ai_center_create_entity', data);
+}
+
+/** Delete an entity from the Neuron Layer */
+export async function deleteEntity(id: string) {
+  return callAICenterTool('ai_center_delete_entity', { id });
+}
+
+// ── Relations ─────────────────────────────────────────────────────────────────
+
+/** List all relations, optionally filtered by source entity ID */
+export async function listRelations(fromId?: string) {
+  return callAICenterTool('ai_center_list_relations', fromId ? { fromId } : {});
+}
+
+/** Create a relation edge between two entities */
+export async function createRelation(data: {
+  from_type: string;
+  from_id: string;
+  to_type: string;
+  to_id: string;
+  relation: string;
+  source: 'ai' | 'human';
+  id?: string;
+  confidence?: number;
+}) {
+  return callAICenterTool('ai_center_create_relation', data);
+}
+
+/** Delete a relation edge by ID */
+export async function deleteRelation(id: string) {
+  return callAICenterTool('ai_center_delete_relation', { id });
+}
+
+// ── Tags ──────────────────────────────────────────────────────────────────────
+
+/** List all tags, optionally filtered by entity ID */
+export async function listTags(entityId?: string) {
+  return callAICenterTool('ai_center_list_tags', entityId ? { entityId } : {});
+}
+
+/** Create a tag/property on an entity or document */
+export async function createTag(data: {
+  doc_type: string;
+  doc_id: string;
+  namespace: string;
+  value: string;
+  source: 'ai' | 'human';
+  id?: string;
+  doc_ref?: string;
+  entity_id?: string;
+  confidence?: number;
+}) {
+  return callAICenterTool('ai_center_create_tag', data);
+}
+
+/** Delete a tag by ID */
+export async function deleteTag(id: string) {
+  return callAICenterTool('ai_center_delete_tag', { id });
 }

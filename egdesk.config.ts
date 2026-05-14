@@ -1,13 +1,13 @@
 /**
  * EGDesk User Data Configuration
- * Generated at: 2026-04-24T02:13:24.320Z
+ * Generated at: 2026-05-14T11:49:28.215Z
  *
  * This file contains type-safe definitions for your EGDesk tables.
  */
 
 export const EGDESK_CONFIG = {
   apiUrl: 'http://localhost:8080',
-  apiKey: undefined,
+  apiKey: '44c9e9ba-d732-42c1-9ad5-d0344ee1705c',
 } as const;
 
 export interface TableDefinition {
@@ -24,7 +24,7 @@ export const TABLES = {
   table1: {
     name: 'user_data_embedding_metadata',
     displayName: 'user_data_embedding_metadata',
-    description: 'Imported from user_database_export_2026-04-20.sql',
+    description: 'Imported from user_database_export_2026-05-03.sql',
     rowCount: 0,
     columnCount: 8,
     columns: ['id', 'table_id', 'column_name', 'total_embeddings', 'embedding_model', 'embedding_dimensions', 'last_updated', 'estimated_cost_usd']
@@ -32,7 +32,7 @@ export const TABLES = {
   table2: {
     name: 'user_data_embeddings',
     displayName: 'user_data_embeddings',
-    description: 'Imported from user_database_export_2026-04-20.sql',
+    description: 'Imported from user_database_export_2026-05-03.sql',
     rowCount: 0,
     columnCount: 9,
     columns: ['id', 'table_id', 'row_id', 'column_name', 'embedding_model', 'embedding_dimensions', 'embedding', 'created_at', 'updated_at']
@@ -40,7 +40,7 @@ export const TABLES = {
   table3: {
     name: 'sync_activity_log',
     displayName: 'sync_activity_log',
-    description: 'Imported from user_database_export_2026-04-20.sql',
+    description: 'Imported from user_database_export_2026-05-03.sql',
     rowCount: 0,
     columnCount: 12,
     columns: ['id', 'config_id', 'file_name', 'file_path', 'status', 'rows_imported', 'rows_skipped', 'duplicates_skipped', 'error_message', 'started_at', 'completed_at', 'duration_ms']
@@ -48,16 +48,16 @@ export const TABLES = {
   table4: {
     name: 'sync_configurations',
     displayName: 'sync_configurations',
-    description: 'Imported from user_database_export_2026-04-20.sql',
-    rowCount: 8,
-    columnCount: 23,
-    columns: ['id', 'script_folder_path', 'script_name', 'folder_name', 'target_table_id', 'header_row', 'skip_bottom_rows', 'sheet_index', 'column_mappings', 'applied_splits', 'file_action', 'enabled', 'auto_sync_enabled', 'unique_key_columns', 'duplicate_action', 'last_sync_at', 'last_sync_status', 'last_sync_rows_imported', 'last_sync_rows_skipped', 'last_sync_duplicates', 'last_sync_error', 'created_at', 'updated_at']
+    description: 'Imported from user_database_export_2026-05-03.sql',
+    rowCount: 15,
+    columnCount: 24,
+    columns: ['id', 'script_folder_path', 'script_name', 'folder_name', 'target_table_id', 'header_row', 'skip_bottom_rows', 'sheet_index', 'column_mappings', 'applied_splits', 'file_action', 'enabled', 'auto_sync_enabled', 'unique_key_columns', 'duplicate_action', 'last_sync_at', 'last_sync_status', 'last_sync_rows_imported', 'last_sync_rows_skipped', 'last_sync_duplicates', 'last_sync_error', 'created_at', 'updated_at', 'source']
   } as TableDefinition,
   table5: {
     name: 'computed_inventory_monthly',
     displayName: 'computed 재고(월말)',
     description: '카테고리별 월말 계산재고 (스냅샷 기반)',
-    rowCount: 784,
+    rowCount: 791,
     columnCount: 11,
     columns: ['id', 'month', 'month_end_date', 'category', 'purchase_weight', 'sales_weight', 'net_weight', 'inventory_weight', 'snapshot_month', 'snapshot_date', 'computed_at']
   } as TableDefinition,
@@ -119,42 +119,42 @@ export const TABLES = {
   table13: {
     name: 'east_division_purchases',
     displayName: '동부구매현황',
-    rowCount: 4048,
+    rowCount: 4118,
     columnCount: 13,
     columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '단가', '중량', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
   table14: {
     name: 'east_division_sales',
     displayName: '동부판매현황',
-    rowCount: 39060,
+    rowCount: 39568,
     columnCount: 15,
     columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
   } as TableDefinition,
   table15: {
     name: 'west_division_purchases',
     displayName: '서부구매현황',
-    rowCount: 4956,
+    rowCount: 5047,
     columnCount: 13,
     columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
   table16: {
     name: 'west_division_sales',
     displayName: '서부판매현황',
-    rowCount: 50846,
+    rowCount: 51542,
     columnCount: 15,
     columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
   } as TableDefinition,
   table17: {
     name: 'purchases',
     displayName: '구매현황',
-    rowCount: 126873,
+    rowCount: 127608,
     columnCount: 13,
     columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
   table18: {
     name: 'sales',
     displayName: '판매현황',
-    rowCount: 505241,
+    rowCount: 505577,
     columnCount: 15,
     columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
   } as TableDefinition,
@@ -168,7 +168,7 @@ export const TABLES = {
   table20: {
     name: 'disposed_inventory',
     displayName: '재고폐기',
-    rowCount: 81,
+    rowCount: 82,
     columnCount: 8,
     columns: ['id', '일자', '품목코드', '수량', '금액_수량_입고단가_', '적요', '창고명', '관리항목코드명']
   } as TableDefinition,
@@ -189,7 +189,7 @@ export const TABLES = {
   table23: {
     name: 'pending_purchases',
     displayName: '미구매현황',
-    rowCount: 230,
+    rowCount: 450,
     columnCount: 12,
     columns: ['id', '일자', '품목코드', '수량', '잔량', '잔량_중량_', '단가', '합계', '납기일자', '거래처코드', '창고명', '품목별납기일자']
   } as TableDefinition,
@@ -211,7 +211,7 @@ export const TABLES = {
     name: 'ledger',
     displayName: '계정별원장',
     description: 'Exact schema from 계정별원장-거래처코드포함2.xlsx',
-    rowCount: 17876,
+    rowCount: 18090,
     columnCount: 13,
     columns: ['id', '일자', '최초작성일자', '최종수정일자', '어음만기일자', '거래유형', '적요', '계정코드', '거래처코드', '차변금액', '대변금액', '잔액', 'imported_at']
   } as TableDefinition,
@@ -225,14 +225,14 @@ export const TABLES = {
   table28: {
     name: 'promissory_notes',
     displayName: '받을어음거래내역',
-    rowCount: 156,
+    rowCount: 159,
     columnCount: 13,
     columns: ['id', '일자', '증감구분', '어음번호', '거래처코드', '계정명', '부서명', '프로젝트명', '적요', '증가금액', '감소금액', '잔액', 'imported_at']
   } as TableDefinition,
   table29: {
     name: 'purchase_orders',
     displayName: '발주서현황',
-    rowCount: 1348,
+    rowCount: 1415,
     columnCount: 10,
     columns: ['id', '일자', '품목코드', '창고코드', '품목그룹1코드', '수량', '단가', '합계', '거래처코드', '적요']
   } as TableDefinition,
@@ -312,7 +312,7 @@ export const TABLES = {
   table40: {
     name: 'internal_uses',
     displayName: '자가사용현황',
-    rowCount: 62,
+    rowCount: 63,
     columnCount: 15,
     columns: ['id', '일자', '일자_번호', '사용유형', '적요', '품목코드', '품명_및_규격', '수량', '중량', '입고단가', '원가', '담당자코드명', '창고명', '품목그룹3코드', 'imported_at']
   } as TableDefinition

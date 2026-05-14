@@ -11,10 +11,11 @@ import BranchPerformanceTab from '@/components/closing-meeting/BranchPerformance
 import CumulativeViewTab from '@/components/closing-meeting/CumulativeViewTab';
 import CustomGroupTab from '@/components/closing-meeting/CustomGroupTab';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
+import { useUiSettings } from '@/contexts/UiSettingsContext';
 import VatToggle from '@/components/VatToggle';
 import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
-import { Calendar, Loader2 } from 'lucide-react';
+import { Calendar, Loader2, Lock, Unlock } from 'lucide-react';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { generateFilename, type IslandTable, type IslandSheetData } from '@/lib/excel-export';
 
@@ -32,6 +33,7 @@ const tabs = [
 
 export default function ClosingMeetingPage() {
   const { includeVat } = useVatInclude();
+  const { settings, toggleLock } = useUiSettings();
   const [activeTab, setActiveTab] = useState(tabs[0].id);
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>('');
@@ -242,6 +244,17 @@ export default function ClosingMeetingPage() {
 
         {/* Month Selector */}
         <div className="flex items-center gap-3">
+          <button
+            onClick={toggleLock}
+            className={`p-2 rounded-lg border transition-colors ${
+              settings.isLocked
+                ? "bg-amber-50 border-amber-200 text-amber-600 dark:bg-amber-950/20 dark:border-amber-800 dark:text-amber-400"
+                : "bg-white border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            }`}
+            title={settings.isLocked ? "편집 잠금 해제" : "편집 잠금 (드래그 방지)"}
+          >
+            {settings.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+          </button>
           <VatToggle id="vat-closing-meeting" />
           {isExporting && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
           <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">

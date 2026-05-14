@@ -78,10 +78,6 @@ export function reorderBranchBlocks(
   return newKeys.flatMap((k) => map.get(k) ?? []);
 }
 
-const LS_PREFIX_V1 = "closing-meeting-overview-order:v1";
-const LS_PREFIX_V2 = "closing-meeting-overview-order:v2";
-const LS_GLOBAL_KEY_V2 = `${LS_PREFIX_V2}:global`;
-
 export type OverviewSegmentPersist = {
   sectionOrder?: ("summary" | "b2c" | "b2b")[] | null;
   summaryFirst: boolean;
@@ -112,75 +108,6 @@ function defaultSegmentPersist(): OverviewSegmentPersist {
 }
 
 /** v1 → v2: 기존 단일 블록을 `pvl-cvl-il` 로 이관 */
-export function loadOverviewOrderV2(month: string): OverviewOrderPersistV2 | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const rawGlobal = sessionStorage.getItem(LS_GLOBAL_KEY_V2);
-    const rawV2 = rawGlobal || sessionStorage.getItem(`${LS_PREFIX_V2}:${month}`);
-    if (rawV2) {
-      const j = JSON.parse(rawV2) as {
-        segments?: OverviewOrderPersistV2["segments"];
-        groupOrder?: OverviewProductGroupId[];
-        breakdownOrder?: ("sellin" | "sales")[];
-        breakdownRowOrder?: string[];
-      };
-      return {
-        segments: j.segments && typeof j.segments === "object" ? j.segments : {},
-        groupOrder: Array.isArray(j.groupOrder) ? j.groupOrder : undefined,
-        breakdownOrder: Array.isArray(j.breakdownOrder) ? j.breakdownOrder : undefined,
-        breakdownRowOrder: Array.isArray(j.breakdownRowOrder) ? j.breakdownRowOrder : undefined,
-      };
-    }
-    const rawV1 = sessionStorage.getItem(`${LS_PREFIX_V1}:${month}`);
-    if (!rawV1) return null;
-    const j = JSON.parse(rawV1) as {
-      summaryFirst?: boolean;
-      teamRowIds?: string[];
-      teamsSectionHidden?: boolean;
-      salesRowCollapsed?: boolean;
-      b2cBlockCollapsed?: boolean;
-      collapsedBranchKeys?: string[];
-    };
-    const teamsHidden =
-      typeof j.teamsSectionHidden === "boolean"
-        ? j.teamsSectionHidden
-        : typeof j.salesRowCollapsed === "boolean"
-          ? j.salesRowCollapsed
-          : false;
-    return {
-      segments: {
-        "pvl-cvl-il": {
-          sectionOrder: typeof j.summaryFirst === "boolean"
-            ? (j.summaryFirst ? ["summary", "b2c", "b2b"] : ["b2c", "b2b", "summary"])
-            : ["summary", "b2c", "b2b"],
-          summaryFirst: typeof j.summaryFirst === "boolean" ? j.summaryFirst : true,
-          teamRowIds: Array.isArray(j.teamRowIds) ? j.teamRowIds : null,
-          teamsSectionHidden: teamsHidden,
-          b2cBlockCollapsed: typeof j.b2cBlockCollapsed === "boolean" ? j.b2cBlockCollapsed : false,
-          b2bBlockCollapsed: false,
-          collapsedBranchKeys: (Array.isArray(j.collapsedBranchKeys) ? j.collapsedBranchKeys : [])
-            .filter((k): k is string => typeof k === "string")
-            .map((k) => (k.startsWith("pvl-cvl-il\t") ? k : `pvl-cvl-il\t${k}`)),
-        },
-      },
-      groupOrder: undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function saveOverviewOrderV2(month: string, data: OverviewOrderPersistV2): void {
-  if (typeof window === "undefined") return;
-  try {
-    const json = JSON.stringify(data);
-    sessionStorage.setItem(LS_GLOBAL_KEY_V2, json);
-    sessionStorage.setItem(`${LS_PREFIX_V2}:${month}`, json);
-  } catch {
-    /* ignore quota */
-  }
-}
-
 export function getSegmentPersist(
   loaded: OverviewOrderPersistV2 | null,
   gid: OverviewProductGroupId
