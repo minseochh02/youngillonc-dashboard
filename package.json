@@ -22,7 +22,8 @@
     "esz018r-combined-export": "tsx scripts/esz018r-combined-export.ts",
     "create-inventory-snapshots-20251231": "tsx scripts/create-inventory-snapshot-tables-20251231.ts",
     "reset-inventory-snapshots-20251231": "tsx scripts/create-inventory-snapshot-tables-20251231.ts --force",
-    "populate-inventory-snapshots-20251231": "tsx scripts/populate-inventory-snapshots-20251231.ts"
+    "populate-inventory-snapshots-20251231": "tsx scripts/populate-inventory-snapshots-20251231.ts",
+    "rebuild-computed-inventory": "tsx scripts/rebuild-computed-inventory-monthly.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
