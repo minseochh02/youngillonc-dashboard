@@ -190,12 +190,12 @@ export default function TargetAchievementTab({ selectedMonth, onMonthsAvailable 
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">사업소</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">목표(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-500 uppercase tracking-wider">실적(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">차이(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">달성율</th>
-                <th className="text-center py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">상태</th>
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">사업소</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">목표(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-500 uppercase tracking-wider whitespace-nowrap">실적(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">차이(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">달성율</th>
+                <th className="text-center py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">상태</th>
               </tr>
             </thead>
             <tbody>

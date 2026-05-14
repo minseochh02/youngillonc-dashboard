@@ -308,52 +308,52 @@ export default function CumulativeViewTab({
           </tr>
           {showGrandRow && grand ? (
             <tr>
-              <th colSpan={2} className={thGrand} style={grandStickyStyle}>
+              <th colSpan={2} className={`${thGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {grandLabel}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatInt(grand.yPast3)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatInt(grand.yPast2)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatInt(grand.yPast1)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatInt(grand.yCurrent)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatRate(grand.growthRate)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatInt(grand.cum.priorYear)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatInt(grand.cum.target)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatInt(grand.cum.currentYear)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatRate(grand.cum.achievementRate)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatRate(grand.cum.yoyRate)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatInt(grand.mo.priorYear)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatInt(grand.mo.target)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatInt(grand.mo.currentYear)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatRate(grand.mo.achievementRate)}
               </th>
-              <th scope="col" className={tdGrand} style={grandStickyStyle}>
+              <th scope="col" className={`${tdGrand} whitespace-nowrap`} style={grandStickyStyle}>
                 {formatRate(grand.mo.yoyRate)}
               </th>
             </tr>

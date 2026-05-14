@@ -113,24 +113,24 @@ function teamOnlyFromLabel(label: string): string {
 }
 
 const thBase =
-  "border border-zinc-900 dark:border-zinc-600 px-2 py-2 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 bg-[#d9e1f2] dark:bg-zinc-700 align-middle";
+  "border border-zinc-900 dark:border-zinc-600 px-2 py-2 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 bg-[#d9e1f2] dark:bg-zinc-700 align-middle whitespace-nowrap";
 const thStickyR1 = `${thBase} sticky top-0 z-[32]`;
 const thStickyR2 = `${thBase} sticky z-[28]`;
 const tdNum =
-  "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-right text-xs tabular-nums text-zinc-800 dark:text-zinc-200";
+  "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-right text-xs tabular-nums text-zinc-800 dark:text-zinc-200 whitespace-nowrap";
 const thSub =
-  "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-medium text-zinc-800 dark:text-zinc-200 bg-white dark:bg-zinc-900";
+  "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-medium text-zinc-800 dark:text-zinc-200 bg-white dark:bg-zinc-900 whitespace-nowrap";
 const thCat =
   "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 bg-zinc-50 dark:bg-zinc-800";
-const thCatProduct = `${thCat} w-[4.25rem] max-w-[4.25rem] min-w-0 px-1 py-2 text-[10px] leading-snug whitespace-normal break-words [overflow-wrap:anywhere] align-middle`;
+const thCatProduct = `${thCat} w-[4.25rem] max-w-[4.25rem] min-w-0 px-1 py-2 text-[10px] leading-snug break-all [overflow-wrap:anywhere] align-middle whitespace-normal`;
 const autoColJoinAboveCls = "border-t-0";
 const autoColJoinBelowCls = "border-b-0";
 const rowInvCell = `${tdNum} bg-[#fce4d6] dark:bg-amber-950/35`;
 const rowInvSub = `${thSub} bg-[#fce4d6] dark:bg-amber-950/35`;
 const dragHandleBtn =
-  "inline-flex shrink-0 cursor-grab touch-none rounded border border-zinc-300 bg-zinc-100/90 p-0.5 text-zinc-500 hover:bg-zinc-200 active:cursor-grabbing dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700";
+  "hidden group-hover:inline-flex shrink-0 cursor-grab touch-none rounded border border-zinc-300 bg-zinc-100/90 p-0.5 text-zinc-500 hover:bg-zinc-200 active:cursor-grabbing dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700";
 const b2cBlockToggleBtn =
-  "inline-flex shrink-0 items-center rounded border border-violet-400/50 bg-white/80 p-0.5 text-violet-700 hover:bg-violet-50 dark:border-violet-600 dark:bg-zinc-900/80 dark:text-violet-300 dark:hover:bg-zinc-800";
+  "hidden group-hover:inline-flex shrink-0 items-center rounded border border-violet-400/50 bg-white/80 p-0.5 text-violet-700 hover:bg-violet-50 dark:border-violet-600 dark:bg-zinc-900/80 dark:text-violet-300 dark:hover:bg-zinc-800";
 
 function MetricCells({
   block,
@@ -185,7 +185,7 @@ function SortableTeamRow({
     display: rowHidden ? "none" : undefined,
   };
   return (
-    <tr ref={setNodeRef} style={style} {...attributes}>
+    <tr ref={setNodeRef} style={style} {...attributes} className="group">
       {children({ setActivatorNodeRef, listeners: listeners as Record<string, unknown> })}
     </tr>
   );
@@ -219,7 +219,7 @@ function CustomSummarySection({
   const sortable = useSortable({ id: SUM_ID });
 
   return (
-    <tbody ref={sortable.setNodeRef} style={{ opacity: sortable.isDragging ? 0.55 : undefined }}>
+    <tbody ref={sortable.setNodeRef} style={{ opacity: sortable.isDragging ? 0.55 : undefined }} className="group">
       <tr>
         <th
           rowSpan={3}
@@ -256,7 +256,7 @@ function CustomSummarySection({
             <button
               type="button"
               onClick={onToggleTeamsSection}
-              className="inline-flex shrink-0 items-center rounded border border-violet-400/50 bg-white/80 p-0.5 text-violet-700 hover:bg-violet-50 dark:border-violet-600 dark:bg-zinc-900/80 dark:text-violet-300 dark:hover:bg-zinc-800"
+              className={b2cBlockToggleBtn}
               aria-expanded={!teamsSectionHidden}
               title={
                 teamsSectionHidden
@@ -296,6 +296,7 @@ function CustomTeamsHiddenPlaceholder({
     <tbody
       ref={sectionSortable.setNodeRef}
       style={{ opacity: sectionSortable.isDragging ? 0.55 : undefined }}
+      className="group"
     >
       <tr>
         <th
@@ -401,6 +402,7 @@ function CustomChannelTeamsSection({
     <tbody
       ref={sectionSortable.setNodeRef}
       style={{ opacity: sectionSortable.isDragging ? 0.55 : undefined }}
+      className="group"
     >
       <SortableContext items={sortableTeamIds} strategy={verticalListSortingStrategy}>
         {(() => {
@@ -514,7 +516,7 @@ function CustomChannelTeamsSection({
                               e.stopPropagation();
                               onToggleBranchCollapse(bb.fullKey);
                             }}
-                            className="inline-flex shrink-0 items-center rounded border border-zinc-400/60 bg-white/90 p-0.5 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-500 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                            className="hidden group-hover:inline-flex shrink-0 items-center rounded border border-zinc-400/60 bg-white/90 p-0.5 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-500 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
                             aria-expanded={!branchCollapsed}
                             title={branchCollapsed ? "지사 팀 펼치기" : "지사 팀 접기"}
                           >
@@ -626,7 +628,7 @@ function CustomChannelTeamsSection({
                           e.stopPropagation();
                           onToggleBranchCollapse(bb.fullKey);
                         }}
-                        className="inline-flex shrink-0 items-center rounded border border-zinc-400/60 bg-white/90 p-0.5 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-500 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        className="inline-flex shrink-0 items-center rounded border border-zinc-400/60 bg-white/90 p-0.5 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-zinc-100 dark:border-zinc-500 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
                         aria-expanded={false}
                         title="지사 팀 펼치기"
                       >
@@ -649,7 +651,7 @@ function CustomChannelTeamsSection({
               ) : null;
 
               rows.push(
-                <tr key={subtotalSid} className={subtotalBg}>
+                <tr key={subtotalSid} className={`group ${subtotalBg}`}>
                   {autoColCell}
                   {branchCell}
                   <th className={subtotalLabelCls}>

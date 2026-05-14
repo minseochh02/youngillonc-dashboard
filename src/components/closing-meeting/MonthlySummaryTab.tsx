@@ -122,7 +122,7 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
   };
 
   const getCategoryLabel = (category: string) => {
-    if (category === 'AUTO') return 'AUTO(PVL+CVL)';
+    if (category === 'AUTO') return 'AUTO';
     return category;
   };
 
@@ -237,13 +237,13 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">연도</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">판매(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">판매 증감율</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">판매 증감량(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider">구매(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">구매 증감율</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">구매 증감량(L)</th>
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">연도</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider whitespace-nowrap">판매(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">판매 증감율</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">판매 증감량(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-600 uppercase tracking-wider whitespace-nowrap">구매(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">구매 증감율</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">구매 증감량(L)</th>
               </tr>
             </thead>
             <tbody>
@@ -254,17 +254,19 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
                 return (
                 <Fragment key={item.year}>
                 <tr
-                  className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                  className="group border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer"
                   onClick={() => toggleYear(item.year)}
                 >
-                  <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
+                  <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
                     <span className="inline-flex items-center gap-1">
-                      {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      <span className="hidden group-hover:inline-flex">
+                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </span>
                       {item.year}년
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">{formatNumber(item.sales)}</td>
-                  <td className="py-3 px-4 text-right">
+                  <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold whitespace-nowrap">{formatNumber(item.sales)}</td>
+                  <td className="py-3 px-4 text-right whitespace-nowrap">
                     {item.salesChange ? (
                       <span className={`inline-flex items-center gap-1 font-medium ${item.salesChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
                         {item.salesChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
@@ -272,11 +274,11 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
                       </span>
                     ) : <span className="text-zinc-400">N/A</span>}
                   </td>
-                  <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                  <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
                     {item.prevSales !== null ? `${item.sales - item.prevSales >= 0 ? '+' : ''}${formatNumber(item.sales - item.prevSales)}` : 'N/A'}
                   </td>
-                  <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">{formatNumber(item.purchase)}</td>
-                  <td className="py-3 px-4 text-right">
+                  <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold whitespace-nowrap">{formatNumber(item.purchase)}</td>
+                  <td className="py-3 px-4 text-right whitespace-nowrap">
                     {item.purchaseChange ? (
                       <span className={`inline-flex items-center gap-1 font-medium ${item.purchaseChange.isPositive ? 'text-green-600' : 'text-red-600'}`}>
                         {item.purchaseChange.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
@@ -284,7 +286,7 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
                       </span>
                     ) : <span className="text-zinc-400">N/A</span>}
                   </td>
-                  <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                  <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
                     {item.prevPurchase !== null ? `${item.purchase - item.prevPurchase >= 0 ? '+' : ''}${formatNumber(item.purchase - item.prevPurchase)}` : 'N/A'}
                   </td>
                 </tr>
@@ -296,14 +298,14 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
                           <table className="w-full text-xs">
                             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
                               <tr>
-                                <th className="text-left py-2 px-3 font-bold text-zinc-500">카테고리</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">{item.year} 판매(L)</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">{item.year - 1} 판매(L)</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">달성율</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">전년대비</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">{item.year} 구매(L)</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">{item.year - 1} 구매(L)</th>
-                                <th className="text-right py-2 px-3 font-bold text-zinc-500">전년대비</th>
+                                <th className="text-left py-2 px-3 font-bold text-zinc-500 whitespace-nowrap">카테고리</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500 whitespace-nowrap">{item.year} 판매(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500 whitespace-nowrap">{item.year - 1} 판매(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500 whitespace-nowrap">달성율</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500 whitespace-nowrap">전년대비</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500 whitespace-nowrap">{item.year} 구매(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500 whitespace-nowrap">{item.year - 1} 구매(L)</th>
+                                <th className="text-right py-2 px-3 font-bold text-zinc-500 whitespace-nowrap">전년대비</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -315,10 +317,10 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
                                 const rowAchievementRate = curr.target > 0 ? (curr.sales / curr.target) * 100 : 0;
                                 return (
                                   <tr key={`${item.year}_${category}`} className="border-b border-zinc-100 dark:border-zinc-800/60">
-                                    <td className="py-2 px-3 font-medium text-zinc-800 dark:text-zinc-200">{getCategoryLabel(category)}</td>
-                                    <td className="py-2 px-3 text-right font-mono">{formatNumber(Math.round(curr.sales))}</td>
-                                    <td className="py-2 px-3 text-right font-mono">{formatNumber(Math.round(prev.sales))}</td>
-                                    <td className="py-2 px-3 text-right">
+                                    <td className="py-2 px-3 font-medium text-zinc-800 dark:text-zinc-200 whitespace-nowrap">{getCategoryLabel(category)}</td>
+                                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{formatNumber(Math.round(curr.sales))}</td>
+                                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{formatNumber(Math.round(prev.sales))}</td>
+                                    <td className="py-2 px-3 text-right whitespace-nowrap">
                                       <span className={`font-medium ${
                                         rowAchievementRate >= 100 ? 'text-green-600' :
                                         rowAchievementRate >= 80 ? 'text-yellow-600' : 'text-red-600'
@@ -326,7 +328,7 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
                                         {rowAchievementRate.toFixed(1)}%
                                       </span>
                                     </td>
-                                    <td className="py-2 px-3 text-right">
+                                    <td className="py-2 px-3 text-right whitespace-nowrap">
                                       <span className={`inline-flex items-center gap-1 font-medium ${
                                         salesRowChange.isPositive ? 'text-green-600' : 'text-red-600'
                                       }`}>
@@ -334,9 +336,9 @@ export default function MonthlySummaryTab({ selectedMonth, onMonthsAvailable }: 
                                         {Math.abs(salesRowChange.percent).toFixed(1)}%
                                       </span>
                                     </td>
-                                    <td className="py-2 px-3 text-right font-mono">{formatNumber(Math.round(curr.purchase))}</td>
-                                    <td className="py-2 px-3 text-right font-mono">{formatNumber(Math.round(prev.purchase))}</td>
-                                    <td className="py-2 px-3 text-right">
+                                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{formatNumber(Math.round(curr.purchase))}</td>
+                                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{formatNumber(Math.round(prev.purchase))}</td>
+                                    <td className="py-2 px-3 text-right whitespace-nowrap">
                                       <span className={`inline-flex items-center gap-1 font-medium ${
                                         purchaseRowChange.isPositive ? 'text-green-600' : 'text-red-600'
                                       }`}>

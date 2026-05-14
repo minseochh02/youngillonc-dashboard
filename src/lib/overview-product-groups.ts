@@ -16,8 +16,8 @@ export const OVERVIEW_PRODUCT_GROUPS: readonly {
   groupLabel: string;
   categories: ReadonlySet<string>;
 }[] = [
-  { id: "pvl-cvl-il", groupLabel: "AUTO(PVL+CVL) + IL", categories: new Set(["PVL", "CVL", "IL"]) },
-  { id: "pvl-cvl", groupLabel: "AUTO(PVL+CVL)", categories: new Set(["PVL", "CVL"]) },
+  { id: "pvl-cvl-il", groupLabel: "AUTO + IL", categories: new Set(["PVL", "CVL", "IL"]) },
+  { id: "pvl-cvl", groupLabel: "AUTO", categories: new Set(["PVL", "CVL"]) },
   { id: "il", groupLabel: "IL", categories: new Set(["IL"]) },
   { id: "avi", groupLabel: "AVI", categories: new Set(["AVI"]) },
   { id: "mar", groupLabel: "MAR", categories: new Set(["MAR"]) },

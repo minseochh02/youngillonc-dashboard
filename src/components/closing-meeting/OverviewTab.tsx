@@ -126,18 +126,18 @@ function branchMergeMeta(
 }
 
 const thBase =
-  "border border-zinc-900 dark:border-zinc-600 px-2 py-2 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 bg-[#d9e1f2] dark:bg-zinc-700 align-middle";
+  "border border-zinc-900 dark:border-zinc-600 px-2 py-2 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 bg-[#d9e1f2] dark:bg-zinc-700 align-middle whitespace-nowrap";
 const thStickyR1 = `${thBase} sticky top-0 z-[32]`;
 const thStickyR2 = `${thBase} sticky z-[28]`;
 const tdNum =
-  "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-right text-xs tabular-nums text-zinc-800 dark:text-zinc-200";
+  "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-right text-xs tabular-nums text-zinc-800 dark:text-zinc-200 whitespace-nowrap";
 const thSub =
-  "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-medium text-zinc-800 dark:text-zinc-200 bg-white dark:bg-zinc-900";
+  "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-medium text-zinc-800 dark:text-zinc-200 bg-white dark:bg-zinc-900 whitespace-nowrap";
 const thCat =
-  "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 bg-zinc-50 dark:bg-zinc-800";
+  "border border-zinc-900 dark:border-zinc-600 px-2 py-1.5 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 bg-zinc-50 dark:bg-zinc-800 whitespace-nowrap";
 
 const thCatProduct =
-  `${thCat} w-[4.25rem] max-w-[4.25rem] min-w-0 px-1 py-2 text-[10px] leading-snug whitespace-normal break-words [overflow-wrap:anywhere] align-middle`;
+  `${thCat} w-[4.25rem] max-w-[4.25rem] min-w-0 px-1 py-2 text-[10px] leading-snug break-words [overflow-wrap:anywhere] align-middle whitespace-nowrap`;
 
 /** 요약/팀이 서로 다른 tbody라 AUTO 열이 두 개의 th로 쌓임 — 인접 경계선 제거 */
 const autoColJoinAboveCls = "border-t-0";
@@ -162,10 +162,10 @@ function visibleTeamRowCountInBlock(
 }
 
 const dragHandleBtn =
-  "inline-flex shrink-0 cursor-grab touch-none rounded border border-zinc-300 bg-zinc-100/90 p-0.5 text-zinc-500 hover:bg-zinc-200 active:cursor-grabbing dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700";
+  "hidden group-hover:inline-flex shrink-0 cursor-grab touch-none rounded border border-zinc-300 bg-zinc-100/90 p-0.5 text-zinc-500 hover:bg-zinc-200 active:cursor-grabbing dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700";
 
 const b2cBlockToggleBtn =
-  "inline-flex shrink-0 items-center rounded border border-violet-400/50 bg-white/80 p-0.5 text-violet-700 hover:bg-violet-50 dark:border-violet-600 dark:bg-zinc-900/80 dark:text-violet-300 dark:hover:bg-zinc-800";
+  "hidden group-hover:inline-flex shrink-0 items-center rounded border border-violet-400/50 bg-white/80 p-0.5 text-violet-700 hover:bg-violet-50 dark:border-violet-600 dark:bg-zinc-900/80 dark:text-violet-300 dark:hover:bg-zinc-800";
 
 function DashMetricCells({ tdClass }: { tdClass: string }) {
   return (
@@ -225,7 +225,7 @@ function SortableTeamRow({
     display: rowHidden ? "none" : undefined,
   };
   return (
-    <tr ref={setNodeRef} style={style} {...attributes}>
+    <tr ref={setNodeRef} style={style} {...attributes} className="group">
       {children({ setActivatorNodeRef, listeners: listeners as Record<string, unknown> })}
     </tr>
   );
@@ -276,7 +276,7 @@ function OverviewSummarySection({
   const rowCount = 3 + (extraRows?.length ?? 0);
 
   return (
-    <tbody ref={sortable.setNodeRef} style={{ opacity: sortable.isDragging ? 0.55 : undefined }}>
+    <tbody ref={sortable.setNodeRef} style={{ opacity: sortable.isDragging ? 0.55 : undefined }} className="group">
       <tr>
         <th
           rowSpan={rowCount}
@@ -315,7 +315,7 @@ function OverviewSummarySection({
             <button
               type="button"
               onClick={onToggleTeamsSection}
-              className="inline-flex shrink-0 items-center rounded border border-violet-400/50 bg-white/80 p-0.5 text-violet-700 hover:bg-violet-50 dark:border-violet-600 dark:bg-zinc-900/80 dark:text-violet-300 dark:hover:bg-zinc-800"
+              className={b2cBlockToggleBtn}
               aria-expanded={!teamsSectionHidden}
               title={
                 teamsSectionHidden
@@ -374,6 +374,7 @@ function OverviewTeamsHiddenPlaceholder({
     <tbody
       ref={sectionSortable.setNodeRef}
       style={{ opacity: sectionSortable.isDragging ? 0.55 : undefined }}
+      className="group"
     >
       <tr>
         {/* AUTO 열은 위 요약·아래 팀 표와 동일하게 단독 열 유지 (3열 합치지 않음) */}
@@ -456,7 +457,7 @@ function OverviewSummaryBreakdown({
                   style={{ opacity: sellinSortable.isDragging ? 0.55 : undefined }}
                   className="border-t-4 border-zinc-400 dark:border-zinc-500"
                 >
-                  <tr>
+                  <tr className="group">
                     <th
                       colSpan={18}
                       className="bg-zinc-100 dark:bg-zinc-900 text-center py-2 font-bold text-sm tracking-tight"
@@ -531,7 +532,7 @@ function OverviewSummaryBreakdown({
                   style={{ opacity: salesSortable.isDragging ? 0.55 : undefined }}
                   className="border-t-4 border-zinc-400 dark:border-zinc-500"
                 >
-                  <tr>
+                  <tr className="group">
                     <th
                       colSpan={18}
                       className="bg-violet-50 dark:bg-violet-950/20 text-center py-2 font-bold text-sm tracking-tight"
@@ -617,7 +618,7 @@ function SortableBreakdownRow({
     opacity: isDragging ? 0.55 : undefined,
   };
   return (
-    <tr ref={setNodeRef} style={style} {...attributes}>
+    <tr ref={setNodeRef} style={style} {...attributes} className="group">
       {children({ listeners: listeners as Record<string, unknown> })}
     </tr>
   );
@@ -702,6 +703,7 @@ function OverviewChannelTeamsSection({
     <tbody
       ref={sectionSortable.setNodeRef}
       style={{ opacity: sectionSortable.isDragging ? 0.55 : undefined }}
+      className="group"
     >
       <SortableContext items={sortableTeamIds} strategy={verticalListSortingStrategy}>
         {(() => {
@@ -801,7 +803,7 @@ function OverviewChannelTeamsSection({
                     className={hasMultipleTeams ? `${teamBranchCls} bg-orange-100/60 dark:bg-orange-900/30` : teamBranchCls}
                     rowSpan={branchSpan}
                     onDragOver={onBranchDragOver}
-                    onDrop={(e) => onBranchDrop(e, bb.key)}
+                    onDrop={(e) => onBranchDrop(e, bb.fullKey)}
                   >
                     <span className="flex w-full min-w-0 flex-col items-center justify-center gap-0.5">
                       <span className="flex items-center gap-0.5">
@@ -812,7 +814,7 @@ function OverviewChannelTeamsSection({
                               e.stopPropagation();
                               onToggleBranchCollapse(bb.fullKey);
                             }}
-                            className="inline-flex shrink-0 items-center rounded border border-zinc-400/60 bg-white/90 p-0.5 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-500 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                            className="hidden group-hover:inline-flex shrink-0 items-center rounded border border-zinc-400/60 bg-white/90 p-0.5 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-500 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
                             aria-expanded={!branchCollapsed}
                             title={branchCollapsed ? "지사 팀 펼치기" : "지사 팀 접기"}
                           >
@@ -882,65 +884,65 @@ function OverviewChannelTeamsSection({
               const subtotalBranchCls = `${teamBranchCls} bg-orange-100/60 dark:bg-orange-900/30`;
 
               const autoColCell = isFirstRowInChannel ? (
-              <th
-                rowSpan={channelTotalVisibleRows}
-                className={`${thCatProduct}${joinTop ? ` ${autoColJoinAboveCls}` : ""}${joinBot ? ` ${autoColJoinBelowCls}` : ""}`}
-              >
-                <span className="flex flex-col items-center gap-1">
-                  <button
-                    type="button"
-                    className={dragHandleBtn}
-                    aria-label="요약 블록과 팀 블록 순서 바꾸기"
-                    {...sectionSortable.listeners}
-                    {...sectionSortable.attributes}
-                  >
-                    <GripVertical className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="flex w-full min-w-0 flex-col items-center gap-0.5">
+                <th
+                  rowSpan={channelTotalVisibleRows}
+                  className={`${thCatProduct}${joinTop ? ` ${autoColJoinAboveCls}` : ""}${joinBot ? ` ${autoColJoinBelowCls}` : ""}`}
+                >
+                  <span className="flex flex-col items-center gap-1">
                     <button
                       type="button"
-                      onClick={onToggleChannelCollapsed}
-                      className={b2cBlockToggleBtn}
-                      aria-expanded
-                      title={`${channel.toUpperCase()} 합계만 보기`}
+                      className={dragHandleBtn}
+                      aria-label="요약 블록과 팀 블록 순서 바꾸기"
+                      {...sectionSortable.listeners}
+                      {...sectionSortable.attributes}
                     >
-                      <ChevronDown className="h-3.5 w-3.5" />
+                      <GripVertical className="h-3.5 w-3.5" />
                     </button>
-                  </span>
-                </span>
-              </th>
-            ) : null;
-
-            const branchCell = branchCollapsed ? (
-              <th
-                className={subtotalBranchCls}
-                rowSpan={1}
-                onDragOver={onBranchDragOver}
-                onDrop={(e) => onBranchDrop(e, bb.key)}
-              >
-                <span className="flex w-full min-w-0 flex-col items-center justify-center gap-0.5">
-                  <span className="flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleBranchCollapse(bb.fullKey);
-                      }}
-                      className="inline-flex shrink-0 items-center rounded border border-zinc-400/60 bg-white/90 p-0.5 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-500 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                      aria-expanded={false}
-                      title="지사 팀 펼치기"
-                    >
-                      <ChevronRight className="h-3 w-3" />
-                    </button>
-                    <span
-                      className={`${dragHandleBtn} mb-0.5`}
-                      draggable
-                      onDragStart={(e) => onBranchDragStart(e, bb.fullKey)}
-                      aria-label={`${normalizeOverviewBranchLabel(bb.rows[0]!)} 지사 블록 이동`}
-                    >
-                      <GripVertical className="h-3 w-3" />
+                    <span className="flex w-full min-w-0 flex-col items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={onToggleChannelCollapsed}
+                        className={b2cBlockToggleBtn}
+                        aria-expanded
+                        title={`${channel.toUpperCase()} 합계만 보기`}
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
                     </span>
                   </span>
+                </th>
+              ) : null;
+
+              const branchCell = branchCollapsed ? (
+                <th
+                  className={subtotalBranchCls}
+                  rowSpan={1}
+                  onDragOver={onBranchDragOver}
+                    onDrop={(e) => onBranchDrop(e, bb.fullKey)}
+                >
+                  <span className="flex w-full min-w-0 flex-col items-center justify-center gap-0.5">
+                    <span className="flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleBranchCollapse(bb.fullKey);
+                        }}
+                        className="inline-flex shrink-0 items-center rounded border border-zinc-400/60 bg-white/90 p-0.5 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-zinc-100 dark:border-zinc-500 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        aria-expanded={false}
+                        title="지사 팀 펼치기"
+                      >
+                        <ChevronRight className="h-3 w-3" />
+                      </button>
+                      <span
+                        className={`${dragHandleBtn} mb-0.5`}
+                        draggable
+                        onDragStart={(e) => onBranchDragStart(e, bb.fullKey)}
+                        aria-label={`${normalizeOverviewBranchLabel(bb.rows[0]!)} 지사 블록 이동`}
+                      >
+                        <GripVertical className="h-3 w-3" />
+                      </span>
+                    </span>
                   <span className="w-full break-words text-center text-[10px] font-medium leading-tight [overflow-wrap:anywhere]">
                     {normalizeOverviewBranchLabel(bb.rows[0]!)}
                   </span>
@@ -949,7 +951,7 @@ function OverviewChannelTeamsSection({
             ) : null;
 
             rows.push(
-                <tr key={subtotalSid} className={subtotalBg}>
+                <tr key={subtotalSid} className={`group ${subtotalBg}`}>
                   {autoColCell}
                   {branchCell}
                   <th className={subtotalLabelCls}>

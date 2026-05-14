@@ -320,13 +320,13 @@ export default function BranchPerformanceTab({ selectedMonth, onMonthsAvailable 
           <table className="w-full text-sm border-collapse">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800">
               <tr>
-                <th className="text-left py-4 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest w-[200px]">구분 (사업소/팀/사원)</th>
-                <th className="text-right py-4 px-4 text-[11px] font-bold text-blue-600 uppercase tracking-widest">당월 중량(L)</th>
-                <th className="text-right py-4 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest">전월 중량(L)</th>
-                <th className="text-center py-4 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest">중량 변화율</th>
-                <th className="text-right py-4 px-4 text-[11px] font-bold text-blue-600 uppercase tracking-widest">당월 금액(원)</th>
-                <th className="text-right py-4 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest">전월 금액(원)</th>
-                <th className="text-center py-4 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest">금액 변화율</th>
+                <th className="text-left py-4 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest w-[200px] whitespace-nowrap">구분 (사업소/팀/사원)</th>
+                <th className="text-right py-4 px-4 text-[11px] font-bold text-blue-600 uppercase tracking-widest whitespace-nowrap">당월 중량(L)</th>
+                <th className="text-right py-4 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest whitespace-nowrap">전월 중량(L)</th>
+                <th className="text-center py-4 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest whitespace-nowrap">중량 변화율</th>
+                <th className="text-right py-4 px-4 text-[11px] font-bold text-blue-600 uppercase tracking-widest whitespace-nowrap">당월 금액(원)</th>
+                <th className="text-right py-4 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest whitespace-nowrap">전월 금액(원)</th>
+                <th className="text-center py-4 px-4 text-[11px] font-bold text-zinc-400 uppercase tracking-widest whitespace-nowrap">금액 변화율</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
@@ -342,15 +342,15 @@ export default function BranchPerformanceTab({ selectedMonth, onMonthsAvailable 
                       className="group bg-white dark:bg-zinc-900 hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
                       onClick={() => toggleBranch(branch.branch)}
                     >
-                      <td className="py-4 px-4">
+                      <td className="py-4 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
-                          <div className="flex-none transition-transform duration-200" style={{ transform: isBranchExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                          <div className="flex-none hidden group-hover:block" style={{ transform: isBranchExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
                             <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-blue-500" />
                           </div>
                           <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm tracking-tight">{branch.branch}</span>
                         </div>
                       </td>
-                      <td className="py-4 px-4 text-right">
+                      <td className="py-4 px-4 text-right whitespace-nowrap">
                         <div className="flex flex-col items-end">
                           <span className="font-mono text-blue-700 dark:text-blue-300 font-bold text-sm">
                             {formatNumber(branch.current_month_weight)}
@@ -360,10 +360,10 @@ export default function BranchPerformanceTab({ selectedMonth, onMonthsAvailable 
                           </span>
                         </div>
                       </td>
-                      <td className="py-4 px-4 text-right font-mono text-zinc-500 dark:text-zinc-400 text-sm">
+                      <td className="py-4 px-4 text-right font-mono text-zinc-500 dark:text-zinc-400 text-sm whitespace-nowrap">
                         {formatNumber(branch.last_month_weight)}
                       </td>
-                      <td className="py-4 px-4 text-center">
+                      <td className="py-4 px-4 text-center whitespace-nowrap">
                         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold ${
                           weightChange.isPositive 
                             ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' 
@@ -373,13 +373,13 @@ export default function BranchPerformanceTab({ selectedMonth, onMonthsAvailable 
                           {Math.abs(weightChange.percent ?? 0).toFixed(1)}%
                         </span>
                       </td>
-                      <td className="py-4 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold text-sm">
+                      <td className="py-4 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-bold text-sm whitespace-nowrap">
                         {formatNumber(branch.current_month_amount)}
                       </td>
-                      <td className="py-4 px-4 text-right font-mono text-zinc-500 dark:text-zinc-400 text-sm">
+                      <td className="py-4 px-4 text-right font-mono text-zinc-500 dark:text-zinc-400 text-sm whitespace-nowrap">
                         {formatNumber(branch.last_month_amount)}
                       </td>
-                      <td className="py-4 px-4 text-center">
+                      <td className="py-4 px-4 text-center whitespace-nowrap">
                         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold ${
                           amountChange.isPositive 
                             ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' 
@@ -401,18 +401,18 @@ export default function BranchPerformanceTab({ selectedMonth, onMonthsAvailable 
                       return (
                         <Fragment key={teamKey}>
                           <tr
-                            className="bg-zinc-50/40 dark:bg-zinc-800/20 hover:bg-zinc-100/60 dark:hover:bg-zinc-700/30 transition-colors cursor-pointer"
+                            className="group bg-zinc-50/40 dark:bg-zinc-800/20 hover:bg-zinc-100/60 dark:hover:bg-zinc-700/30 transition-colors cursor-pointer"
                             onClick={() => toggleTeam(teamKey)}
                           >
-                            <td className="py-3 px-4 pl-10 border-l-2 border-blue-500/30">
+                            <td className="py-3 px-4 pl-10 border-l-2 border-blue-500/30 whitespace-nowrap">
                               <div className="flex items-center gap-2.5">
-                                <div className="flex-none transition-transform duration-200" style={{ transform: isTeamExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                                <div className="flex-none hidden group-hover:block" style={{ transform: isTeamExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
                                   <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
                                 </div>
                                 <span className="font-semibold text-zinc-700 dark:text-zinc-300 text-xs">{team.team_name}</span>
                               </div>
                             </td>
-                            <td className="py-3 px-4 text-right">
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
                               <div className="flex flex-col items-end">
                                 <span className="font-mono text-blue-600/90 dark:text-blue-400/90 font-semibold text-xs">
                                   {formatNumber(team.current_month_weight)}
@@ -422,21 +422,21 @@ export default function BranchPerformanceTab({ selectedMonth, onMonthsAvailable 
                                 </span>
                               </div>
                             </td>
-                            <td className="py-3 px-4 text-right font-mono text-zinc-400 dark:text-zinc-500 text-xs">
+                            <td className="py-3 px-4 text-right font-mono text-zinc-400 dark:text-zinc-500 text-xs whitespace-nowrap">
                               {formatNumber(team.last_month_weight)}
                             </td>
-                            <td className="py-3 px-4 text-center">
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
                               <span className={`text-[10px] font-bold ${tWeightChange.isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
                                 {tWeightChange.isPositive ? '↑' : '↓'} {Math.abs(tWeightChange.percent ?? 0).toFixed(1)}%
                               </span>
                             </td>
-                            <td className="py-3 px-4 text-right font-mono text-blue-600/90 dark:text-blue-400/90 font-semibold text-xs">
+                            <td className="py-3 px-4 text-right font-mono text-blue-600/90 dark:text-blue-400/90 font-semibold text-xs whitespace-nowrap">
                               {formatNumber(team.current_month_amount)}
                             </td>
-                            <td className="py-3 px-4 text-right font-mono text-zinc-400 dark:text-zinc-500 text-xs">
+                            <td className="py-3 px-4 text-right font-mono text-zinc-400 dark:text-zinc-500 text-xs whitespace-nowrap">
                               {formatNumber(team.last_month_amount)}
                             </td>
-                            <td className="py-3 px-4 text-center">
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
                               <span className={`text-[10px] font-bold ${tAmountChange.isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
                                 {tAmountChange.isPositive ? '↑' : '↓'} {Math.abs(tAmountChange.percent ?? 0).toFixed(1)}%
                               </span>
@@ -453,10 +453,10 @@ export default function BranchPerformanceTab({ selectedMonth, onMonthsAvailable 
                                 key={`${teamKey}-${emp.employee}`}
                                 className="bg-white/40 dark:bg-zinc-900/40 hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40"
                               >
-                                <td className="py-2.5 px-4 pl-16 border-l-2 border-zinc-200 dark:border-zinc-800">
+                                <td className="py-2.5 px-4 pl-16 border-l-2 border-zinc-200 dark:border-zinc-800 whitespace-nowrap">
                                   <span className="text-zinc-500 dark:text-zinc-400 text-[11px] font-medium">{emp.employee}</span>
                                 </td>
-                                <td className="py-2.5 px-4 text-right">
+                                <td className="py-2.5 px-4 text-right whitespace-nowrap">
                                   <div className="flex flex-col items-end">
                                     <span className="font-mono text-blue-500/80 dark:text-blue-400/70 text-[11px]">
                                       {formatNumber(emp.current_month_weight)}
@@ -466,21 +466,21 @@ export default function BranchPerformanceTab({ selectedMonth, onMonthsAvailable 
                                     </span>
                                   </div>
                                 </td>
-                                <td className="py-2.5 px-4 text-right font-mono text-zinc-400 dark:text-zinc-600 text-[11px]">
+                                <td className="py-2.5 px-4 text-right font-mono text-zinc-400 dark:text-zinc-600 text-[11px] whitespace-nowrap">
                                   {formatNumber(emp.last_month_weight)}
                                 </td>
-                                <td className="py-2.5 px-4 text-center">
+                                <td className="py-2.5 px-4 text-center whitespace-nowrap">
                                   <span className={`text-[9px] font-medium ${eWeightChange.isPositive ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
                                     {eWeightChange.isPositive ? '↑' : '↓'} {Math.abs(eWeightChange.percent ?? 0).toFixed(1)}%
                                   </span>
                                 </td>
-                                <td className="py-2.5 px-4 text-right font-mono text-blue-500/80 dark:text-blue-400/70 text-[11px]">
+                                <td className="py-2.5 px-4 text-right font-mono text-blue-500/80 dark:text-blue-400/70 text-[11px] whitespace-nowrap">
                                   {formatNumber(emp.current_month_amount)}
                                 </td>
-                                <td className="py-2.5 px-4 text-right font-mono text-zinc-400 dark:text-zinc-600 text-[11px]">
+                                <td className="py-2.5 px-4 text-right font-mono text-zinc-400 dark:text-zinc-600 text-[11px] whitespace-nowrap">
                                   {formatNumber(emp.last_month_amount)}
                                 </td>
-                                <td className="py-2.5 px-4 text-center">
+                                <td className="py-2.5 px-4 text-center whitespace-nowrap">
                                   <span className={`text-[9px] font-medium ${eAmountChange.isPositive ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
                                     {eAmountChange.isPositive ? '↑' : '↓'} {Math.abs(eAmountChange.percent ?? 0).toFixed(1)}%
                                   </span>

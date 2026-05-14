@@ -192,12 +192,12 @@ export default function YearOverYearTab({ selectedMonth, onMonthsAvailable }: Ye
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">사업소</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-indigo-500 uppercase tracking-wider">{data.currentYear}년(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{data.lastYear}년(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">증감량(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">증감률</th>
-                <th className="text-center py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">추세</th>
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">사업소</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-indigo-500 uppercase tracking-wider whitespace-nowrap">{data.currentYear}년(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">{data.lastYear}년(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">증감량(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">증감률</th>
+                <th className="text-center py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">추세</th>
               </tr>
             </thead>
             <tbody>
@@ -206,10 +206,10 @@ export default function YearOverYearTab({ selectedMonth, onMonthsAvailable }: Ye
                   key={branch.branch}
                   className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
                 >
-                  <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
+                  <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
                     {branch.branch}
                   </td>
-                  <td className="py-3 px-4 text-right">
+                  <td className="py-3 px-4 text-right whitespace-nowrap">
                     <div className="flex flex-col items-end">
                       <span className="font-mono text-indigo-700 dark:text-indigo-300 font-semibold">
                         {formatNumber(branch.current_year_weight)}
@@ -219,15 +219,15 @@ export default function YearOverYearTab({ selectedMonth, onMonthsAvailable }: Ye
                       </span>
                     </div>
                   </td>
-                  <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">
+                  <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
                     {formatNumber(branch.last_year_weight)}
                   </td>
-                  <td className="py-3 px-4 text-right font-mono">
+                  <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
                     <span className={branch.growth_amount >= 0 ? 'text-green-600' : 'text-red-600'}>
                       {branch.growth_amount >= 0 ? '+' : ''}{formatNumber(branch.growth_amount)}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-right">
+                  <td className="py-3 px-4 text-right whitespace-nowrap">
                     <span className={`inline-flex items-center gap-1 font-bold ${
                       (branch.growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                     }`}>
@@ -235,7 +235,7 @@ export default function YearOverYearTab({ selectedMonth, onMonthsAvailable }: Ye
                       {(branch.growth_rate ?? 0) >= 0 ? '+' : ''}{(branch.growth_rate ?? 0).toFixed(1)}%
                     </span>
                   </td>
-                  <td className="py-3 px-4">
+                  <td className="py-3 px-4 whitespace-nowrap">
                     <div className="flex justify-center">
                       {(branch.growth_rate ?? 0) >= 10 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-medium">
@@ -264,19 +264,19 @@ export default function YearOverYearTab({ selectedMonth, onMonthsAvailable }: Ye
               ))}
               {/* Total Row */}
               <tr className="bg-zinc-50 dark:bg-zinc-800/30 font-bold border-t-2 border-zinc-300 dark:border-zinc-700">
-                <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100">합계</td>
-                <td className="py-3 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300">
+                <td className="py-3 px-4 text-zinc-900 dark:text-zinc-100 whitespace-nowrap">합계</td>
+                <td className="py-3 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
                   {formatNumber(data.total.current_year_weight)}
                 </td>
-                <td className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100">
+                <td className="py-3 px-4 text-right font-mono text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
                   {formatNumber(data.total.last_year_weight)}
                 </td>
-                <td className="py-3 px-4 text-right font-mono">
+                <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
                   <span className={data.total.growth_amount >= 0 ? 'text-green-600' : 'text-red-600'}>
                     {data.total.growth_amount >= 0 ? '+' : ''}{formatNumber(data.total.growth_amount)}
                   </span>
                 </td>
-                <td className="py-3 px-4 text-right">
+                <td className="py-3 px-4 text-right whitespace-nowrap">
                   <span className={`inline-flex items-center gap-1 font-bold ${
                     (data.total.growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}>
@@ -284,7 +284,7 @@ export default function YearOverYearTab({ selectedMonth, onMonthsAvailable }: Ye
                     {(data.total.growth_rate ?? 0) >= 0 ? '+' : ''}{(data.total.growth_rate ?? 0).toFixed(1)}%
                   </span>
                 </td>
-                <td className="py-3 px-4"></td>
+                <td className="py-3 px-4 whitespace-nowrap"></td>
               </tr>
             </tbody>
           </table>

@@ -444,12 +444,12 @@ export default function B2BILAnalysisTab({ selectedMonth, onMonthsAvailable }: B
               </colgroup>
               <thead className="bg-zinc-50 dark:bg-zinc-800/50">
                 <tr>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">연도</th>
-                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{headerYear} 판매(L)</th>
-                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{headerPrevYear} 판매(L)</th>
-                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">달성율</th>
-                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">전년대비</th>
-                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{headerYear} 구매(L)</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">연도</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">{headerYear} 판매(L)</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">{headerPrevYear} 판매(L)</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">달성율</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">전년대비</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">{headerYear} 구매(L)</th>
                 </tr>
               </thead>
               <tbody>
@@ -475,18 +475,20 @@ export default function B2BILAnalysisTab({ selectedMonth, onMonthsAvailable }: B
 
                   return (
                   <Fragment key={yearRow.year}>
-                    <tr className="border-b border-zinc-100 dark:border-zinc-800/60 cursor-pointer hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30" onClick={() => toggleYear(yearRow.year)}>
-                      <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100">
+                    <tr className="group border-b border-zinc-100 dark:border-zinc-800/60 cursor-pointer hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30" onClick={() => toggleYear(yearRow.year)}>
+                      <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">
-                          {expandedYears.has(yearRow.year) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                          <span className="hidden group-hover:inline-flex">
+                            {expandedYears.has(yearRow.year) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                          </span>
                           {yearRow.year}년
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right font-mono">{formatNumber(yearRow.sales_weight)}</td>
-                      <td className="py-3 px-4 text-right font-mono">{formatNumber(yearRow.last_year_sales_weight)}</td>
-                      <td className="py-3 px-4 text-right">{yearRow.achievement_rate.toFixed(1)}%</td>
-                      <td className="py-3 px-4 text-right">{yearRow.yoy_growth_rate.toFixed(1)}%</td>
-                      <td className="py-3 px-4 text-right font-mono">{formatNumber(yearRow.purchase_weight)}</td>
+                      <td className="py-3 px-4 text-right font-mono whitespace-nowrap">{formatNumber(yearRow.sales_weight)}</td>
+                      <td className="py-3 px-4 text-right font-mono whitespace-nowrap">{formatNumber(yearRow.last_year_sales_weight)}</td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">{yearRow.achievement_rate.toFixed(1)}%</td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">{yearRow.yoy_growth_rate.toFixed(1)}%</td>
+                      <td className="py-3 px-4 text-right font-mono whitespace-nowrap">{formatNumber(yearRow.purchase_weight)}</td>
                     </tr>
                     {expandedYears.has(yearRow.year) && (
                       <tr className="bg-zinc-50/40 dark:bg-zinc-900/30">
@@ -504,13 +506,13 @@ export default function B2BILAnalysisTab({ selectedMonth, onMonthsAvailable }: B
                               </colgroup>
                               <thead className="bg-zinc-100 dark:bg-zinc-800">
                                 <tr>
-                                  <th className="text-left py-2 px-3">제품품목</th>
-                                  <th className="text-left py-2 px-3">사업소</th>
-                                  <th className="text-right py-2 px-3">{headerYear} 판매(L)</th>
-                                  <th className="text-right py-2 px-3">{headerPrevYear} 판매(L)</th>
-                                  <th className="text-right py-2 px-3">달성율</th>
-                                  <th className="text-right py-2 px-3">전년대비</th>
-                                  <th className="text-right py-2 px-3"></th>
+                                  <th className="text-left py-2 px-3 whitespace-nowrap">제품품목</th>
+                                  <th className="text-left py-2 px-3 whitespace-nowrap">사업소</th>
+                                  <th className="text-right py-2 px-3 whitespace-nowrap">{headerYear} 판매(L)</th>
+                                  <th className="text-right py-2 px-3 whitespace-nowrap">{headerPrevYear} 판매(L)</th>
+                                  <th className="text-right py-2 px-3 whitespace-nowrap">달성율</th>
+                                  <th className="text-right py-2 px-3 whitespace-nowrap">전년대비</th>
+                                  <th className="text-right py-2 px-3 whitespace-nowrap"></th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -518,27 +520,27 @@ export default function B2BILAnalysisTab({ selectedMonth, onMonthsAvailable }: B
                                   <Fragment key={`${yearRow.year}_${cat.category}`}>
                                     {cat.category === 'PVL' && autoSummary && (
                                       <tr className="border-b border-zinc-200 dark:border-zinc-700 bg-blue-50/60 dark:bg-blue-900/20">
-                                        <td className="py-2 px-3 font-semibold text-blue-700 dark:text-blue-300">AUTO 합계</td>
-                                        <td className="py-2 px-3">-</td>
-                                        <td className="py-2 px-3 text-right font-mono font-semibold">{formatNumber(autoSummary.sales_weight)}</td>
-                                        <td className="py-2 px-3 text-right font-mono font-semibold">{formatNumber(autoSummary.last_year_sales_weight)}</td>
-                                        <td className={`py-2 px-3 text-right font-semibold ${autoAchievement >= 100 ? 'text-green-600' : 'text-red-600'}`}>
+                                        <td className="py-2 px-3 font-semibold text-blue-700 dark:text-blue-300 whitespace-nowrap">AUTO 합계</td>
+                                        <td className="py-2 px-3 whitespace-nowrap">-</td>
+                                        <td className="py-2 px-3 text-right font-mono font-semibold whitespace-nowrap">{formatNumber(autoSummary.sales_weight)}</td>
+                                        <td className="py-2 px-3 text-right font-mono font-semibold whitespace-nowrap">{formatNumber(autoSummary.last_year_sales_weight)}</td>
+                                        <td className={`py-2 px-3 text-right font-semibold whitespace-nowrap ${autoAchievement >= 100 ? 'text-green-600' : 'text-red-600'}`}>
                                           {autoAchievement.toFixed(1)}%
                                         </td>
-                                        <td className={`py-2 px-3 text-right font-semibold ${autoYoy >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        <td className={`py-2 px-3 text-right font-semibold whitespace-nowrap ${autoYoy >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                           {autoYoy.toFixed(1)}%
                                         </td>
-                                        <td className="py-2 px-3"></td>
+                                        <td className="py-2 px-3 whitespace-nowrap"></td>
                                       </tr>
                                     )}
                                     <tr className="border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/30 dark:bg-zinc-800/20">
-                                      <td className="py-2 px-3 font-medium">{cat.category}</td>
-                                      <td className="py-2 px-3">-</td>
-                                      <td className="py-2 px-3 text-right font-mono">{formatNumber(cat.sales_weight)}</td>
-                                      <td className="py-2 px-3 text-right font-mono">{formatNumber(cat.last_year_sales_weight)}</td>
-                                      <td className="py-2 px-3 text-right">{(cat.achievement_rate ?? 0).toFixed(1)}%</td>
-                                      <td className="py-2 px-3 text-right">{(cat.yoy_growth_rate ?? 0).toFixed(1)}%</td>
-                                      <td className="py-2 px-3"></td>
+                                      <td className="py-2 px-3 font-medium whitespace-nowrap">{cat.category}</td>
+                                      <td className="py-2 px-3 whitespace-nowrap">-</td>
+                                      <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{formatNumber(cat.sales_weight)}</td>
+                                      <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{formatNumber(cat.last_year_sales_weight)}</td>
+                                      <td className="py-2 px-3 text-right whitespace-nowrap">{(cat.achievement_rate ?? 0).toFixed(1)}%</td>
+                                      <td className="py-2 px-3 text-right whitespace-nowrap">{(cat.yoy_growth_rate ?? 0).toFixed(1)}%</td>
+                                      <td className="py-2 px-3 whitespace-nowrap"></td>
                                     </tr>
                                     {cat.branches.map((branch) => (
                                       <Fragment key={`${yearRow.year}_${cat.category}_${branch.branch}`}>
@@ -554,35 +556,35 @@ export default function B2BILAnalysisTab({ selectedMonth, onMonthsAvailable }: B
                                             })
                                           }
                                         >
-                                          <td className="py-1.5 px-3"></td>
-                                          <td className="py-1.5 px-3 font-medium">
+                                          <td className="py-1.5 px-3 whitespace-nowrap"></td>
+                                          <td className="py-1.5 px-3 font-medium whitespace-nowrap">
                                             <span className="inline-flex items-center gap-1">
                                               {branch.branch}
                                               <ChevronRight className="w-3 h-3 text-zinc-400" />
                                             </span>
                                           </td>
-                                          <td className="py-1.5 px-3 text-right font-mono">{formatNumber(branch.sales_weight)}</td>
-                                          <td className="py-1.5 px-3 text-right font-mono">{formatNumber(branch.last_year_sales_weight)}</td>
-                                          <td className={`py-1.5 px-3 text-right font-medium ${(branch.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-red-600'}`}>
+                                          <td className="py-1.5 px-3 text-right font-mono whitespace-nowrap">{formatNumber(branch.sales_weight)}</td>
+                                          <td className="py-1.5 px-3 text-right font-mono whitespace-nowrap">{formatNumber(branch.last_year_sales_weight)}</td>
+                                          <td className={`py-1.5 px-3 text-right font-medium whitespace-nowrap ${(branch.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-red-600'}`}>
                                             {(branch.achievement_rate ?? 0).toFixed(1)}%
                                           </td>
-                                          <td className={`py-1.5 px-3 text-right font-medium ${(branch.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                          <td className={`py-1.5 px-3 text-right font-medium whitespace-nowrap ${(branch.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                             {(branch.yoy_growth_rate ?? 0).toFixed(1)}%
                                           </td>
-                                          <td className="py-1.5 px-3"></td>
+                                          <td className="py-1.5 px-3 whitespace-nowrap"></td>
                                         </tr>
                                       </Fragment>
                                     ))}
                                     <tr className="border-b border-zinc-100/70 dark:border-zinc-800/40 bg-zinc-50/70 dark:bg-zinc-800/30">
-                                      <td className="py-1.5 px-3"></td>
-                                      <td className="py-1.5 px-3 font-semibold text-zinc-700 dark:text-zinc-200">B2C</td>
-                                      <td className="py-1.5 px-3 text-right font-mono">{formatNumber(cat.b2c_total?.sales_weight ?? 0)}</td>
-                                      <td className="py-1.5 px-3 text-right font-mono">{formatNumber(cat.b2c_total?.last_year_sales_weight ?? 0)}</td>
-                                      <td className="py-1.5 px-3 text-right">-</td>
-                                      <td className={`py-1.5 px-3 text-right font-medium ${(cat.b2c_total?.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      <td className="py-1.5 px-3 whitespace-nowrap"></td>
+                                      <td className="py-1.5 px-3 font-semibold text-zinc-700 dark:text-zinc-200 whitespace-nowrap">B2C</td>
+                                      <td className="py-1.5 px-3 text-right font-mono whitespace-nowrap">{formatNumber(cat.b2c_total?.sales_weight ?? 0)}</td>
+                                      <td className="py-1.5 px-3 text-right font-mono whitespace-nowrap">{formatNumber(cat.b2c_total?.last_year_sales_weight ?? 0)}</td>
+                                      <td className="py-1.5 px-3 text-right whitespace-nowrap">-</td>
+                                      <td className={`py-1.5 px-3 text-right font-medium whitespace-nowrap ${(cat.b2c_total?.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                         {(cat.b2c_total?.yoy_growth_rate ?? 0).toFixed(1)}%
                                       </td>
-                                      <td className="py-1.5 px-3"></td>
+                                      <td className="py-1.5 px-3 whitespace-nowrap"></td>
                                     </tr>
                                   </Fragment>
                                 ))}
@@ -754,15 +756,15 @@ export default function B2BILAnalysisTab({ selectedMonth, onMonthsAvailable }: B
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800/50">
               <tr>
-                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">품목그룹</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-blue-500 uppercase tracking-wider">당월(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">당월금액</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">전월(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">전월대비</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">전년동월(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">전년대비</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">목표(L)</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">달성율</th>
+                <th className="text-left py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">품목그룹</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-blue-500 uppercase tracking-wider whitespace-nowrap">당월(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">당월금액</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">전월(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">전월대비</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">전년동월(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">전년대비</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">목표(L)</th>
+                <th className="text-right py-3 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">달성율</th>
               </tr>
             </thead>
             <tbody>
@@ -771,25 +773,25 @@ export default function B2BILAnalysisTab({ selectedMonth, onMonthsAvailable }: B
                 const momChangeRate = cat.last_month_weight > 0 ? (momChange / cat.last_month_weight) * 100 : 0;
                 return (
                   <tr key={cat.category} className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
-                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100">{cat.category}</td>
-                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold">{formatNumber(cat.current_month_weight)}</td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(cat.current_month_amount)}</td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(cat.last_month_weight)}</td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">{cat.category}</td>
+                    <td className="py-3 px-4 text-right font-mono text-blue-700 dark:text-blue-300 font-semibold whitespace-nowrap">{formatNumber(cat.current_month_weight)}</td>
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 whitespace-nowrap">{formatNumber(cat.current_month_amount)}</td>
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 whitespace-nowrap">{formatNumber(cat.last_month_weight)}</td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1 font-medium text-xs ${momChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {momChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                         {momChange >= 0 ? '+' : ''}{momChangeRate.toFixed(1)}%
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(cat.yoy_weight)}</td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 whitespace-nowrap">{formatNumber(cat.yoy_weight)}</td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1 font-medium ${(cat.yoy_growth_rate ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {(cat.yoy_growth_rate ?? 0) >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                         {(cat.yoy_growth_rate ?? 0) >= 0 ? '+' : ''}{(cat.yoy_growth_rate ?? 0).toFixed(1)}%
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300">{formatNumber(cat.target_weight)}</td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 text-right font-mono text-zinc-700 dark:text-zinc-300 whitespace-nowrap">{formatNumber(cat.target_weight)}</td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
                       <span className={`font-bold ${(cat.achievement_rate ?? 0) >= 100 ? 'text-green-600' : 'text-red-600'}`}>
                         {(cat.achievement_rate ?? 0).toFixed(1)}%
                       </span>
@@ -832,10 +834,12 @@ export default function B2BILAnalysisTab({ selectedMonth, onMonthsAvailable }: B
                 const branchMomChangeRate = branch.last_month_weight > 0 ? (branchMomChange / branch.last_month_weight) * 100 : 0;
                 return (
                   <Fragment key={branch.branch}>
-                    <tr className="border-b border-zinc-100 dark:border-zinc-800/60 bg-blue-50/10 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer" onClick={() => toggleBranch(branch.branch)}>
+                    <tr className="group border-b border-zinc-100 dark:border-zinc-800/60 bg-blue-50/10 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer" onClick={() => toggleBranch(branch.branch)}>
                       <td className="py-3 px-4 font-bold text-zinc-900 dark:text-zinc-100">
                         <div className="flex items-center gap-2">
-                          {isBranchExpanded ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronRight className="w-4 h-4 text-zinc-400" />}
+                          <span className="hidden group-hover:inline-flex">
+                            {isBranchExpanded ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronRight className="w-4 h-4 text-zinc-400" />}
+                          </span>
                           {branch.branch}
                         </div>
                       </td>
@@ -873,11 +877,13 @@ export default function B2BILAnalysisTab({ selectedMonth, onMonthsAvailable }: B
 
                       return (
                         <Fragment key={teamKey}>
-                          <tr className="border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); toggleTeam(teamKey); }}>
+                          <tr className="group border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); toggleTeam(teamKey); }}>
                             <td className="py-2 px-4"></td>
                             <td className="py-2 px-4 font-semibold text-zinc-800 dark:text-zinc-200">
                               <div className="flex items-center gap-2 pl-4">
-                                {isTeamExpanded ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />}
+                                <span className="hidden group-hover:inline-flex">
+                                  {isTeamExpanded ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />}
+                                </span>
                                 {team.team_name}
                               </div>
                             </td>
