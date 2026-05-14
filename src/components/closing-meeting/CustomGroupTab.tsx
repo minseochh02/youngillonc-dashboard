@@ -690,7 +690,7 @@ function buildFilterKey(month: string): string {
 function loadCustomGroupOrder(key: string): CustomGroupOrderEntry | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(key);
+    const raw = sessionStorage.getItem(key);
     if (!raw) return null;
     return JSON.parse(raw) as CustomGroupOrderEntry;
   } catch {
@@ -701,7 +701,7 @@ function loadCustomGroupOrder(key: string): CustomGroupOrderEntry | null {
 function saveCustomGroupOrder(key: string, entry: CustomGroupOrderEntry): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(key, JSON.stringify(entry));
+    sessionStorage.setItem(key, JSON.stringify(entry));
   } catch { /* ignore quota */ }
 }
 
@@ -760,7 +760,7 @@ export default function CustomGroupTab({ selectedMonth, onMonthsAvailable }: Cus
           return;
         }
         const url = withIncludeVat(
-          `/api/dashboard/closing-meeting?tab=custom-group${selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : ""}`,
+          `/api/dashboard/closing-meeting?tab=custom-group${selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : ""}${forceRefresh ? "&refresh=true" : ""}`,
           includeVat
         );
         const res = await apiFetch(url);

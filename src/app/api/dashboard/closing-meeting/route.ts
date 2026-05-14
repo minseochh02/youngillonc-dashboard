@@ -1037,6 +1037,7 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'custom-group') {
+      const forceRefresh = searchParams.get('refresh') === 'true';
       const customGroupData = await buildCustomGroupPayload({
         currentMonthStr,
         currentYear,
@@ -1044,6 +1045,7 @@ export async function GET(request: Request) {
         baseSalesSubquery: baseSalesSubqueryG3,
         basePurchasesSubquery: basePurchasesSubqueryG3,
         includeVat,
+        refresh: forceRefresh,
       });
       return NextResponse.json({ success: true, data: customGroupData });
     }

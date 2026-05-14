@@ -245,10 +245,10 @@ export async function buildCumulativeViewPayload(params: {
       `${y0}-12`,
     ])
   );
-  const computedInventoryByMonthCat = new Map<string, number>();
+  const computedInventoryByMonthCat = new Map<string, { weight: number; amount: number }>();
   const computedAtMap = new Map<string, string>();
   const computedInventorySql = `
-    SELECT month, category, inventory_weight, computed_at
+    SELECT month, category, inventory_weight, inventory_amount, computed_at
     FROM computed_inventory_monthly
     WHERE month IN ('${yearlyMonthKeys.join("','")}')
   `;
@@ -257,7 +257,10 @@ export async function buildCumulativeViewPayload(params: {
     const res = await executeSQL(computedInventorySql);
     (res?.rows || []).forEach((row: any) => {
       const k = `${String(row.month)}\t${String(row.category)}`;
-      computedInventoryByMonthCat.set(k, Number(row.inventory_weight) || 0);
+      computedInventoryByMonthCat.set(k, {
+        weight: Number(row.inventory_weight) || 0,
+        amount: Number(row.inventory_amount) || 0,
+      });
       computedAtMap.set(k, String(row.computed_at || ''));
     });
   };
@@ -269,20 +272,24 @@ export async function buildCumulativeViewPayload(params: {
   const currentActualMonth = todayStr.slice(0, 7);
 
   let needsRebuild = false;
-  for (const m of yearlyMonthKeys) {
-    for (const cat of CATEGORIES) {
-      const k = `${m}\t${cat}`;
-      if (!computedInventoryByMonthCat.has(k)) {
-        needsRebuild = true;
-        break;
+  if (refresh) {
+    needsRebuild = true;
+  } else {
+    for (const m of yearlyMonthKeys) {
+      for (const cat of CATEGORIES) {
+        const k = `${m}\t${cat}`;
+        if (!computedInventoryByMonthCat.has(k)) {
+          needsRebuild = true;
+          break;
+        }
+        // If it's the current month, ensure it was computed today
+        if (m === currentActualMonth && computedAtMap.get(k) !== todayStr) {
+          needsRebuild = true;
+          break;
+        }
       }
-      // If it's the current month, ensure it was computed today
-      if (m === currentActualMonth && computedAtMap.get(k) !== todayStr) {
-        needsRebuild = true;
-        break;
-      }
+      if (needsRebuild) break;
     }
-    if (needsRebuild) break;
   }
 
   if (needsRebuild) {
@@ -311,7 +318,7 @@ export async function buildCumulativeViewPayload(params: {
     }
   }
 
-  const getComputedInventory = (y: number, cat: string, monthOverride?: string): number => {
+  const getComputedInventory = (y: number, cat: string, monthOverride?: string): { weight: number; amount: number } => {
     const m = monthOverride ?? monthNum;
     const k = `${y}-${m}\t${cat}`;
     const v = computedInventoryByMonthCat.get(k);
@@ -917,7 +924,7 @@ export async function buildCumulativeViewPayload(params: {
     getPur(b2bPurYtd, y, cat) - getCatSales(b2bCatSalesYtd, y, cat);
 
   /** 매입−매출 (B2C+B2B), 품목 기준 */
-  const invCombined = (y: number, cat: string) => {
+  const invCombined = (y: number, cat: string): { weight: number; amount: number } => {
     return getComputedInventory(y, cat);
   };
 
@@ -1097,9 +1104,14 @@ export async function buildCumulativeViewPayload(params: {
     const rows: CumulativeRow[] = [];
 
     const invForYear = (y: number) => {
-      if (cumulativeChannel === 'combined') return invCombined(y, cat);
+      if (cumulativeChannel === 'combined') return invCombined(y, cat).weight;
       if (cumulativeChannel === 'b2c') return inv(y, cat);
       return b2bInv(y, cat);
+    };
+
+    const invAmtForYear = (y: number) => {
+      if (cumulativeChannel === 'combined') return invCombined(y, cat).amount;
+      return 0;
     };
 
     const purSellinYtd = (y: number) => {
@@ -1110,12 +1122,19 @@ export async function buildCumulativeViewPayload(params: {
 
     const invMonthSnapshot = (y: number) => {
       if (cumulativeChannel === 'combined') {
-        return getComputedInventory(y, cat);
+        return getComputedInventory(y, cat).weight;
       }
       if (cumulativeChannel === 'b2c') {
         return getPur(purMo, y, cat) - getCatSales(catSalesMo, y, cat);
       }
       return getPur(b2bPurMo, y, cat) - getCatSales(b2bCatSalesMo, y, cat);
+    };
+
+    const invMonthAmtSnapshot = (y: number) => {
+      if (cumulativeChannel === 'combined') {
+        return getComputedInventory(y, cat).amount;
+      }
+      return 0;
     };
 
     const sellinMonthPur = (y: number) => {
@@ -1128,10 +1147,17 @@ export async function buildCumulativeViewPayload(params: {
     const invFullForYear = (y: number) => {
       if (cumulativeChannel === 'combined') {
         // 연도 실적 컬럼(23/24/25)은 항상 연말(12월말) 재고를 사용한다.
-        return getComputedInventory(y, cat, '12');
+        return getComputedInventory(y, cat, '12').weight;
       }
       if (cumulativeChannel === 'b2c') return getPur(purFull, y, cat) - getCatSales(catSalesFull, y, cat);
       return getPur(b2bPurFull, y, cat) - getCatSales(b2bCatSalesFull, y, cat);
+    };
+
+    const invFullAmtForYear = (y: number) => {
+      if (cumulativeChannel === 'combined') {
+        return getComputedInventory(y, cat, '12').amount;
+      }
+      return 0;
     };
 
     /** 실적 23·24·25년: 연간 매입 — sell-in 행 */
@@ -1163,6 +1189,22 @@ export async function buildCumulativeViewPayload(params: {
         ),
         invForYear(y1),
         invForYear(y0)
+      ),
+      amountMetrics: withYtdYoYGrowth(
+        blk(
+          invFullAmtForYear(y3),
+          invFullAmtForYear(y2),
+          invFullAmtForYear(y1),
+          0,
+          invAmtForYear(y1),
+          0,
+          invAmtForYear(y0),
+          invMonthAmtSnapshot(y1),
+          0,
+          invMonthAmtSnapshot(y0)
+        ),
+        invAmtForYear(y1),
+        invAmtForYear(y0)
       ),
     });
 
@@ -1444,6 +1486,7 @@ export async function buildCustomGroupPayload(params: {
   baseSalesSubquery: string;
   basePurchasesSubquery: string;
   includeVat?: boolean;
+  refresh?: boolean;
 }): Promise<CumulativeViewPayload> {
   const {
     currentMonthStr,
@@ -1452,7 +1495,22 @@ export async function buildCustomGroupPayload(params: {
     baseSalesSubquery,
     basePurchasesSubquery,
     includeVat = false,
+    refresh = false,
   } = params;
+
+  if (refresh) {
+    if (!isRebuildingComputedInventory) {
+      isRebuildingComputedInventory = true;
+      try {
+        console.log('Manual refresh triggered. Rebuilding computed inventory...');
+        await rebuildComputedInventoryMonthly();
+      } catch (e) {
+        console.error('Failed to rebuild computed inventory:', e);
+      } finally {
+        isRebuildingComputedInventory = false;
+      }
+    }
+  }
   const SALES_AMT = includeVat
     ? `CAST(REPLACE(s.합계, ',', '') AS NUMERIC)`
     : `CAST(REPLACE(s.공급가액, ',', '') AS NUMERIC)`;

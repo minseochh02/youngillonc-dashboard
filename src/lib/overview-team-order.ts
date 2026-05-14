@@ -115,8 +115,8 @@ function defaultSegmentPersist(): OverviewSegmentPersist {
 export function loadOverviewOrderV2(month: string): OverviewOrderPersistV2 | null {
   if (typeof window === "undefined") return null;
   try {
-    const rawGlobal = localStorage.getItem(LS_GLOBAL_KEY_V2);
-    const rawV2 = rawGlobal || localStorage.getItem(`${LS_PREFIX_V2}:${month}`);
+    const rawGlobal = sessionStorage.getItem(LS_GLOBAL_KEY_V2);
+    const rawV2 = rawGlobal || sessionStorage.getItem(`${LS_PREFIX_V2}:${month}`);
     if (rawV2) {
       const j = JSON.parse(rawV2) as {
         segments?: OverviewOrderPersistV2["segments"];
@@ -131,7 +131,7 @@ export function loadOverviewOrderV2(month: string): OverviewOrderPersistV2 | nul
         breakdownRowOrder: Array.isArray(j.breakdownRowOrder) ? j.breakdownRowOrder : undefined,
       };
     }
-    const rawV1 = localStorage.getItem(`${LS_PREFIX_V1}:${month}`);
+    const rawV1 = sessionStorage.getItem(`${LS_PREFIX_V1}:${month}`);
     if (!rawV1) return null;
     const j = JSON.parse(rawV1) as {
       summaryFirst?: boolean;
@@ -174,8 +174,8 @@ export function saveOverviewOrderV2(month: string, data: OverviewOrderPersistV2)
   if (typeof window === "undefined") return;
   try {
     const json = JSON.stringify(data);
-    localStorage.setItem(LS_GLOBAL_KEY_V2, json);
-    localStorage.setItem(`${LS_PREFIX_V2}:${month}`, json);
+    sessionStorage.setItem(LS_GLOBAL_KEY_V2, json);
+    sessionStorage.setItem(`${LS_PREFIX_V2}:${month}`, json);
   } catch {
     /* ignore quota */
   }
