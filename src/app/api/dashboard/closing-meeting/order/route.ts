@@ -17,7 +17,6 @@ async function ensureDir() {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const month = searchParams.get('month');
     const type = searchParams.get('type'); // 'order' or 'settings'
     
     await ensureDir();
@@ -31,24 +30,10 @@ export async function GET(request: Request) {
       }
     }
 
-    let filePath = GLOBAL_ORDER_FILE;
-    if (month) {
-      filePath = path.join(DATA_DIR, `overview-order-${month}.json`);
-    }
-
     try {
-      const data = await fs.readFile(filePath, 'utf-8');
+      const data = await fs.readFile(GLOBAL_ORDER_FILE, 'utf-8');
       return NextResponse.json({ success: true, data: JSON.parse(data) });
     } catch {
-      // If month-specific file doesn't exist, try global
-      if (month) {
-        try {
-          const globalData = await fs.readFile(GLOBAL_ORDER_FILE, 'utf-8');
-          return NextResponse.json({ success: true, data: JSON.parse(globalData) });
-        } catch {
-          return NextResponse.json({ success: true, data: null });
-        }
-      }
       return NextResponse.json({ success: true, data: null });
     }
   } catch (error: any) {
@@ -59,7 +44,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { month, data, type } = body;
+    const { data, type } = body;
     
     await ensureDir();
     
@@ -68,14 +53,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
-    const filePath = month 
-      ? path.join(DATA_DIR, `overview-order-${month}.json`)
-      : GLOBAL_ORDER_FILE;
-
-    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    
-    // Also update global if it's a month-specific save? 
-    // Usually we want the latest order to be the new global default.
     await fs.writeFile(GLOBAL_ORDER_FILE, JSON.stringify(data, null, 2), 'utf-8');
 
     return NextResponse.json({ success: true });

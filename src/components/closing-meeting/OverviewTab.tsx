@@ -1068,12 +1068,11 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
   }, [selectedMonth, segmentBaselinesFingerprint, segmentBaselines, loadedOrder]);
 
   useEffect(() => {
-    setSegmentState({});
-    setIsLoaded(false);
-    setLoadedOrder(null);
+    // Only fetch once at start
+    if (isLoaded) return;
     
     (async () => {
-      const response = await apiFetch(`/api/dashboard/closing-meeting/order?month=${selectedMonth}`);
+      const response = await apiFetch(`/api/dashboard/closing-meeting/order`);
       const json = await response.json();
       const loaded = json.success ? json.data : null;
       
@@ -1083,7 +1082,12 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
       if (loaded?.breakdownRowOrder) setBreakdownRowOrder(loaded.breakdownRowOrder);
       setIsLoaded(true);
     })();
-  }, [selectedMonth, segmentBaselinesFingerprint]);
+  }, [isLoaded]);
+
+  // Clear unsaved overrides when month changes (they will be re-applied from loadedOrder via hydratedDefaults)
+  useEffect(() => {
+    setSegmentState({});
+  }, [selectedMonth]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -1150,12 +1154,11 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
   }, [segmentBaselines, hydratedDefaults, segmentState]);
 
   useEffect(() => {
-    if (!selectedMonth || !mergedForPersist || !isLoaded) return;
+    if (!mergedForPersist || !isLoaded) return;
     apiFetch('/api/dashboard/closing-meeting/order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        month: selectedMonth,
         data: {
           segments: mergedForPersist,
           groupOrder,
@@ -1164,7 +1167,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
         }
       })
     });
-  }, [selectedMonth, mergedForPersist, groupOrder, breakdownOrder, breakdownRowOrder, isLoaded]);
+  }, [mergedForPersist, groupOrder, breakdownOrder, breakdownRowOrder, isLoaded]);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
