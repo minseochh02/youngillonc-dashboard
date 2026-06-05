@@ -129,7 +129,7 @@ export default function DataManagementPage() {
   const [scriptNames, setScriptNames] = useState<string[]>([]);
   const [scriptsLoading, setScriptsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [refreshProgress, setRefreshProgress] = useState<{ completed: number; total: number } | null>(null);
+  const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number; currentScript: string } | null>(null);
   const [refreshResult, setRefreshResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
@@ -168,46 +168,34 @@ export default function DataManagementPage() {
 
     setIsRefreshing(true);
     setRefreshResult(null);
-    setRefreshProgress({ completed: 0, total: scriptNames.length });
 
-    const outcomes = await Promise.all(
-      scriptNames.map(async (scriptName) => {
-        try {
-          const response = await apiFetch('/api/dashboard/browser-recording', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ testFile: scriptName, runOptions: { startDate, endDate } })
-          });
-          const result = await response.json();
-          if (!result.success) throw new Error(result.error || '실행 실패');
-          const replay = result.result ?? {};
-          if (replay.success === false) throw new Error(replay.error || '실행 실패');
-          return { scriptName, ok: true as const };
-        } catch (error) {
-          return {
-            scriptName,
-            ok: false as const,
-            error: error instanceof Error ? error.message : '실행 실패'
-          };
-        } finally {
-          setRefreshProgress((p) =>
-            p ? { completed: p.completed + 1, total: p.total } : { completed: 1, total: scriptNames.length }
-          );
-        }
-      })
-    );
+    let successCount = 0;
+    let failedCount = 0;
+    const errors: string[] = [];
 
-    const errors = outcomes
-      .filter((o): o is { scriptName: string; ok: false; error: string } => !o.ok)
-      .map((o) => `${o.scriptName}: ${o.error}`);
-    const successCount = outcomes.filter((o) => o.ok).length;
+    for (let i = 0; i < scriptNames.length; i++) {
+      const scriptName = scriptNames[i];
+      setRefreshProgress({ current: i + 1, total: scriptNames.length, currentScript: scriptName });
+
+      try {
+        const response = await apiFetch('/api/dashboard/browser-recording', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ testFile: scriptName, runOptions: { startDate, endDate } })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error || '실행 실패');
+        const replay = result.result ?? {};
+        if (replay.success === false) throw new Error(replay.error || '실행 실패');
+        successCount++;
+      } catch (error) {
+        failedCount++;
+        errors.push(`${scriptName}: ${error instanceof Error ? error.message : '실행 실패'}`);
+      }
+    }
 
     setRefreshProgress(null);
-    setRefreshResult({
-      success: successCount,
-      failed: outcomes.length - successCount,
-      errors
-    });
+    setRefreshResult({ success: successCount, failed: failedCount, errors });
     setIsRefreshing(false);
   };
 
@@ -692,15 +680,13 @@ export default function DataManagementPage() {
             {isRefreshing && refreshProgress && (
               <div className="mt-4 space-y-2">
                 <div className="flex items-center justify-between text-xs text-zinc-500">
-                  <span>동시 실행 중</span>
-                  <span>{refreshProgress.completed} / {refreshProgress.total}</span>
+                  <span>{refreshProgress.currentScript}</span>
+                  <span>{refreshProgress.current} / {refreshProgress.total}</span>
                 </div>
                 <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-1.5">
                   <div
                     className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
-                    style={{
-                      width: `${refreshProgress.total > 0 ? (refreshProgress.completed / refreshProgress.total) * 100 : 0}%`
-                    }}
+                    style={{ width: `${(refreshProgress.current / refreshProgress.total) * 100}%` }}
                   />
                 </div>
               </div>
