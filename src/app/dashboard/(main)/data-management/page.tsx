@@ -130,7 +130,12 @@ export default function DataManagementPage() {
   const [scriptsLoading, setScriptsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number; currentScript: string } | null>(null);
-  const [refreshResult, setRefreshResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
+  const [refreshResult, setRefreshResult] = useState<{
+    success: number;
+    failed: number;
+    errors: string[];
+    inventoryRebuild?: { success: boolean; rowsInserted?: number; error?: string };
+  } | null>(null);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
 
@@ -194,9 +199,45 @@ export default function DataManagementPage() {
       }
     }
 
+    let inventoryRebuild: { success: boolean; rowsInserted?: number; error?: string } | undefined;
+
+    if (successCount > 0) {
+      setRefreshProgress({
+        current: scriptNames.length,
+        total: scriptNames.length,
+        currentScript: '재고 재계산 중...'
+      });
+
+      try {
+        const rebuildResponse = await apiFetch('/api/admin/rebuild-computed-inventory', {
+          method: 'POST'
+        });
+        const rebuildResult = await rebuildResponse.json();
+        if (!rebuildResult.success) {
+          throw new Error(rebuildResult.error || '재고 재계산 실패');
+        }
+        inventoryRebuild = {
+          success: true,
+          rowsInserted: rebuildResult.result?.rowsInserted
+        };
+      } catch (error) {
+        inventoryRebuild = {
+          success: false,
+          error: error instanceof Error ? error.message : '재고 재계산 실패'
+        };
+        errors.push(
+          `재고 재계산: ${error instanceof Error ? error.message : '실패'}`
+        );
+      }
+    }
+
     setRefreshProgress(null);
-    setRefreshResult({ success: successCount, failed: failedCount, errors });
+    setRefreshResult({ success: successCount, failed: failedCount, errors, inventoryRebuild });
     setIsRefreshing(false);
+
+    if (successCount > 0) {
+      fetchTableData();
+    }
   };
 
   const fetchTableData = async () => {
@@ -710,6 +751,14 @@ export default function DataManagementPage() {
                       : `${refreshResult.success}개 성공, ${refreshResult.failed}개 실패`
                     }
                   </p>
+                  {refreshResult.inventoryRebuild?.success && (
+                    <p className="mt-1 text-xs opacity-80">
+                      재고 재계산 완료
+                      {refreshResult.inventoryRebuild.rowsInserted != null
+                        ? ` (${refreshResult.inventoryRebuild.rowsInserted}행)`
+                        : ''}
+                    </p>
+                  )}
                   {refreshResult.errors.length > 0 && (
                     <ul className="mt-1 space-y-0.5 text-xs opacity-80">
                       {refreshResult.errors.map((e, i) => <li key={i}>{e}</li>)}
