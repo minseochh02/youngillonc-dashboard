@@ -1007,6 +1007,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
     BREAKDOWN_ROWS.map((r) => r.id)
   );
   const reportedMonths = useRef(false);
+  const lastSavedOrderRef = useRef<string>("");
   const firstHeadRowRef = useRef<HTMLTableRowElement>(null);
   const secondHeadRowRef = useRef<HTMLTableRowElement>(null);
 
@@ -1065,7 +1066,7 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
       };
     }
     return next;
-  }, [selectedMonth, segmentBaselinesFingerprint, segmentBaselines, loadedOrder]);
+  }, [segmentBaselinesFingerprint, segmentBaselines, loadedOrder]);
 
   useEffect(() => {
     // Only fetch once at start
@@ -1084,10 +1085,27 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
     })();
   }, [isLoaded]);
 
-  // Clear unsaved overrides when month changes (they will be re-applied from loadedOrder via hydratedDefaults)
+  // Layout order is global — when month data loads, refresh row metrics but keep saved order ids.
   useEffect(() => {
-    setSegmentState({});
-  }, [selectedMonth]);
+    if (!segmentBaselines || !hydratedDefaults) return;
+    setSegmentState((prev) => {
+      if (Object.keys(prev).length === 0) return prev;
+      const next: Partial<Record<OverviewProductGroupId, OverviewSegmentUiState>> = {};
+      for (const g of OVERVIEW_PRODUCT_GROUPS) {
+        const cur = prev[g.id] ?? hydratedDefaults[g.id];
+        if (!cur) continue;
+        const baseline = segmentBaselines.get(g.id)?.baseline ?? [];
+        const teamRowIds = cur.orderedTeams.map(teamRowStableId);
+        next[g.id] = {
+          ...cur,
+          orderedTeams: applySavedTeamOrder(baseline, teamRowIds),
+        };
+      }
+      return next;
+    });
+    // Only re-bind team rows when the month's baseline roster changes, not when loadedOrder updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segmentBaselinesFingerprint]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -1155,18 +1173,26 @@ export default function OverviewTab({ selectedMonth, onMonthsAvailable }: Overvi
 
   useEffect(() => {
     if (!mergedForPersist || !isLoaded) return;
-    apiFetch('/api/dashboard/closing-meeting/order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        data: {
-          segments: mergedForPersist,
-          groupOrder,
-          breakdownOrder,
-          breakdownRowOrder,
-        }
+    const payload: OverviewOrderPersistV2 = {
+      segments: mergedForPersist,
+      groupOrder,
+      breakdownOrder,
+      breakdownRowOrder,
+    };
+    const serialized = JSON.stringify(payload);
+    if (serialized === lastSavedOrderRef.current) return;
+
+    apiFetch("/api/dashboard/closing-meeting/order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: payload }),
+    })
+      .then((res) => {
+        if (!res.ok) return;
+        lastSavedOrderRef.current = serialized;
+        setLoadedOrder(payload);
       })
-    });
+      .catch((e) => console.error("Failed to save overview order", e));
   }, [mergedForPersist, groupOrder, breakdownOrder, breakdownRowOrder, isLoaded]);
 
   const handleDragEnd = useCallback(
