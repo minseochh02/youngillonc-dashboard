@@ -16,29 +16,6 @@ interface StagedDiff {
   changes?: string[];
 }
 
-/** Max parallel browser-recording API calls during data refresh */
-const BROWSER_RECORDING_CONCURRENCY = 3;
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let nextIndex = 0;
-
-  const worker = async () => {
-    while (nextIndex < items.length) {
-      const i = nextIndex++;
-      results[i] = await fn(items[i]);
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, worker)
-  );
-  return results;
-}
 
 const baselineTables = [
   {
@@ -193,10 +170,8 @@ export default function DataManagementPage() {
     setRefreshResult(null);
     setRefreshProgress({ completed: 0, total: scriptNames.length });
 
-    const outcomes = await mapWithConcurrency(
-      scriptNames,
-      BROWSER_RECORDING_CONCURRENCY,
-      async (scriptName) => {
+    const outcomes = await Promise.all(
+      scriptNames.map(async (scriptName) => {
         try {
           const response = await apiFetch('/api/dashboard/browser-recording', {
             method: 'POST',
@@ -219,7 +194,7 @@ export default function DataManagementPage() {
             p ? { completed: p.completed + 1, total: p.total } : { completed: 1, total: scriptNames.length }
           );
         }
-      }
+      })
     );
 
     const errors = outcomes
