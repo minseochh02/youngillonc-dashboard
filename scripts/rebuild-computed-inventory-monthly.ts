@@ -3,9 +3,10 @@
  *
  * 기준:
  * - 기준 스냅샷: 2025-12-31 (youngil/west/east_inventory_20251231 합산)
+ * - 월별 순변동: 매입 - 매출 - 자가사용 - 재고폐기
  * - 월말 재고(카테고리별):
- *   - snapshot 이후 월: snapshot + 누적(매입 - 매출)
- *   - snapshot 이전 월: snapshot - 역누적(매입 - 매출)
+ *   - snapshot 이후 월: snapshot + 누적(순변동)
+ *   - snapshot 이전 월: snapshot - 역누적(순변동)
  *
  * Run:
  *   npx tsx scripts/rebuild-computed-inventory-monthly.ts

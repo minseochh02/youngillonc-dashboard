@@ -50,6 +50,11 @@ function ensureCategory(v: string): Category {
   return '기타';
 }
 
+/** qty × spec (L stripped) — same as daily inventory sheet */
+function weightFromQtyAndSpec(qtyCol: string, specCol: string): string {
+  return `CAST(REPLACE(${qtyCol}, ',', '') AS NUMERIC) * CAST(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(${specCol}, '0'), 'L', ''), 'KL', ''), 'kg', ''), ',', '') AS NUMERIC)`;
+}
+
 async function ensureTable(): Promise<void> {
   try {
     await executeSQL(`SELECT 1 FROM ${TABLE_NAME} LIMIT 1`);
@@ -66,6 +71,8 @@ async function ensureTable(): Promise<void> {
       { name: 'category', type: 'TEXT', notNull: true },
       { name: 'purchase_weight', type: 'REAL', notNull: true },
       { name: 'sales_weight', type: 'REAL', notNull: true },
+      { name: 'internal_use_weight', type: 'REAL', notNull: true, defaultValue: 0 },
+      { name: 'disposed_weight', type: 'REAL', notNull: true, defaultValue: 0 },
       { name: 'net_weight', type: 'REAL', notNull: true },
       { name: 'inventory_weight', type: 'REAL', notNull: true },
       { name: 'snapshot_month', type: 'TEXT', notNull: true },
@@ -145,31 +152,78 @@ export async function rebuildComputedInventoryMonthly() {
       ${categoryExpr('s')} as category,
       SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight
     FROM (
-      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
+      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, i.품목그룹1코드
       FROM sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       UNION ALL
-      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
+      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, i.품목그룹1코드
       FROM east_division_sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
       UNION ALL
-      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, s.담당자코드, i.품목그룹1코드
+      SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, i.품목그룹1코드
       FROM west_division_sales s
       LEFT JOIN items i ON s.품목코드 = i.품목코드
     ) s
     LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
-    LEFT JOIN employees e ON s.담당자코드 = e.사원_담당_코드
+    LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
     WHERE s.일자 IS NOT NULL AND s.일자 != '' AND LENGTH(s.일자) >= 7
       ${sqlAndEmployeeNotSpecialHandling()}
       ${sqlAndSalesRemarkNotExact('s.적요')}
     GROUP BY 1, 2
   `;
 
-  const [purRes, salesRes] = await Promise.all([executeSQL(purchaseMonthlySql), executeSQL(salesMonthlySql)]);
+  const internalUseMonthlySql = `
+    SELECT
+      substr(u.month_date, 1, 7) as month,
+      ${categoryExpr('u')} as category,
+      SUM(u.weight) as internal_use_weight
+    FROM (
+      SELECT u.일자 as month_date, i.품목그룹1코드, CAST(REPLACE(u.중량, ',', '') AS NUMERIC) as weight
+      FROM internal_uses u
+      LEFT JOIN items i ON u.품목코드 = i.품목코드
+      UNION ALL
+      SELECT u.월_일 as month_date, i.품목그룹1코드, ${weightFromQtyAndSpec('u.수량', 'i.규격정보')} as weight
+      FROM east_internal_uses u
+      LEFT JOIN items i ON u.품목코드 = i.품목코드
+      UNION ALL
+      SELECT u.월_일 as month_date, i.품목그룹1코드, ${weightFromQtyAndSpec('u.수량', 'i.규격정보')} as weight
+      FROM west_internal_uses u
+      LEFT JOIN items i ON u.품목코드 = i.품목코드
+    ) u
+    WHERE u.month_date IS NOT NULL AND u.month_date != '' AND LENGTH(u.month_date) >= 7
+    GROUP BY 1, 2
+  `;
+
+  const disposedMonthlySql = `
+    SELECT
+      substr(d.month_date, 1, 7) as month,
+      ${categoryExpr('d')} as category,
+      SUM(d.weight) as disposed_weight
+    FROM (
+      SELECT d.일자 as month_date, i.품목그룹1코드, ${weightFromQtyAndSpec('d.수량', 'i.규격정보')} as weight
+      FROM disposed_inventory d
+      LEFT JOIN items i ON d.품목코드 = i.품목코드
+      UNION ALL
+      SELECT d.일자 as month_date, i.품목그룹1코드, CAST(REPLACE(d.중량, ',', '') AS NUMERIC) as weight
+      FROM east_disposed_inventory d
+      LEFT JOIN items i ON d.품목코드 = i.품목코드
+    ) d
+    WHERE d.month_date IS NOT NULL AND d.month_date != '' AND LENGTH(d.month_date) >= 7
+    GROUP BY 1, 2
+  `;
+
+  const [purRes, salesRes, internalRes, disposedRes] = await Promise.all([
+    executeSQL(purchaseMonthlySql),
+    executeSQL(salesMonthlySql),
+    executeSQL(internalUseMonthlySql),
+    executeSQL(disposedMonthlySql),
+  ]);
 
   const monthSet = new Set<string>([SNAPSHOT_MONTH]);
   const purchaseByMonthCat = new Map<string, number>();
   const salesByMonthCat = new Map<string, number>();
+  const internalUseByMonthCat = new Map<string, number>();
+  const disposedByMonthCat = new Map<string, number>();
   const netByMonthCat = new Map<string, number>();
   const key = (m: string, c: Category) => `${m}\t${c}`;
 
@@ -187,6 +241,20 @@ export async function rebuildComputedInventoryMonthly() {
     monthSet.add(m);
     salesByMonthCat.set(key(m, c), w);
   }
+  for (const row of internalRes?.rows || []) {
+    const m = String(row.month);
+    const c = ensureCategory(String(row.category));
+    const w = Number(row.internal_use_weight) || 0;
+    monthSet.add(m);
+    internalUseByMonthCat.set(key(m, c), w);
+  }
+  for (const row of disposedRes?.rows || []) {
+    const m = String(row.month);
+    const c = ensureCategory(String(row.category));
+    const w = Number(row.disposed_weight) || 0;
+    monthSet.add(m);
+    disposedByMonthCat.set(key(m, c), w);
+  }
 
   const months = Array.from(monthSet).sort();
   const snapshotIdx = months.indexOf(SNAPSHOT_MONTH);
@@ -198,7 +266,9 @@ export async function rebuildComputedInventoryMonthly() {
     for (const c of CATEGORIES) {
       const pur = purchaseByMonthCat.get(key(m, c)) || 0;
       const sales = salesByMonthCat.get(key(m, c)) || 0;
-      netByMonthCat.set(key(m, c), pur - sales);
+      const internalUse = internalUseByMonthCat.get(key(m, c)) || 0;
+      const disposed = disposedByMonthCat.get(key(m, c)) || 0;
+      netByMonthCat.set(key(m, c), pur - sales - internalUse - disposed);
     }
   }
 
@@ -219,6 +289,8 @@ export async function rebuildComputedInventoryMonthly() {
     months.forEach((m, i) => {
       const pur = purchaseByMonthCat.get(key(m, c)) || 0;
       const sales = salesByMonthCat.get(key(m, c)) || 0;
+      const internalUse = internalUseByMonthCat.get(key(m, c)) || 0;
+      const disposed = disposedByMonthCat.get(key(m, c)) || 0;
       const net = netByMonthCat.get(key(m, c)) || 0;
       const inv = snapshot + ((prefix[i] || 0) - pSnap);
 
@@ -228,6 +300,8 @@ export async function rebuildComputedInventoryMonthly() {
         category: c,
         purchase_weight: pur,
         sales_weight: sales,
+        internal_use_weight: internalUse,
+        disposed_weight: disposed,
         net_weight: net,
         inventory_weight: inv,
         snapshot_month: SNAPSHOT_MONTH,

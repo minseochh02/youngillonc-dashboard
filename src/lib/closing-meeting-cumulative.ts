@@ -566,7 +566,7 @@ export async function buildCumulativeViewPayload(params: {
     WHERE sg.year = '${y0}'
       AND CAST(TRIM(sg.month) AS INTEGER) <= ${monthInt}
       AND ${WHERE_B2B}
-    GROUP BY 2, 3
+    GROUP BY 1, 2
   `;
 
   const b2bGoalsMonthSql = `
