@@ -17,6 +17,7 @@ import {
   sqlAndSalesRemarkNotExact,
   sqlSalesResolvedClientKeyExpr,
 } from '@/lib/special-handling-employees';
+import { SQL_SALES_GOALS_FROM } from '@/lib/sales-goals-sql';
 import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
@@ -270,21 +271,14 @@ export async function GET(request: Request) {
         GROUP BY month
       `;
 
-      // Query goals from new schema - aggregate employee goals by category
       const goalsQuery = `
         SELECT
           month,
-          CASE
-            WHEN category = 'AVI+MAR' THEN 'AVI + MAR'
-            ELSE category
-          END as category,
           SUM(target_weight) as target_weight,
           SUM(target_amount) as target_amount
         FROM sales_goals
         WHERE year = '${currentYear}'
-          AND category_type = 'division'
-          AND category IN ('MB', 'IL', 'AUTO', 'AVI+MAR')
-        GROUP BY month, category
+        GROUP BY month
       `;
 
       const [salesResult, purchasesResult, lastYearSalesResult, goalsResult] = await Promise.all([
@@ -318,10 +312,13 @@ export async function GET(request: Request) {
         lastYearSalesMap.set(monthNum, Number(row.weight) || 0);
       });
 
-      const goalsMap = new Map<string, { weight: number; amount: number }>();
+      const monthGoalsMap = new Map<string, { weight: number; amount: number }>();
       goalsData.forEach((row: any) => {
-        const key = `${row.month}_${row.category}`;
-        goalsMap.set(key, { weight: Number(row.target_weight) || 0, amount: Number(row.target_amount) || 0 });
+        const monthNum = String(row.month).padStart(2, '0');
+        monthGoalsMap.set(monthNum, {
+          weight: Number(row.target_weight) || 0,
+          amount: Number(row.target_amount) || 0,
+        });
       });
 
       // Raw category maps for detailed AUTO(PVL/CVL) breakdown
@@ -364,29 +361,11 @@ export async function GET(request: Request) {
         purchasesRawCategoryMap.set(`${row.month}_${row.raw_category}`, Number(row.weight) || 0);
       });
 
-      /** Division goals: DB still stores combined AVI+MAR; split by that month's AVI vs MAR 실적. */
-      const getDivisionGoal = (
-        cat: string,
-        monthNum: string,
-        monthStr: string
-      ): { weight: number; amount: number } => {
-        if (cat === 'AVI' || cat === 'MAR') {
-          const combined = goalsMap.get(`${monthNum}_AVI + MAR`) || { weight: 0, amount: 0 };
-          const own = goalsMap.get(`${monthNum}_${cat}`) || { weight: 0, amount: 0 };
-          if (own.weight > 0 || own.amount > 0) return own;
-          if (combined.weight <= 0 && combined.amount <= 0) return { weight: 0, amount: 0 };
-          const wAvi = salesMap.get(`${monthStr}_AVI`)?.weight || 0;
-          const wMar = salesMap.get(`${monthStr}_MAR`)?.weight || 0;
-          const tot = wAvi + wMar;
-          const share = tot > 0 ? (cat === 'AVI' ? wAvi / tot : wMar / tot) : 0.5;
-          return {
-            weight: combined.weight * share,
-            amount: combined.amount * share,
-          };
-        }
-        if (cat === '기타') return { weight: 0, amount: 0 };
-        return goalsMap.get(`${monthNum}_${cat}`) || { weight: 0, amount: 0 };
-      };
+      /** Goals are per client (not per product category). Category breakdown shows actuals only. */
+      const getCategoryGoal = (_cat: string, _monthNum: string): { weight: number; amount: number } => ({
+        weight: 0,
+        amount: 0,
+      });
 
       const categories = ['MB', 'AVI', 'MAR', 'AUTO', 'IL', '기타'];
       const snapshotMonthStr = SNAPSHOT_IMPORTED_AT.slice(0, 7);
@@ -489,20 +468,21 @@ export async function GET(request: Request) {
       }
 
       for (const monthStr of availableMonths) {
-        let purchaseWeight = 0, purchaseAmount = 0, salesWeight = 0, salesAmount = 0, monthTargetWeight = 0;
+        let purchaseWeight = 0, purchaseAmount = 0, salesWeight = 0, salesAmount = 0;
         const monthNum = monthStr.split('-')[1];
+        const monthGoal = monthGoalsMap.get(monthNum) || { weight: 0, amount: 0 };
+        const monthTargetWeight = monthGoal.weight;
 
         const breakdown = categories.map(cat => {
           const key = `${monthStr}_${cat}`;
           const s = salesMap.get(key) || { weight: 0, amount: 0 };
           const p = purchasesMap.get(key) || { weight: 0, amount: 0 };
-          const g = getDivisionGoal(cat, monthNum, monthStr);
+          const g = getCategoryGoal(cat, monthNum);
 
           purchaseWeight += p.weight;
           purchaseAmount += p.amount;
           salesWeight += s.weight;
           salesAmount += s.amount;
-          monthTargetWeight += g.weight;
 
             const monthlyNetInventory = p.weight - s.weight;
             return {
@@ -733,11 +713,9 @@ export async function GET(request: Request) {
         SELECT
           ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           SUM(sg.target_weight) as target_weight
-        FROM sales_goals sg
-        LEFT JOIN employee_category ec ON sg.employee_name = ec.담당자
+        ${SQL_SALES_GOALS_FROM}
         WHERE sg.year = '${currentYear}'
           AND sg.month = '${monthNum}'
-          AND sg.category_type = 'division'
           AND ec.전체사업소 IS NOT NULL
         GROUP BY branch
       `;
@@ -1117,18 +1095,14 @@ export async function GET(request: Request) {
       // Query goals aggregated by category and team for B2C AUTO
       const b2cGoalsQuery = `
         SELECT
-          category,
           ec.b2c_팀 as team,
           SUM(sg.target_weight) as target_weight
-        FROM sales_goals sg
-        LEFT JOIN employee_category ec ON sg.employee_name = ec.담당자
+        ${SQL_SALES_GOALS_FROM}
         WHERE sg.year = '${currentYear}'
           AND sg.month = '${monthNum}'
-          AND sg.category_type = 'division'
-          AND sg.category IN ('AUTO', 'PVL', 'CVL')
           AND ec.b2c_팀 IS NOT NULL
           AND ${WHERE_B2C_CHANNEL}
-        GROUP BY category, team
+        GROUP BY team
       `;
 
       // YTD monthly B2C sales (L) by calendar month and product group — same scope as b2cCategoryQuery
@@ -1210,16 +1184,11 @@ export async function GET(request: Request) {
       const teamGoalsMap = new Map<string, number>();
 
       goalsData.forEach((g: any) => {
-        // Category-level goals
-        const catKey = g.category;
-        categoryGoalsMap.set(catKey, (categoryGoalsMap.get(catKey) || 0) + (Number(g.target_weight) || 0));
-
-        // Team-level goals
         const teamKey = g.team;
         teamGoalsMap.set(teamKey, (teamGoalsMap.get(teamKey) || 0) + (Number(g.target_weight) || 0));
       });
 
-      const goalsMap = categoryGoalsMap; // For backward compatibility with category lookup
+      const goalsMap = categoryGoalsMap;
 
       const yearlyHierarchyQuery = `
         SELECT
@@ -1253,19 +1222,12 @@ export async function GET(request: Request) {
           sg.year as year,
           ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           ec.b2c_팀 as team,
-          CASE
-            WHEN sg.category IN ('PVL', 'CVL') THEN sg.category
-            ELSE sg.category
-          END as category,
           SUM(sg.target_weight) as target_weight
-        FROM sales_goals sg
-        LEFT JOIN employee_category ec ON sg.employee_name = ec.담당자
-        WHERE sg.category_type = 'division'
-          AND sg.category IN ('PVL', 'CVL')
-          AND ec.b2c_팀 IS NOT NULL
+        ${SQL_SALES_GOALS_FROM}
+        WHERE ec.b2c_팀 IS NOT NULL
           AND ${WHERE_B2C_CHANNEL}
           AND sg.month <= '${monthNum}'
-        GROUP BY 1, 2, 3, 4
+        GROUP BY 1, 2, 3
       `;
       const yearlyPurchaseQuery = `
         SELECT
@@ -1354,26 +1316,24 @@ export async function GET(request: Request) {
           yearlyAutoRawMap.set(year, auto);
         }
       });
+      const yearlyTeamGoalAppliedB2c = new Set<string>();
       yearlyGoalRows.forEach((r: any) => {
         const year = String(r.year);
-        if (!yearlyMap.has(year)) {
-          const categoriesMap = new Map<string, any>();
-          categoryOrder.forEach((c) => categoriesMap.set(c, { category: c, sales_weight: 0, purchase_weight: 0, target_weight: 0, branchesMap: new Map() }));
-          yearlyMap.set(year, categoriesMap);
-        }
-        const categoriesMap = yearlyMap.get(year) as Map<string, any>;
-        const cat = categoriesMap.get(r.category);
-        if (!cat) return;
+        const dedupeKey = `${year}\t${r.branch}\t${r.team}`;
+        if (yearlyTeamGoalAppliedB2c.has(dedupeKey)) return;
+        yearlyTeamGoalAppliedB2c.add(dedupeKey);
         const targetWeight = Number(r.target_weight) || 0;
-        cat.target_weight += targetWeight;
-        if (!cat.branchesMap.has(r.branch)) {
-          cat.branchesMap.set(r.branch, { branch: r.branch, sales_weight: 0, target_weight: 0, teamsMap: new Map() });
+        if (!yearlyMap.has(year)) return;
+        const categoriesMap = yearlyMap.get(year) as Map<string, any>;
+        for (const cat of categoriesMap.values()) {
+          const branch = cat.branchesMap?.get(r.branch);
+          if (branch?.teamsMap?.has(r.team)) {
+            cat.target_weight += targetWeight;
+            branch.target_weight += targetWeight;
+            branch.teamsMap.get(r.team).target_weight = targetWeight;
+            break;
+          }
         }
-        const branch = cat.branchesMap.get(r.branch);
-        branch.target_weight += targetWeight;
-        const teamObj = branch.teamsMap.get(r.team) || { sales_weight: 0, target_weight: 0 };
-        teamObj.target_weight += targetWeight;
-        branch.teamsMap.set(r.team, teamObj);
       });
       yearlyPurchaseRows.forEach((r: any) => {
         const year = String(r.year);
@@ -1718,18 +1678,14 @@ export async function GET(request: Request) {
       // Query goals aggregated by category and team for B2B IL
       const b2bGoalsQuery = `
         SELECT
-          category,
           ec.b2b팀 as team,
           SUM(sg.target_weight) as target_weight
-        FROM sales_goals sg
-        LEFT JOIN employee_category ec ON sg.employee_name = ec.담당자
+        ${SQL_SALES_GOALS_FROM}
         WHERE sg.year = '${currentYear}'
           AND sg.month = '${monthNum}'
-          AND sg.category_type = 'division'
-          AND sg.category = 'IL'
           AND ec.b2c_팀 = 'B2B'
           AND ec.b2b팀 IS NOT NULL
-        GROUP BY category, team
+        GROUP BY team
       `;
 
       const [catResult, hierarchyResult, b2cResult, b2bYtdResult, goalsResult] = await Promise.all([
@@ -1751,16 +1707,11 @@ export async function GET(request: Request) {
       const teamGoalsMap = new Map<string, number>();
 
       goalsData.forEach((g: any) => {
-        // Category-level goals
-        const catKey = g.category;
-        categoryGoalsMap.set(catKey, (categoryGoalsMap.get(catKey) || 0) + (Number(g.target_weight) || 0));
-
-        // Team-level goals
         const teamKey = g.team;
         teamGoalsMap.set(teamKey, (teamGoalsMap.get(teamKey) || 0) + (Number(g.target_weight) || 0));
       });
 
-      const goalsMap = categoryGoalsMap; // For backward compatibility with category lookup
+      const goalsMap = categoryGoalsMap;
 
       const yearlyHierarchyQuery = `
         SELECT
@@ -1791,16 +1742,12 @@ export async function GET(request: Request) {
           sg.year as year,
           ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           ec.b2b팀 as team,
-          sg.category as category,
           SUM(sg.target_weight) as target_weight
-        FROM sales_goals sg
-        LEFT JOIN employee_category ec ON sg.employee_name = ec.담당자
-        WHERE sg.category_type = 'division'
-          AND sg.category = 'IL'
-          AND ec.b2c_팀 = 'B2B'
+        ${SQL_SALES_GOALS_FROM}
+        WHERE ec.b2c_팀 = 'B2B'
           AND ec.b2b팀 IS NOT NULL
           AND sg.month <= '${monthNum}'
-        GROUP BY 1, 2, 3, 4
+        GROUP BY 1, 2, 3
       `;
       const yearlyPurchaseQuery = `
         SELECT
@@ -1883,26 +1830,24 @@ export async function GET(request: Request) {
         teamObj.sales_weight += weight;
         branch.teamsMap.set(r.team, teamObj);
       });
+      const yearlyTeamGoalAppliedB2b = new Set<string>();
       yearlyGoalRows.forEach((r: any) => {
         const year = String(r.year);
-        if (!yearlyMap.has(year)) {
-          const categoriesMap = new Map<string, any>();
-          categoryOrder.forEach((c) => categoriesMap.set(c, { category: c, sales_weight: 0, purchase_weight: 0, target_weight: 0, branchesMap: new Map() }));
-          yearlyMap.set(year, categoriesMap);
-        }
-        const categoriesMap = yearlyMap.get(year) as Map<string, any>;
-        const cat = categoriesMap.get(r.category);
-        if (!cat) return;
+        const dedupeKey = `${year}\t${r.branch}\t${r.team}`;
+        if (yearlyTeamGoalAppliedB2b.has(dedupeKey)) return;
+        yearlyTeamGoalAppliedB2b.add(dedupeKey);
         const targetWeight = Number(r.target_weight) || 0;
-        cat.target_weight += targetWeight;
-        if (!cat.branchesMap.has(r.branch)) {
-          cat.branchesMap.set(r.branch, { branch: r.branch, sales_weight: 0, target_weight: 0, teamsMap: new Map() });
+        if (!yearlyMap.has(year)) return;
+        const categoriesMap = yearlyMap.get(year) as Map<string, any>;
+        for (const cat of categoriesMap.values()) {
+          const branch = cat.branchesMap?.get(r.branch);
+          if (branch?.teamsMap?.has(r.team)) {
+            cat.target_weight += targetWeight;
+            branch.target_weight += targetWeight;
+            branch.teamsMap.get(r.team).target_weight = targetWeight;
+            break;
+          }
         }
-        const branch = cat.branchesMap.get(r.branch);
-        branch.target_weight += targetWeight;
-        const teamObj = branch.teamsMap.get(r.team) || { sales_weight: 0, target_weight: 0 };
-        teamObj.target_weight += targetWeight;
-        branch.teamsMap.set(r.team, teamObj);
       });
       yearlyPurchaseRows.forEach((r: any) => {
         const year = String(r.year);
@@ -2147,132 +2092,148 @@ export async function GET(request: Request) {
     if (tab === 'goal-setting') {
       const selectedYear = searchParams.get('year') || currentYear.toString();
       const prevYear = (Number(selectedYear) - 1).toString();
-      const categoryType = searchParams.get('categoryType') || 'tier';
+      const includeLookups = searchParams.get('includeLookups') === 'true';
+      const clientSearch = (searchParams.get('clientSearch') || '').trim().replace(/'/g, "''");
+      const selectedMonthParam = (searchParams.get('month') || '').trim();
 
-      // Build category CASE statement based on categoryType
-      let categoryCaseStatement: string;
-      let categoryHavingClause: string;
-      let additionalJoins = '';
+      const clientMasterSelect = `
+        c.거래처코드 as client_code,
+        c.거래처명 as client_name,
+        c.업종분류코드 as industry_code,
+        ct.모빌분류 as industry_name,
+        e.사원_담당_코드 as employee_code,
+        e.사원_담당_명 as employee_name,
+        ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
+        CASE
+          WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
+          ELSE COALESCE(ec.b2c_팀, '미분류')
+        END as team
+      `;
 
-      if (categoryType === 'tier') {
-        categoryCaseStatement = `
-          CASE
-            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') AND i.품목그룹3코드 = 'STA' THEN 'Standard'
-            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') AND i.품목그룹3코드 = 'PRE' THEN 'Premium'
-            WHEN i.품목그룹1코드 IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') AND i.품목그룹3코드 = 'FLA' THEN 'Flagship'
-            WHEN i.품목그룹1코드 NOT IN ('IL', 'PVL', 'MB', 'CVL', 'AVI', 'MAR') THEN 'Alliance'
-            ELSE 'Others'
-          END`;
-        categoryHavingClause = "category IN ('Standard', 'Premium', 'Flagship', 'Alliance')";
-      } else if (categoryType === 'division') {
-        categoryCaseStatement = `
-          CASE
-            WHEN i.품목그룹1코드 = 'IL' THEN 'IL'
-            WHEN i.품목그룹1코드 IN ('PVL', 'CVL') THEN 'AUTO'
-            WHEN i.품목그룹1코드 = 'MB' THEN 'MB'
-            WHEN i.품목그룹1코드 IN ('AVI', 'MAR') THEN 'AVI+MAR'
-            ELSE '기타'
-          END`;
-        categoryHavingClause = "category IN ('IL', 'AUTO', 'MB', 'AVI+MAR')";
-      } else if (categoryType === 'business_type') {
-        additionalJoins = `LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드`;
-        categoryCaseStatement = `
-          CASE
-            WHEN ca.업종분류코드 IN ('28600', '28610', '28710') THEN 'Fleet'
-            WHEN ca.업종분류코드 IS NOT NULL THEN 'LCC'
-            ELSE NULL
-          END`;
-        categoryHavingClause = "category IN ('Fleet', 'LCC')";
-      } else if (categoryType === 'industry_sector') {
-        // Use industry and sector from company_type
-        categoryCaseStatement = `COALESCE(ct.산업분류 || ' / ' || ct.섹터분류, '미분류')`;
-        categoryHavingClause = "category IS NOT NULL";
-      } else {
-        // family
-        categoryCaseStatement = `
-          CASE
-            WHEN i.제품군 = 'MOBIL 1' THEN 'MOBIL 1'
-            WHEN i.제품군 = 'AIOP' THEN 'AIOP'
-            WHEN i.제품군 = 'TP' THEN 'TP'
-            WHEN i.제품군 = 'SPECIAL P' THEN 'SPECIAL P'
-            WHEN i.품목그룹1코드 IN ('PVL', 'CVL') THEN 'CVL Products'
-            ELSE 'Others'
-          END`;
-        categoryHavingClause = "category IN ('MOBIL 1', 'AIOP', 'TP', 'SPECIAL P', 'CVL Products')";
+      if (clientSearch.length >= 1) {
+        const searchQuery = `
+          SELECT ${clientMasterSelect}
+          FROM clients c
+          LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
+          LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+          LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+          WHERE (c.거래처명 LIKE '%${clientSearch}%' OR c.거래처코드 LIKE '%${clientSearch}%')
+          ORDER BY c.거래처명
+          LIMIT 40
+        `;
+        const searchRes = await executeSQL(searchQuery);
+        return NextResponse.json({
+          success: true,
+          data: { searchResults: searchRes?.rows || [] },
+        });
       }
 
-      // Employee Category Actuals Query
-      const employeeCategoryActualQuery = `
+      const clientActualQuery = `
         SELECT
           substr(s.일자, 1, 7) as month,
+          ${clientKeyExpr} as client_code,
+          c.거래처명 as client_name,
+          c.업종분류코드 as industry_code,
+          ct.모빌분류 as industry_name,
           e.사원_담당_명 as employee_name,
           ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           CASE
             WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
             ELSE COALESCE(ec.b2c_팀, '미분류')
           END as team,
-          ${categoryCaseStatement} as category,
-          COALESCE(ct.산업분류, '미분류') as industry,
-          COALESCE(ct.섹터분류, '미분류') as sector,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
         LEFT JOIN clients c ON ${clientKeyExpr} = c.거래처코드
+        LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-        LEFT JOIN items i ON s.품목코드 = i.품목코드
-        LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
-        ${additionalJoins}
         WHERE s.일자 LIKE '${prevYear}-%'
+          AND ${clientKeyExpr} IS NOT NULL
           AND e.사원_담당_명 IS NOT NULL
           ${sqlAndEmployeeNotSpecialHandling()}
       ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ${WHERE_EC_BRANCH_OK}
-        GROUP BY month, employee_name, branch, team, category, industry, sector
-        HAVING ${categoryHavingClause}
-        ORDER BY branch, team, employee_name, category, industry, sector
+        GROUP BY month, client_code, client_name, industry_code, industry_name, employee_name, branch, team
+        ORDER BY branch, team, employee_name, client_name
       `;
 
-      const employeeCategoryActualRes = await executeSQL(employeeCategoryActualQuery);
-      const employeeCategoryActual = employeeCategoryActualRes?.rows || [];
+      const clientActualRes = await executeSQL(clientActualQuery);
+      const clientActual = clientActualRes?.rows || [];
 
-      // Fetch goals from sales_goals table
       const goalsQuery = `
-        SELECT
-          id,
-          year,
-          month,
-          employee_name,
-          category_type,
-          category,
-          industry,
-          sector,
-          target_weight,
-          target_amount
+        SELECT id, year, month, client_code, target_weight, target_amount
         FROM sales_goals
         WHERE year = '${selectedYear}'
-          AND category_type = '${categoryType}'
       `;
 
       const goalsRes = await executeSQL(goalsQuery);
       const goals = goalsRes?.rows || [];
 
-      // Get unique employees and categories
-      const uniqueEmployees = new Set<string>();
-      const uniqueCategories = new Set<string>();
-      employeeCategoryActual.forEach((row: any) => {
-        uniqueEmployees.add(row.employee_name);
-        uniqueCategories.add(row.category);
-      });
+      const monthFilter = selectedMonthParam
+        ? `AND printf('%02d', CAST(sg.month AS INTEGER)) = printf('%02d', CAST('${selectedMonthParam}' AS INTEGER))`
+        : '';
+
+      const goalClientsQuery = `
+        SELECT DISTINCT
+          ${clientMasterSelect}
+        FROM sales_goals sg
+        LEFT JOIN clients c ON sg.client_code = c.거래처코드
+        LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE sg.year = '${selectedYear}'
+          ${monthFilter}
+          AND sg.client_code IS NOT NULL
+          AND TRIM(sg.client_code) != ''
+        ORDER BY branch, team, employee_name, client_name
+      `;
+      const goalClientsRes = await executeSQL(goalClientsQuery);
+      const goalClients = goalClientsRes?.rows || [];
+
+      const uniqueClients = new Set<string>();
+      clientActual.forEach((row: any) => uniqueClients.add(row.client_code));
+      goalClients.forEach((row: any) => uniqueClients.add(row.client_code));
+
+      let lookups: { companyTypes: any[]; employees: any[] } | undefined;
+      if (includeLookups) {
+        const [companyTypesRes, employeesRes] = await Promise.all([
+          executeSQL(`
+            SELECT 업종분류코드 as code, 모빌분류 as name, 산업분류 as industry, 영일분류 as sector
+            FROM company_type
+            WHERE 업종분류코드 IS NOT NULL AND TRIM(업종분류코드) != ''
+            ORDER BY 모빌분류, 업종분류코드
+          `),
+          executeSQL(`
+            SELECT DISTINCT
+              e.사원_담당_코드 as employee_code,
+              e.사원_담당_명 as employee_name,
+              ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
+              CASE
+                WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
+                ELSE COALESCE(ec.b2c_팀, '미분류')
+              END as team
+            FROM employees e
+            LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+            WHERE e.사원_담당_명 IS NOT NULL
+              ${sqlAndEmployeeNotSpecialHandling('e')}
+            ORDER BY employee_name
+          `),
+        ]);
+        lookups = {
+          companyTypes: companyTypesRes?.rows || [],
+          employees: employeesRes?.rows || [],
+        };
+      }
 
       return NextResponse.json({
         success: true,
         data: {
-          employeeCategoryActual,
+          clientActual,
+          goalClients,
           goals,
-          uniqueEmployees: Array.from(uniqueEmployees),
-          uniqueCategories: Array.from(uniqueCategories),
-          categoryType,
+          uniqueClients: Array.from(uniqueClients),
+          lookups,
           year: selectedYear,
           prevYear
         }
@@ -2300,11 +2261,7 @@ export async function POST(request: Request) {
       const rows = goals.map((goal: any) => ({
         year: goal.year,
         month: goal.month,
-        employee_name: goal.employee_name,
-        category_type: goal.category_type,
-        category: goal.category,
-        industry: goal.industry || '미분류',
-        sector: goal.sector || '미분류',
+        client_code: goal.client_code,
         target_weight: goal.target_weight || 0,
         target_amount: goal.target_amount || 0
       }));
@@ -2313,23 +2270,64 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, count: goals.length });
     }
 
+    if (body.action === 'assign_goal_client') {
+      const { client_code, industry_code, employee_code } = body;
+
+      if (!client_code || !employee_code) {
+        return NextResponse.json(
+          { success: false, error: 'client_code and employee_code are required' },
+          { status: 400 }
+        );
+      }
+
+      const updates: Record<string, string> = { 담당자코드: String(employee_code) };
+      if (industry_code) {
+        updates.업종분류코드 = String(industry_code);
+      }
+
+      await updateRows('clients', updates, { filters: { 거래처코드: String(client_code) } });
+
+      const clientRowRes = await executeSQL(`
+        SELECT
+          c.거래처코드 as client_code,
+          c.거래처명 as client_name,
+          c.업종분류코드 as industry_code,
+          ct.모빌분류 as industry_name,
+          e.사원_담당_코드 as employee_code,
+          e.사원_담당_명 as employee_name,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
+          CASE
+            WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
+            ELSE COALESCE(ec.b2c_팀, '미분류')
+          END as team
+        FROM clients c
+        LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE c.거래처코드 = '${String(client_code).replace(/'/g, "''")}'
+        LIMIT 1
+      `);
+
+      const client = clientRowRes?.rows?.[0];
+      if (!client) {
+        return NextResponse.json({ success: false, error: 'Client not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({ success: true, data: { client } });
+    }
+
     // Handle save_goal action (single goal save)
     if (body.action === 'save_goal') {
-      const { year, month, employee_name, category_type, category, industry, sector, target_weight, target_amount } = body;
+      const { year, month, client_code, target_weight, target_amount } = body;
 
-      if (!year || !month || !employee_name || !category_type || !category) {
+      if (!year || !month || !client_code) {
         return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
       }
 
-      // insertRows handles upsert with unique constraint
       await insertRows('sales_goals', [{
         year,
         month,
-        employee_name,
-        category_type,
-        category,
-        industry: industry || '미분류',
-        sector: sector || '미분류',
+        client_code,
         target_weight: target_weight || 0,
         target_amount: target_amount || 0
       }]);

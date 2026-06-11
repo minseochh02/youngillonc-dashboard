@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, Fragment } from 'react';
-import { Loader2, Save, Download, Upload, Calendar, CheckCircle2, AlertCircle, TrendingUp, Percent, Copy, ChevronDown, ChevronRight } from 'lucide-react';
+import { useState, useEffect, Fragment, useCallback } from 'react';
+import { Loader2, Save, Download, Upload, Calendar, CheckCircle2, AlertCircle, TrendingUp, Copy, ChevronDown, ChevronRight, UserPlus, Search, X } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { useDisplayOrderBootstrap } from '@/hooks/useDisplayOrderBootstrap';
 import { compareEmployees, compareOffices, compareTeams } from '@/lib/display-order-core';
@@ -12,43 +12,57 @@ import { ExcelUploadButton } from '@/components/ExcelUploadButton';
 import { generateFilename } from '@/lib/excel-export';
 import * as XLSX from 'xlsx';
 
-interface Goal {
-  year: string;
-  month: string;
-  goal_type: string;
-  target_name: string;
-  target_weight: number;
-  target_amount: number;
-}
-
-interface Actual {
-  month: string;
-  goal_type_group: string;
-  target_name: string;
-  weight: number;
-  amount: number;
-}
-
-type CategoryType = 'tier' | 'division' | 'family' | 'business_type' | 'industry_sector';
-
-interface EmployeeCategoryGoalData {
+interface ClientGoalData {
+  client_code: string;
+  client_name: string;
   employee_name: string;
   branch: string;
   team: string;
-  category_type: CategoryType;
-  category: string; // e.g., 'Standard', 'Premium', 'IL', 'AUTO', 'MOBIL 1', 'Fleet', etc.
-  industry: string; // 산업분류
-  sector: string; // 섹터분류 (영일분류)
+  industry_code?: string;
+  industry_name?: string;
   last_year_weight: number;
   last_year_amount: number;
-  target_weight?: number; // 목표 중량
-  target_amount?: number; // 목표 금액
-  goal_id?: number; // For updating existing goals
+  target_weight?: number;
+  target_amount?: number;
+  goal_id?: number;
+  is_manual?: boolean;
+}
+
+interface CompanyTypeOption {
+  code: string;
+  name: string;
+  industry?: string;
+  sector?: string;
+}
+
+interface EmployeeOption {
+  employee_code: string;
+  employee_name: string;
+  branch?: string;
+  team?: string;
+}
+
+interface ClientSearchResult {
+  client_code: string;
+  client_name: string;
+  industry_code?: string;
+  industry_name?: string;
+  employee_code?: string;
+  employee_name?: string;
+  branch?: string;
+  team?: string;
+}
+
+interface EmployeeGroup {
+  employee_name: string;
+  clients: ClientGoalData[];
+  total_last_year_weight: number;
+  total_last_year_amount: number;
 }
 
 interface TeamGroup {
   team: string;
-  employees: EmployeeCategoryGoalData[];
+  employees: EmployeeGroup[];
   total_last_year_weight: number;
   total_last_year_amount: number;
 }
@@ -65,19 +79,97 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => ({
   label: `${i + 1}월`
 }));
 
-function categoryTypeLabel(type: CategoryType): string {
-  switch (type) {
-    case 'tier':
-      return '등급';
-    case 'division':
-      return '모빌제품';
-    case 'family':
-      return '제품군';
-    case 'business_type':
-      return 'AUTO 제품';
-    case 'industry_sector':
-      return '산업별';
+function upsertClientEntry(map: Map<string, ClientGoalData>, row: Partial<ClientGoalData> & { client_code: string }) {
+  const key = row.client_code;
+  const existing = map.get(key);
+  if (existing) {
+    map.set(key, {
+      ...existing,
+      ...row,
+      last_year_weight: row.last_year_weight ?? existing.last_year_weight,
+      last_year_amount: row.last_year_amount ?? existing.last_year_amount,
+    });
+    return;
   }
+  map.set(key, {
+    client_code: row.client_code,
+    client_name: row.client_name || row.client_code,
+    employee_name: row.employee_name || '미분류',
+    branch: row.branch || '미분류',
+    team: row.team || '미분류',
+    industry_code: row.industry_code,
+    industry_name: row.industry_name,
+    last_year_weight: row.last_year_weight ?? 0,
+    last_year_amount: row.last_year_amount ?? 0,
+    target_weight: row.target_weight,
+    target_amount: row.target_amount,
+    goal_id: row.goal_id,
+    is_manual: row.is_manual,
+  });
+}
+
+function buildBranchGroups(
+  clientMap: Map<string, ClientGoalData>,
+  displayOrder: ReturnType<typeof useDisplayOrderBootstrap>
+): BranchGroup[] {
+  const branchMap = new Map<string, Map<string, Map<string, ClientGoalData[]>>>();
+  clientMap.forEach(entry => {
+    if (!branchMap.has(entry.branch)) branchMap.set(entry.branch, new Map());
+    const teamMap = branchMap.get(entry.branch)!;
+    if (!teamMap.has(entry.team)) teamMap.set(entry.team, new Map());
+    const empMap = teamMap.get(entry.team)!;
+    if (!empMap.has(entry.employee_name)) empMap.set(entry.employee_name, []);
+    empMap.get(entry.employee_name)!.push(entry);
+  });
+
+  const branchGroups: BranchGroup[] = [];
+  branchMap.forEach((teamMap, branch) => {
+    const teams: TeamGroup[] = [];
+    let branchTotalLastYearWeight = 0;
+    let branchTotalLastYearAmount = 0;
+
+    teamMap.forEach((empMap, team) => {
+      const employees: EmployeeGroup[] = [];
+
+      empMap.forEach((clients, employeeName) => {
+        const sortedClients = clients.sort((a, b) => a.client_name.localeCompare(b.client_name));
+        employees.push({
+          employee_name: employeeName,
+          clients: sortedClients,
+          total_last_year_weight: clients.reduce((sum, c) => sum + c.last_year_weight, 0),
+          total_last_year_amount: clients.reduce((sum, c) => sum + c.last_year_amount, 0),
+        });
+      });
+
+      employees.sort((a, b) =>
+        compareEmployees(team, a.employee_name, b.employee_name, displayOrder.empB2c, displayOrder.empB2b)
+      );
+
+      const teamTotalLastYearWeight = employees.reduce((sum, e) => sum + e.total_last_year_weight, 0);
+      const teamTotalLastYearAmount = employees.reduce((sum, e) => sum + e.total_last_year_amount, 0);
+
+      teams.push({
+        team,
+        employees,
+        total_last_year_weight: teamTotalLastYearWeight,
+        total_last_year_amount: teamTotalLastYearAmount,
+      });
+
+      branchTotalLastYearWeight += teamTotalLastYearWeight;
+      branchTotalLastYearAmount += teamTotalLastYearAmount;
+    });
+
+    branchGroups.push({
+      branch,
+      teams: teams.sort((a, b) =>
+        compareTeams(a.team, b.team, displayOrder.teamB2c, displayOrder.teamB2b)
+      ),
+      total_last_year_weight: branchTotalLastYearWeight,
+      total_last_year_amount: branchTotalLastYearAmount,
+    });
+  });
+
+  return branchGroups.sort((a, b) => compareOffices(a.branch, b.branch, displayOrder.office));
 }
 
 export default function BulkGoalSettingTab() {
@@ -85,11 +177,11 @@ export default function BulkGoalSettingTab() {
   const displayOrder = useDisplayOrderBootstrap();
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [selectedMonth, setSelectedMonth] = useState((new Date().getMonth() + 1).toString().padStart(2, '0'));
-  const [categoryType, setCategoryType] = useState<CategoryType>('tier');
 
   const [branches, setBranches] = useState<BranchGroup[]>([]);
   const [expandedBranches, setExpandedBranches] = useState<Set<string>>(new Set());
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+  const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set());
   const [editingGoals, setEditingGoals] = useState<Map<string, {
     weight: number;
     amount: number;
@@ -98,127 +190,154 @@ export default function BulkGoalSettingTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [customGrowthRate, setCustomGrowthRate] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const [showAddPanel, setShowAddPanel] = useState(false);
+  const [companyTypes, setCompanyTypes] = useState<CompanyTypeOption[]>([]);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [clientSearch, setClientSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<ClientSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<ClientSearchResult | null>(null);
+  const [selectedIndustryCode, setSelectedIndustryCode] = useState('');
+  const [selectedEmployeeCode, setSelectedEmployeeCode] = useState('');
+  const [isAssigning, setIsAssigning] = useState(false);
+
+  const applyBranchGroups = useCallback((branchGroups: BranchGroup[]) => {
+    setBranches(branchGroups);
+    setExpandedBranches(new Set(branchGroups.map(b => b.branch)));
+    setExpandedTeams(new Set(branchGroups.flatMap(b => b.teams.map(t => `${b.branch}_${t.team}`))));
+    setExpandedEmployees(new Set(
+      branchGroups.flatMap(b =>
+        b.teams.flatMap(t => t.employees.map(e => `${b.branch}_${t.team}_${e.employee_name}`))
+      )
+    ));
+  }, []);
+
+  const fetchLookups = useCallback(async () => {
+    if (companyTypes.length > 0 && employees.length > 0) return;
+    const response = await apiFetch(
+      withIncludeVat(
+        `/api/dashboard/closing-meeting?tab=goal-setting&year=${year}&includeLookups=true`,
+        includeVat
+      )
+    );
+    const result = await response.json();
+    if (result.success && result.data.lookups) {
+      setCompanyTypes(result.data.lookups.companyTypes || []);
+      setEmployees(result.data.lookups.employees || []);
+    }
+  }, [companyTypes.length, employees.length, year, includeVat]);
 
   useEffect(() => {
     fetchBulkGoalData();
-  }, [year, selectedMonth, categoryType, includeVat, displayOrder.ready]);
+  }, [year, selectedMonth, includeVat, displayOrder.ready]);
+
+  useEffect(() => {
+    if (!showAddPanel) return;
+    fetchLookups();
+  }, [showAddPanel, fetchLookups]);
+
+  useEffect(() => {
+    if (!showAddPanel || clientSearch.trim().length < 1) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const response = await apiFetch(
+          withIncludeVat(
+            `/api/dashboard/closing-meeting?tab=goal-setting&clientSearch=${encodeURIComponent(clientSearch.trim())}`,
+            includeVat
+          )
+        );
+        const result = await response.json();
+        if (result.success) {
+          setSearchResults(result.data.searchResults || []);
+        }
+      } catch (error) {
+        console.error('Client search failed:', error);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [clientSearch, showAddPanel, includeVat]);
 
   const fetchBulkGoalData = async () => {
     setIsLoading(true);
     try {
       const response = await apiFetch(
-        withIncludeVat(`/api/dashboard/closing-meeting?tab=goal-setting&year=${year}&categoryType=${categoryType}`, includeVat)
+        withIncludeVat(
+          `/api/dashboard/closing-meeting?tab=goal-setting&year=${year}&month=${selectedMonth}`,
+          includeVat
+        )
       );
       const result = await response.json();
 
       if (result.success) {
-        // Build employee-category data from actuals only
-        const employeeCategoryMap = new Map<string, EmployeeCategoryGoalData>();
+        const clientMap = new Map<string, ClientGoalData>();
 
-        // Initialize all employee-category combinations from actuals
-        result.data.employeeCategoryActual?.forEach((a: any) => {
-          // month comes as "2025-01", selectedMonth is "01"
+        result.data.clientActual?.forEach((a: any) => {
           const monthPart = a.month?.split('-')[1] || a.month;
-          if (monthPart === selectedMonth && a.employee_name) {
-            const key = `${a.employee_name}_${a.category}_${a.industry}_${a.sector}_${selectedMonth}`;
-            if (!employeeCategoryMap.has(key)) {
-              employeeCategoryMap.set(key, {
-                employee_name: a.employee_name,
-                branch: a.branch || '미분류',
-                team: a.team || '미분류',
-                category_type: categoryType,
-                category: a.category,
-                industry: a.industry || '미분류',
-                sector: a.sector || '미분류',
-                last_year_weight: a.weight || 0,
-                last_year_amount: a.amount || 0
+          if (monthPart === selectedMonth && a.client_code) {
+            upsertClientEntry(clientMap, {
+              client_code: a.client_code,
+              client_name: a.client_name || a.client_code,
+              employee_name: a.employee_name || '미분류',
+              branch: a.branch || '미분류',
+              team: a.team || '미분류',
+              industry_code: a.industry_code,
+              industry_name: a.industry_name,
+              last_year_weight: a.weight || 0,
+              last_year_amount: a.amount || 0,
+            });
+          }
+        });
+
+        result.data.goalClients?.forEach((row: any) => {
+          if (!row.client_code) return;
+          upsertClientEntry(clientMap, {
+            client_code: row.client_code,
+            client_name: row.client_name || row.client_code,
+            employee_name: row.employee_name || '미분류',
+            branch: row.branch || '미분류',
+            team: row.team || '미분류',
+            industry_code: row.industry_code,
+            industry_name: row.industry_name,
+          });
+        });
+
+        result.data.goals?.forEach((g: any) => {
+          const monthPart = g.month?.split('-')[1] || g.month;
+          if (monthPart === selectedMonth) {
+            const existing = clientMap.get(g.client_code);
+            if (existing) {
+              existing.target_weight = g.target_weight;
+              existing.target_amount = g.target_amount;
+              existing.goal_id = g.id;
+            } else {
+              upsertClientEntry(clientMap, {
+                client_code: g.client_code,
+                client_name: g.client_code,
+                employee_name: '미분류',
+                branch: '미분류',
+                team: '미분류',
+                target_weight: g.target_weight,
+                target_amount: g.target_amount,
+                goal_id: g.id,
               });
             }
           }
         });
 
-        // Merge goals data
-        result.data.goals?.forEach((g: any) => {
-          const monthPart = g.month?.split('-')[1] || g.month;
-          if (monthPart === selectedMonth) {
-            const key = `${g.employee_name}_${g.category}_${g.industry}_${g.sector}_${selectedMonth}`;
-            const existing = employeeCategoryMap.get(key);
-            if (existing) {
-              existing.target_weight = g.target_weight;
-              existing.target_amount = g.target_amount;
-              existing.goal_id = g.id;
-            }
-          }
-        });
-
-        // Group by branch > team
-        const branchMap = new Map<string, Map<string, EmployeeCategoryGoalData[]>>();
-        employeeCategoryMap.forEach(entry => {
-          if (!branchMap.has(entry.branch)) {
-            branchMap.set(entry.branch, new Map());
-          }
-          const teamMap = branchMap.get(entry.branch)!;
-          if (!teamMap.has(entry.team)) {
-            teamMap.set(entry.team, []);
-          }
-          teamMap.get(entry.team)!.push(entry);
-        });
-
-        // Build branch groups with teams
-        const branchGroups: BranchGroup[] = [];
-        branchMap.forEach((teamMap, branch) => {
-          const teams: TeamGroup[] = [];
-          let branchTotalLastYearWeight = 0;
-          let branchTotalLastYearAmount = 0;
-
-          teamMap.forEach((employees, team) => {
-            const sortedEmployees = employees.sort((a, b) => {
-              const ec = compareEmployees(
-                team,
-                a.employee_name,
-                b.employee_name,
-                displayOrder.empB2c,
-                displayOrder.empB2b
-              );
-              if (ec !== 0) return ec;
-              return a.category.localeCompare(b.category);
-            });
-
-            const teamTotalLastYearWeight = employees.reduce((sum, e) => sum + e.last_year_weight, 0);
-            const teamTotalLastYearAmount = employees.reduce((sum, e) => sum + e.last_year_amount, 0);
-
-            teams.push({
-              team,
-              employees: sortedEmployees,
-              total_last_year_weight: teamTotalLastYearWeight,
-              total_last_year_amount: teamTotalLastYearAmount
-            });
-
-            branchTotalLastYearWeight += teamTotalLastYearWeight;
-            branchTotalLastYearAmount += teamTotalLastYearAmount;
-          });
-
-          branchGroups.push({
-            branch,
-            teams: teams.sort((a, b) =>
-              compareTeams(a.team, b.team, displayOrder.teamB2c, displayOrder.teamB2b)
-            ),
-            total_last_year_weight: branchTotalLastYearWeight,
-            total_last_year_amount: branchTotalLastYearAmount
-          });
-        });
-
-        setBranches(
-          branchGroups.sort((a, b) => compareOffices(a.branch, b.branch, displayOrder.office))
-        );
-
-        // Auto-expand all branches and teams
-        setExpandedBranches(new Set(branchGroups.map(b => b.branch)));
-        const allTeamKeys = branchGroups.flatMap(b =>
-          b.teams.map(t => `${b.branch}_${t.team}`)
-        );
-        setExpandedTeams(new Set(allTeamKeys));
+        if (displayOrder.ready) {
+          applyBranchGroups(buildBranchGroups(clientMap, displayOrder));
+        }
       }
     } catch (error) {
       console.error('Failed to fetch bulk goal data:', error);
@@ -227,40 +346,117 @@ export default function BulkGoalSettingTab() {
     }
   };
 
-  const goalEditKey = (entry: Pick<EmployeeCategoryGoalData, 'employee_name' | 'category' | 'industry' | 'sector'>) =>
-    `${entry.employee_name}_${entry.category}_${entry.industry}_${entry.sector}_${selectedMonth}`;
-
-  const handleGoalChange = (entry: EmployeeCategoryGoalData, field: 'weight' | 'amount', value: number) => {
-    const key = goalEditKey(entry);
-
-    const current = editingGoals.get(key) || { weight: entry.target_weight || 0, amount: entry.target_amount || 0 };
-    setEditingGoals(new Map(editingGoals.set(key, {
-      ...current,
-      [field]: value
-    })));
-
-    // Update the entry directly in branches state
-    setBranches(prevBranches => {
-      return prevBranches.map(branch => ({
-        ...branch,
-        teams: branch.teams.map(team => ({
-          ...team,
-          employees: team.employees.map(emp =>
-            emp.employee_name === entry.employee_name &&
-            emp.category === entry.category &&
-            emp.industry === entry.industry &&
-            emp.sector === entry.sector
-              ? { ...emp, [field === 'weight' ? 'target_weight' : 'target_amount']: value }
-              : emp
-          )
-        }))
-      }));
-    });
+  const handleSelectSearchResult = (client: ClientSearchResult) => {
+    setSelectedClient(client);
+    setSelectedIndustryCode(client.industry_code || '');
+    setSelectedEmployeeCode(client.employee_code || '');
+    setClientSearch('');
+    setSearchResults([]);
   };
 
-  const handleSaveIndividual = async (entry: EmployeeCategoryGoalData) => {
+  const handleAddClientToGoals = async () => {
+    if (!selectedClient || !selectedEmployeeCode) {
+      setMessage({ type: 'error', text: '고객과 담당자를 선택해주세요.' });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+
+    setIsAssigning(true);
     try {
-      await saveEmployeeCategoryGoal(entry);
+      const response = await apiFetch('/api/dashboard/closing-meeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'assign_goal_client',
+          client_code: selectedClient.client_code,
+          industry_code: selectedIndustryCode || undefined,
+          employee_code: selectedEmployeeCode,
+        }),
+      });
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to assign client');
+      }
+
+      const client = result.data.client;
+      const clientMap = new Map<string, ClientGoalData>();
+      branches.forEach(branch => {
+        branch.teams.forEach(team => {
+          team.employees.forEach(emp => {
+            emp.clients.forEach(c => clientMap.set(c.client_code, { ...c }));
+          });
+        });
+      });
+
+      upsertClientEntry(clientMap, {
+        client_code: client.client_code,
+        client_name: client.client_name || client.client_code,
+        employee_name: client.employee_name || '미분류',
+        branch: client.branch || '미분류',
+        team: client.team || '미분류',
+        industry_code: client.industry_code,
+        industry_name: client.industry_name,
+        last_year_weight: 0,
+        last_year_amount: 0,
+        is_manual: true,
+      });
+
+      if (displayOrder.ready) {
+        applyBranchGroups(buildBranchGroups(clientMap, displayOrder));
+      }
+
+      setSelectedClient(null);
+      setSelectedIndustryCode('');
+      setSelectedEmployeeCode('');
+      setMessage({ type: 'success', text: `${client.client_name} 고객이 목표 목록에 추가되었습니다.` });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      console.error('Failed to add client:', error);
+      setMessage({ type: 'error', text: '고객 추가 중 오류가 발생했습니다.' });
+      setTimeout(() => setMessage(null), 3000);
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+  const goalEditKey = (entry: Pick<ClientGoalData, 'client_code'>) =>
+    `${entry.client_code}_${selectedMonth}`;
+
+  const updateClientEntry = (
+    branches: BranchGroup[],
+    entry: ClientGoalData,
+    patch: Partial<ClientGoalData>
+  ): BranchGroup[] =>
+    branches.map(branch => ({
+      ...branch,
+      teams: branch.teams.map(team => ({
+        ...team,
+        employees: team.employees.map(emp => ({
+          ...emp,
+          clients: emp.clients.map(client =>
+            client.client_code === entry.client_code
+              ? { ...client, ...patch }
+              : client
+          )
+        }))
+      }))
+    }));
+
+  const handleGoalChange = (entry: ClientGoalData, field: 'weight' | 'amount', value: number) => {
+    const key = goalEditKey(entry);
+    const current = editingGoals.get(key) || { weight: entry.target_weight || 0, amount: entry.target_amount || 0 };
+    setEditingGoals(new Map(editingGoals.set(key, { ...current, [field]: value })));
+    setBranches(prev =>
+      updateClientEntry(prev, entry, {
+        [field === 'weight' ? 'target_weight' : 'target_amount']: value
+      })
+    );
+  };
+
+  const handleSaveIndividual = async (entry: ClientGoalData) => {
+    try {
+      await saveClientGoal(entry);
       setMessage({ type: 'success', text: '목표가 저장되었습니다.' });
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
@@ -269,7 +465,7 @@ export default function BulkGoalSettingTab() {
     }
   };
 
-  const saveEmployeeCategoryGoal = async (entry: EmployeeCategoryGoalData) => {
+  const saveClientGoal = async (entry: ClientGoalData) => {
     const key = goalEditKey(entry);
     const edited = editingGoals.get(key);
 
@@ -284,11 +480,7 @@ export default function BulkGoalSettingTab() {
           action: 'save_goal',
           year,
           month: selectedMonth,
-          employee_name: entry.employee_name,
-          category_type: categoryType,
-          category: entry.category,
-          industry: entry.industry,
-          sector: entry.sector,
+          client_code: entry.client_code,
           target_weight: goalWeight,
           target_amount: goalAmount
         }),
@@ -318,26 +510,23 @@ export default function BulkGoalSettingTab() {
 
       branches.forEach(branch => {
         branch.teams.forEach(team => {
-          team.employees.forEach(entry => {
-            const key = goalEditKey(entry);
-            const edited = editingGoals.get(key);
+          team.employees.forEach(emp => {
+            emp.clients.forEach(entry => {
+              const key = goalEditKey(entry);
+              const edited = editingGoals.get(key);
+              const goalWeight = edited?.weight ?? entry.target_weight ?? 0;
+              const goalAmount = edited?.amount ?? entry.target_amount ?? 0;
 
-            const goalWeight = edited?.weight ?? entry.target_weight ?? 0;
-            const goalAmount = edited?.amount ?? entry.target_amount ?? 0;
-
-            if (goalWeight > 0 || goalAmount > 0) {
-              allGoals.push({
-                year,
-                month: selectedMonth,
-                employee_name: entry.employee_name,
-                category_type: categoryType,
-                category: entry.category,
-                industry: entry.industry,
-                sector: entry.sector,
-                target_weight: goalWeight,
-                target_amount: goalAmount
-              });
-            }
+              if (goalWeight > 0 || goalAmount > 0) {
+                allGoals.push({
+                  year,
+                  month: selectedMonth,
+                  client_code: entry.client_code,
+                  target_weight: goalWeight,
+                  target_amount: goalAmount
+                });
+              }
+            });
           });
         });
       });
@@ -376,13 +565,16 @@ export default function BulkGoalSettingTab() {
         ...branch,
         teams: branch.teams.map(team => ({
           ...team,
-          employees: team.employees.map(entry => {
-            const key = goalEditKey(entry);
-            const weight = entry.last_year_weight;
-            const amount = entry.last_year_amount;
-            newEditing.set(key, { weight, amount });
-            return { ...entry, target_weight: weight, target_amount: amount };
-          })
+          employees: team.employees.map(emp => ({
+            ...emp,
+            clients: emp.clients.map(entry => {
+              const key = goalEditKey(entry);
+              const weight = entry.last_year_weight;
+              const amount = entry.last_year_amount;
+              newEditing.set(key, { weight, amount });
+              return { ...entry, target_weight: weight, target_amount: amount };
+            })
+          }))
         }))
       }))
     );
@@ -401,13 +593,16 @@ export default function BulkGoalSettingTab() {
         ...branch,
         teams: branch.teams.map(team => ({
           ...team,
-          employees: team.employees.map(entry => {
-            const key = goalEditKey(entry);
-            const weight = Math.round(entry.last_year_weight * multiplier);
-            const amount = Math.round(entry.last_year_amount * multiplier);
-            newEditing.set(key, { weight, amount });
-            return { ...entry, target_weight: weight, target_amount: amount };
-          })
+          employees: team.employees.map(emp => ({
+            ...emp,
+            clients: emp.clients.map(entry => {
+              const key = goalEditKey(entry);
+              const weight = Math.round(entry.last_year_weight * multiplier);
+              const amount = Math.round(entry.last_year_amount * multiplier);
+              newEditing.set(key, { weight, amount });
+              return { ...entry, target_weight: weight, target_amount: amount };
+            })
+          }))
         }))
       }))
     );
@@ -417,13 +612,23 @@ export default function BulkGoalSettingTab() {
     setTimeout(() => setMessage(null), 3000);
   };
 
+  const applyCustomGrowthRate = () => {
+    const rate = parseFloat(customGrowthRate);
+    if (Number.isNaN(rate)) {
+      setMessage({ type: 'error', text: '성장률(%)을 숫자로 입력해주세요.' });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+    applyGrowthRate(rate);
+  };
+
   const handleTemplateDownload = async () => {
     try {
       const wb = XLSX.utils.book_new();
 
       // Fetch year-round data for all 12 months
       const response = await apiFetch(
-        withIncludeVat(`/api/dashboard/closing-meeting?tab=goal-setting&year=${year}&categoryType=${categoryType}`, includeVat)
+        withIncludeVat(`/api/dashboard/closing-meeting?tab=goal-setting&year=${year}`, includeVat)
       );
       const result = await response.json();
 
@@ -431,62 +636,52 @@ export default function BulkGoalSettingTab() {
         throw new Error('Failed to fetch data');
       }
 
-      // Build employee-category data for ALL months
-      const employeeCategoryMap = new Map<string, {
+      const clientMap = new Map<string, {
+        client_code: string;
+        client_name: string;
         employee_name: string;
         branch: string;
         team: string;
-        category: string;
-        industry: string;
-        sector: string;
         monthlyData: { [month: string]: { last_year_weight: number; last_year_amount: number; target_weight?: number; target_amount?: number } };
       }>();
 
-      // Process all months
-      result.data.employeeCategoryActual?.forEach((a: any) => {
+      result.data.clientActual?.forEach((a: any) => {
         const monthPart = a.month?.split('-')[1] || a.month;
-        if (a.employee_name) {
-          const baseKey = `${a.employee_name}_${a.category}_${a.industry}_${a.sector}`;
-
-          if (!employeeCategoryMap.has(baseKey)) {
-            employeeCategoryMap.set(baseKey, {
-              employee_name: a.employee_name,
+        if (a.client_code) {
+          if (!clientMap.has(a.client_code)) {
+            clientMap.set(a.client_code, {
+              client_code: a.client_code,
+              client_name: a.client_name || a.client_code,
+              employee_name: a.employee_name || '미분류',
               branch: a.branch || '미분류',
               team: a.team || '미분류',
-              category: a.category,
-              industry: a.industry || '미분류',
-              sector: a.sector || '미분류',
               monthlyData: {}
             });
           }
 
-          const entry = employeeCategoryMap.get(baseKey)!;
+          const entry = clientMap.get(a.client_code)!;
           if (!entry.monthlyData[monthPart]) {
-            entry.monthlyData[monthPart] = {
-              last_year_weight: 0,
-              last_year_amount: 0
-            };
+            entry.monthlyData[monthPart] = { last_year_weight: 0, last_year_amount: 0 };
           }
           entry.monthlyData[monthPart].last_year_weight = a.weight || 0;
           entry.monthlyData[monthPart].last_year_amount = a.amount || 0;
         }
       });
 
-      // Merge goals data
       result.data.goals?.forEach((g: any) => {
         const monthPart = g.month?.split('-')[1] || g.month;
-        const baseKey = `${g.employee_name}_${g.category}_${g.industry}_${g.sector}`;
-        const existing = employeeCategoryMap.get(baseKey);
-        if (existing && existing.monthlyData[monthPart]) {
+        const existing = clientMap.get(g.client_code);
+        if (existing) {
+          if (!existing.monthlyData[monthPart]) {
+            existing.monthlyData[monthPart] = { last_year_weight: 0, last_year_amount: 0 };
+          }
           existing.monthlyData[monthPart].target_weight = g.target_weight;
           existing.monthlyData[monthPart].target_amount = g.target_amount;
         }
       });
 
       const sheetData: any[] = [];
-
-      // Header - one row for all 12 months
-      const headerRow = ['사업소', '팀', '담당자', '카테고리', '산업분류', '영일분류'];
+      const headerRow = ['사업소', '팀', '담당자', '거래처코드', '거래처명'];
       for (let m = 1; m <= 12; m++) {
         const month = m.toString().padStart(2, '0');
         headerRow.push(`${m}월 목표(중량L)`, `${m}월 목표(금액원)`);
@@ -494,20 +689,14 @@ export default function BulkGoalSettingTab() {
       sheetData.push(headerRow);
 
       // Data rows
-      const sortedEntries = Array.from(employeeCategoryMap.values()).sort((a, b) => {
+      const sortedEntries = Array.from(clientMap.values()).sort((a, b) => {
         const br = compareOffices(a.branch, b.branch, displayOrder.office);
         if (br !== 0) return br;
         const tc = compareTeams(a.team, b.team, displayOrder.teamB2c, displayOrder.teamB2b);
         if (tc !== 0) return tc;
-        const ec = compareEmployees(
-          a.team,
-          a.employee_name,
-          b.employee_name,
-          displayOrder.empB2c,
-          displayOrder.empB2b
-        );
+        const ec = compareEmployees(a.team, a.employee_name, b.employee_name, displayOrder.empB2c, displayOrder.empB2b);
         if (ec !== 0) return ec;
-        return a.category.localeCompare(b.category);
+        return a.client_name.localeCompare(b.client_name);
       });
 
       sortedEntries.forEach(entry => {
@@ -515,9 +704,8 @@ export default function BulkGoalSettingTab() {
           entry.branch,
           entry.team,
           entry.employee_name,
-          entry.category,
-          entry.industry,
-          entry.sector
+          entry.client_code,
+          entry.client_name
         ];
 
         for (let m = 1; m <= 12; m++) {
@@ -540,12 +728,11 @@ export default function BulkGoalSettingTab() {
 
       // Set column widths
       const colWidths = [
-        { wch: 12 }, // 사업소
-        { wch: 15 }, // 팀
-        { wch: 15 }, // 담당자
-        { wch: 15 }, // 카테고리
-        { wch: 15 }, // 산업분류
-        { wch: 15 }  // 영일분류
+        { wch: 12 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 14 },
+        { wch: 20 }
       ];
       // Add column widths for 12 months x 2 columns each
       for (let m = 0; m < 12; m++) {
@@ -553,12 +740,8 @@ export default function BulkGoalSettingTab() {
       }
       ws['!cols'] = colWidths;
 
-      const categoryTypeLabel = categoryType === 'tier' ? '등급' :
-                                 categoryType === 'division' ? '모빌제품' :
-                                 categoryType === 'family' ? '제품군' :
-                                 categoryType === 'business_type' ? 'AUTO 제품' : '산업별';
-      XLSX.utils.book_append_sheet(wb, ws, `${categoryTypeLabel} 목표설정`);
-      XLSX.writeFile(wb, generateFilename(`${year}년_${categoryTypeLabel}_목표설정_템플릿`));
+      XLSX.utils.book_append_sheet(wb, ws, '고객별 목표설정');
+      XLSX.writeFile(wb, generateFilename(`${year}년_고객별_목표설정_템플릿`));
 
       setMessage({ type: 'success', text: '템플릿 다운로드 완료. 연간 데이터가 포함되어 있습니다.' });
       setTimeout(() => setMessage(null), 3000);
@@ -586,32 +769,22 @@ export default function BulkGoalSettingTab() {
       // Skip header row (row 0), process data rows (row 1+)
       for (let i = 1; i < sheet.data.length; i++) {
         const row = sheet.data[i];
-        // Need at least 6 base columns + 2 columns per month (24 for 12 months) = 30 columns minimum
-        if (!row || row.length < 30) continue;
+        // 5 base columns + 24 month columns = 29 minimum
+        if (!row || row.length < 29) continue;
 
-        const employeeName = row[2]; // Column 2: 담당자
-        const category = row[3]; // Column 3: 카테고리
-        const industry = row[4]; // Column 4: 산업분류
-        const sector = row[5]; // Column 5: 영일분류
+        const clientCode = String(row[3] || '').trim();
+        if (!clientCode) continue;
 
-        if (!employeeName || !category) continue;
-
-        // Process all 12 months
         for (let m = 1; m <= 12; m++) {
           const month = m.toString().padStart(2, '0');
-          const weightColIndex = 6 + (m - 1) * 2; // Column for weight
-          const amountColIndex = 7 + (m - 1) * 2; // Column for amount
-
+          const weightColIndex = 5 + (m - 1) * 2;
+          const amountColIndex = 6 + (m - 1) * 2;
           const goalWeight = parseFloat(row[weightColIndex]) || 0;
           const goalAmount = parseFloat(row[amountColIndex]) || 0;
 
-          // Only set goal if at least one value is non-zero
           if (goalWeight > 0 || goalAmount > 0) {
-            const key = `${employeeName}_${category}_${industry}_${sector}_${month}`;
-            newEditing.set(key, {
-              weight: goalWeight,
-              amount: goalAmount
-            });
+            const key = `${clientCode}_${month}`;
+            newEditing.set(key, { weight: goalWeight, amount: goalAmount });
             updateCount++;
           }
         }
@@ -619,27 +792,31 @@ export default function BulkGoalSettingTab() {
 
       setEditingGoals(newEditing);
 
-      // Update the branches state to reflect uploaded goals
-      setBranches(prevBranches => {
-        return prevBranches.map(branch => ({
-          ...branch,
-          teams: branch.teams.map(team => ({
-            ...team,
-            employees: team.employees.map(emp => {
-              const key = goalEditKey(emp);
-              const uploaded = newEditing.get(key);
-              if (uploaded) {
-                return {
-                  ...emp,
-                  target_weight: uploaded.weight,
-                  target_amount: uploaded.amount
-                };
-              }
-              return emp;
-            })
+      if (selectedMonth) {
+        setBranches(prevBranches =>
+          prevBranches.map(branch => ({
+            ...branch,
+            teams: branch.teams.map(team => ({
+              ...team,
+              employees: team.employees.map(emp => ({
+                ...emp,
+                clients: emp.clients.map(client => {
+                  const key = goalEditKey(client);
+                  const uploaded = newEditing.get(key);
+                  if (uploaded) {
+                    return {
+                      ...client,
+                      target_weight: uploaded.weight,
+                      target_amount: uploaded.amount
+                    };
+                  }
+                  return client;
+                })
+              }))
+            }))
           }))
-        }));
-      });
+        );
+      }
 
       setMessage({
         type: 'success',
@@ -667,12 +844,17 @@ export default function BulkGoalSettingTab() {
   const toggleTeam = (branch: string, team: string) => {
     const key = `${branch}_${team}`;
     const newExpanded = new Set(expandedTeams);
-    if (newExpanded.has(key)) {
-      newExpanded.delete(key);
-    } else {
-      newExpanded.add(key);
-    }
+    if (newExpanded.has(key)) newExpanded.delete(key);
+    else newExpanded.add(key);
     setExpandedTeams(newExpanded);
+  };
+
+  const toggleEmployee = (branch: string, team: string, employee: string) => {
+    const key = `${branch}_${team}_${employee}`;
+    const newExpanded = new Set(expandedEmployees);
+    if (newExpanded.has(key)) newExpanded.delete(key);
+    else newExpanded.add(key);
+    setExpandedEmployees(newExpanded);
   };
 
   const formatNumber = (num: number) => {
@@ -696,7 +878,8 @@ export default function BulkGoalSettingTab() {
   }
 
   const totalEntries = branches.reduce((sum, b) =>
-    sum + b.teams.reduce((teamSum, t) => teamSum + t.employees.length, 0), 0
+    sum + b.teams.reduce((teamSum, t) =>
+      teamSum + t.employees.reduce((empSum, e) => empSum + e.clients.length, 0), 0), 0
   );
   const totalLastYearWeight = branches.reduce((sum, b) => sum + b.total_last_year_weight, 0);
   const totalLastYearAmount = branches.reduce((sum, b) => sum + b.total_last_year_amount, 0);
@@ -732,60 +915,6 @@ export default function BulkGoalSettingTab() {
               ))}
             </select>
 
-            <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800" />
-
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => setCategoryType('industry_sector')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                  categoryType === 'industry_sector'
-                    ? 'bg-orange-600 text-white shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                산업별
-              </button>
-              <button
-                onClick={() => setCategoryType('business_type')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                  categoryType === 'business_type'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                AUTO 제품
-              </button>
-              <button
-                onClick={() => setCategoryType('division')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                  categoryType === 'division'
-                    ? 'bg-green-600 text-white shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                모빌제품
-              </button>
-              <button
-                onClick={() => setCategoryType('tier')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                  categoryType === 'tier'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                등급
-              </button>
-              <button
-                onClick={() => setCategoryType('family')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                  categoryType === 'family'
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                제품군
-              </button>
-            </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -857,21 +986,28 @@ export default function BulkGoalSettingTab() {
               작년 실적 복사
             </button>
 
-            <button
-              onClick={() => applyGrowthRate(5)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded-lg text-sm font-medium transition-colors"
-            >
-              <Percent className="w-4 h-4" />
-              +5% 성장
-            </button>
-
-            <button
-              onClick={() => applyGrowthRate(10)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded-lg text-sm font-medium transition-colors"
-            >
-              <Percent className="w-4 h-4" />
-              +10% 성장
-            </button>
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg">
+              <input
+                type="number"
+                step="0.1"
+                value={customGrowthRate}
+                onChange={(e) => setCustomGrowthRate(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') applyCustomGrowthRate();
+                }}
+                placeholder="15"
+                className="w-14 bg-transparent text-sm text-right focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                aria-label="사용자 지정 성장률"
+              />
+              <span className="text-xs text-zinc-500">%</span>
+              <button
+                type="button"
+                onClick={applyCustomGrowthRate}
+                className="px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors"
+              >
+                성장 적용
+              </button>
+            </div>
 
             <div className="h-6 w-px bg-zinc-300 dark:bg-zinc-600" />
 
@@ -887,13 +1023,139 @@ export default function BulkGoalSettingTab() {
         </div>
       </div>
 
+      {/* Add Client Panel */}
+      <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowAddPanel(v => !v)}
+          className="w-full flex items-center justify-between px-6 py-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">고객 추가 (업종분류 · 담당자 지정)</span>
+          </div>
+          {showAddPanel ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronRight className="w-4 h-4 text-zinc-400" />}
+        </button>
+
+        {showAddPanel && (
+          <div className="px-6 pb-6 border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-4">
+            <p className="text-xs text-zinc-500">
+              작년 실적이 없는 고객도 업종분류코드와 담당자를 지정해 목표 목록에 추가할 수 있습니다. 거래처 마스터의 담당자·업종분류가 함께 업데이트됩니다.
+            </p>
+
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <input
+                type="text"
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+                placeholder="거래처명 또는 거래처코드 검색..."
+                className="w-full pl-9 pr-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              />
+              {isSearching && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-zinc-400" />
+              )}
+            </div>
+
+            {searchResults.length > 0 && (
+              <div className="max-h-48 overflow-y-auto border border-zinc-200 dark:border-zinc-700 rounded-lg divide-y divide-zinc-100 dark:divide-zinc-800">
+                {searchResults.map((client) => (
+                  <button
+                    key={client.client_code}
+                    type="button"
+                    onClick={() => handleSelectSearchResult(client)}
+                    className="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors"
+                  >
+                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{client.client_name}</div>
+                    <div className="text-xs text-zinc-500">
+                      {client.client_code}
+                      {client.industry_name ? ` · ${client.industry_name}` : ''}
+                      {client.employee_name ? ` · ${client.employee_name}` : ''}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {selectedClient && (
+              <div className="p-4 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{selectedClient.client_name}</p>
+                    <p className="text-xs text-zinc-500">{selectedClient.client_code}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedClient(null);
+                      setSelectedIndustryCode('');
+                      setSelectedEmployeeCode('');
+                    }}
+                    className="p-1 text-zinc-400 hover:text-zinc-600"
+                    aria-label="선택 해제"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">업종분류코드</span>
+                    <select
+                      value={selectedIndustryCode}
+                      onChange={(e) => setSelectedIndustryCode(e.target.value)}
+                      className="mt-1 w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800"
+                    >
+                      <option value="">선택...</option>
+                      {companyTypes.map((ct) => (
+                        <option key={ct.code} value={ct.code}>
+                          {ct.code} — {ct.name || ct.industry || '미분류'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">담당자</span>
+                    <select
+                      value={selectedEmployeeCode}
+                      onChange={(e) => setSelectedEmployeeCode(e.target.value)}
+                      className="mt-1 w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800"
+                    >
+                      <option value="">선택...</option>
+                      {employees.map((emp) => (
+                        <option key={emp.employee_code} value={emp.employee_code}>
+                          {emp.employee_name}
+                          {emp.branch ? ` (${emp.branch}` : ''}
+                          {emp.team ? ` / ${emp.team})` : emp.branch ? ')' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAddClientToGoals}
+                  disabled={isAssigning || !selectedEmployeeCode}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-bold rounded-lg transition-colors"
+                >
+                  {isAssigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                  목표 목록에 추가
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Branch/Team Table */}
       <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
           <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-            담당자별 목표 설정 ({categoryTypeLabel(categoryType)})
+            고객별 목표 설정
           </h3>
-          <p className="text-xs text-zinc-500 mt-0.5">작년 실적을 참고하여 목표를 설정하세요. 각 항목별로 즉시 저장하거나, 모두 입력 후 "전체 저장"을 누르세요.</p>
+          <p className="text-xs text-zinc-500 mt-0.5">고객당 월별 목표 1건입니다. 담당자·팀 목표는 자동 합산됩니다. 각 항목별로 즉시 저장하거나, 모두 입력 후 &quot;전체 저장&quot;을 누르세요.</p>
         </div>
 
         <div className="overflow-x-auto">
@@ -903,9 +1165,7 @@ export default function BulkGoalSettingTab() {
                 <th className="py-2 px-1 text-left w-14 min-w-0">사업소</th>
                 <th className="py-2 px-1 text-left w-14 min-w-0">팀</th>
                 <th className="py-2 px-1 text-left w-16 min-w-0">담당자</th>
-                <th className="py-2 px-1.5 text-left w-24 min-w-0">카테고리</th>
-                <th className="py-2 px-1.5 text-left w-20 min-w-0">산업분류</th>
-                <th className="py-2 px-1.5 text-left w-20 min-w-0">영일분류</th>
+                <th className="py-2 px-1.5 text-left w-32 min-w-0">고객</th>
                 <th className="py-2 px-2 text-right bg-zinc-100 dark:bg-zinc-800 w-[7.5rem]">작년 중량(L)</th>
                 <th className="py-2 px-2 text-right bg-zinc-100 dark:bg-zinc-800 w-[7.5rem]">작년 금액(원)</th>
                 <th className="py-2 px-2 text-right bg-blue-50 dark:bg-blue-900/20 w-[7rem]">목표 중량(L)</th>
@@ -916,7 +1176,9 @@ export default function BulkGoalSettingTab() {
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {branches.map((branch) => {
                 const isBranchExpanded = expandedBranches.has(branch.branch);
-                const totalBranchEntries = branch.teams.reduce((sum, t) => sum + t.employees.length, 0);
+                const totalBranchEntries = branch.teams.reduce((sum, t) =>
+                  sum + t.employees.reduce((es, e) => es + e.clients.length, 0), 0
+                );
 
                 return (
                   <Fragment key={`branch-${branch.branch}`}>
@@ -934,9 +1196,7 @@ export default function BulkGoalSettingTab() {
                       </td>
                       <td className="py-1.5 px-1 w-14" />
                       <td className="py-1.5 px-1 w-16" />
-                      <td className="py-1.5 px-1.5 w-24" />
-                      <td className="py-1.5 px-1.5 w-20" />
-                      <td className="py-1.5 px-1.5 w-20" />
+                      <td className="py-1.5 px-1.5 w-32" />
                       <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-600 dark:text-zinc-400">
                         {formatNumber(branch.total_last_year_weight)}
                       </td>
@@ -968,13 +1228,11 @@ export default function BulkGoalSettingTab() {
                               <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0">
                                 {isTeamExpanded ? <ChevronDown className="w-3 h-3 shrink-0 text-zinc-400" /> : <ChevronRight className="w-3 h-3 shrink-0 text-zinc-400" />}
                                 <span className="font-semibold text-xs text-zinc-800 dark:text-zinc-200 break-words">{team.team}</span>
-                                <span className="text-[10px] leading-tight text-zinc-500 shrink-0">({team.employees.length}개 항목)</span>
+                                <span className="text-[10px] leading-tight text-zinc-500 shrink-0">({team.employees.reduce((s, e) => s + e.clients.length, 0)}개 항목)</span>
                               </div>
                             </td>
                             <td className="py-1.5 px-1 w-16" />
-                            <td className="py-1.5 px-1.5 w-24" />
-                            <td className="py-1.5 px-1.5 w-20" />
-                            <td className="py-1.5 px-1.5 w-20" />
+                            <td className="py-1.5 px-1.5 w-32" />
                             <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">
                               {formatNumber(team.total_last_year_weight)}
                             </td>
@@ -986,60 +1244,97 @@ export default function BulkGoalSettingTab() {
                             <td className="py-1.5 px-2"></td>
                           </tr>
 
-                          {/* Employee-Category Rows */}
-                          {isTeamExpanded && team.employees.map((entry) => {
+                          {isTeamExpanded && team.employees.map((emp) => {
+                            const empKey = `${branch.branch}_${team.team}_${emp.employee_name}`;
+                            const isEmpExpanded = expandedEmployees.has(empKey);
+
                             return (
-                              <tr
-                                key={`employee-${entry.employee_name}-${entry.category}-${entry.industry}-${entry.sector}`}
-                                className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
-                              >
-                                <td className="py-1.5 px-1 w-14"></td>
-                                <td className="py-1.5 px-1 w-14"></td>
-                                <td className="py-1.5 px-1 w-16 min-w-0 font-medium text-xs text-zinc-800 dark:text-zinc-200 pl-1 break-words">
-                                  {entry.employee_name}
-                                </td>
-                                <td className="py-1.5 px-1.5 text-xs text-zinc-600 dark:text-zinc-400 min-w-0 break-words">
-                                  {entry.category}
-                                </td>
-                                <td className="py-1.5 px-1.5 text-xs text-zinc-600 dark:text-zinc-400 min-w-0 break-words">
-                                  {entry.industry}
-                                </td>
-                                <td className="py-1.5 px-1.5 text-xs text-zinc-600 dark:text-zinc-400 min-w-0 break-words">
-                                  {entry.sector}
-                                </td>
-                                <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                                  {formatNumber(entry.last_year_weight)}
-                                </td>
-                                <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                                  {formatNumber(entry.last_year_amount)}
-                                </td>
-                                <td className="py-1.5 px-1">
-                                  <input
-                                    type="number"
-                                    className="w-full min-w-0 px-1 py-0.5 text-right text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    placeholder="0"
-                                    value={entry.target_weight || ''}
-                                    onChange={(e) => handleGoalChange(entry, 'weight', parseFloat(e.target.value) || 0)}
-                                  />
-                                </td>
-                                <td className="py-1.5 px-1">
-                                  <input
-                                    type="number"
-                                    className="w-full min-w-0 px-1 py-0.5 text-right text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    placeholder="0"
-                                    value={entry.target_amount || ''}
-                                    onChange={(e) => handleGoalChange(entry, 'amount', parseFloat(e.target.value) || 0)}
-                                  />
-                                </td>
-                                <td className="py-1.5 px-1 text-center">
-                                  <button
-                                    onClick={() => handleSaveIndividual(entry)}
-                                    className="px-2 py-0.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                              <Fragment key={`emp-${empKey}`}>
+                                <tr
+                                  className="bg-amber-50/10 dark:bg-amber-900/5 hover:bg-amber-50/30 dark:hover:bg-amber-900/10 cursor-pointer transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleEmployee(branch.branch, team.team, emp.employee_name);
+                                  }}
+                                >
+                                  <td className="py-1.5 px-1 w-14" />
+                                  <td className="py-1.5 px-1 w-14" />
+                                  <td className="py-1.5 px-1 w-16 min-w-0 align-middle">
+                                    <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0 pl-1">
+                                      {isEmpExpanded ? <ChevronDown className="w-3 h-3 shrink-0 text-zinc-400" /> : <ChevronRight className="w-3 h-3 shrink-0 text-zinc-400" />}
+                                      <span className="font-medium text-xs text-zinc-800 dark:text-zinc-200 break-words">{emp.employee_name}</span>
+                                      <span className="text-[10px] leading-tight text-zinc-500 shrink-0">({emp.clients.length}개)</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-1.5 px-1.5 w-32" />
+                                  <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                                    {formatNumber(emp.total_last_year_weight)}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                                    {formatNumber(emp.total_last_year_amount)}
+                                  </td>
+                                  <td className="py-1.5 px-2" />
+                                  <td className="py-1.5 px-2" />
+                                  <td className="py-1.5 px-2" />
+                                </tr>
+
+                                {isEmpExpanded && emp.clients.map((entry) => (
+                                  <tr
+                                    key={`client-${entry.client_code}`}
+                                    className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
                                   >
-                                    저장
-                                  </button>
-                                </td>
-                              </tr>
+                                    <td className="py-1.5 px-1 w-14" />
+                                    <td className="py-1.5 px-1 w-14" />
+                                    <td className="py-1.5 px-1 w-16" />
+                                    <td className="py-1.5 px-1.5 text-xs text-zinc-700 dark:text-zinc-300 min-w-0 break-words pl-2">
+                                      <div className="font-medium flex items-center gap-1 flex-wrap">
+                                        {entry.client_name}
+                                        {entry.is_manual && (
+                                          <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                                            추가
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-[10px] text-zinc-400">{entry.client_code}</div>
+                                      {entry.industry_name && (
+                                        <div className="text-[10px] text-zinc-500">{entry.industry_name}</div>
+                                      )}
+                                    </td>
+                                    <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                                      {formatNumber(entry.last_year_weight)}
+                                    </td>
+                                    <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                                      {formatNumber(entry.last_year_amount)}
+                                    </td>
+                                    <td className="py-1.5 px-1">
+                                      <input
+                                        type="number"
+                                        className="w-full min-w-0 px-1 py-0.5 text-right text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        placeholder="0"
+                                        value={entry.target_weight || ''}
+                                        onChange={(e) => handleGoalChange(entry, 'weight', parseFloat(e.target.value) || 0)}
+                                      />
+                                    </td>
+                                    <td className="py-1.5 px-1">
+                                      <input
+                                        type="number"
+                                        className="w-full min-w-0 px-1 py-0.5 text-right text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        placeholder="0"
+                                        value={entry.target_amount || ''}
+                                        onChange={(e) => handleGoalChange(entry, 'amount', parseFloat(e.target.value) || 0)}
+                                      />
+                                    </td>
+                                    <td className="py-1.5 px-1 text-center">
+                                      <button
+                                        onClick={() => handleSaveIndividual(entry)}
+                                        className="px-2 py-0.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                                      >
+                                        저장
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </Fragment>
                             );
                           })}
                         </Fragment>
@@ -1058,7 +1353,7 @@ export default function BulkGoalSettingTab() {
         <p className="font-semibold mb-2">💡 사용 팁:</p>
         <ul className="list-disc list-inside space-y-1 ml-2">
           <li><strong>작년 실적 복사:</strong> 작년과 동일한 목표를 빠르게 설정</li>
-          <li><strong>성장률 적용:</strong> 작년 대비 일정 비율 성장 목표 일괄 설정</li>
+          <li><strong>성장률 적용:</strong> % 입력 후 &quot;성장 적용&quot;으로 작년 대비 목표 일괄 설정 (음수 입력 시 감소)</li>
           <li><strong>템플릿 다운로드:</strong> 작년 실적이 포함된 Excel 파일 다운로드하여 오프라인 작업</li>
           <li><strong>목표 업로드:</strong> Excel에서 편집한 목표를 업로드하여 일괄 반영</li>
           <li><strong>개별 저장:</strong> 각 항목의 저장 버튼으로 즉시 저장 가능</li>

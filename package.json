@@ -10,6 +10,8 @@
     "rebuild-ledger": "tsx scripts/rebuild-ledger.ts",
     "rebuild-sales": "tsx scripts/rebuild-sales.ts",
     "create-summary-table": "tsx scripts/create-summary-table.ts",
+    "migrate-sales-goals-client-level": "tsx scripts/migrate-sales-goals-to-client-level.ts",
+    "migrate-sales-goals-simplify": "tsx scripts/migrate-sales-goals-simplify-schema.ts",
     "create-office-display-order-table": "tsx scripts/create-office-display-order-table.ts",
     "create-team-display-order-table": "tsx scripts/create-team-display-order-table.ts",
     "create-employee-display-order-table": "tsx scripts/create-employee-display-order-table.ts",
@@ -44,7 +46,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@egdesk/next-api-plugin": "^1.5.0",
+    "@egdesk/next-api-plugin": "^1.5.4",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/node-cron": "^3.0.11",

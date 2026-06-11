@@ -61,8 +61,17 @@ export async function GET() {
   try {
     const listed = await listBrowserRecordingTests();
     const scripts = normalizeScriptNames(listed);
+    const outputDir =
+      listed && typeof listed === 'object' && 'outputDir' in listed
+        ? String((listed as { outputDir?: string }).outputDir || '')
+        : '';
 
-    return NextResponse.json({ success: true, scripts });
+    return NextResponse.json({
+      success: true,
+      scripts,
+      count: scripts.length,
+      outputDir: outputDir || undefined,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to list scripts';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

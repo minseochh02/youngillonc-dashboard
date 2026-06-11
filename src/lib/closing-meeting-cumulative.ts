@@ -459,35 +459,35 @@ export async function buildCumulativeViewPayload(params: {
 
   const goalsYtdSql = `
     SELECT
-      sg.category as category,
       (${BRANCH_FROM_EC}) as branch,
       ec.b2c_팀 as team,
       SUM(sg.target_weight) as target_weight
     FROM sales_goals sg
-    LEFT JOIN employee_category ec ON sg.employee_name = ec.담당자
+    LEFT JOIN clients c_sg ON sg.client_code = c_sg.거래처코드
+    LEFT JOIN employees e_sg ON c_sg.담당자코드 = e_sg.사원_담당_코드
+    LEFT JOIN employee_category ec ON e_sg.사원_담당_명 = ec.담당자
     WHERE sg.year = '${y0}'
       AND CAST(TRIM(sg.month) AS INTEGER) <= ${monthInt}
-      AND sg.category_type = 'division'
       AND ${WHERE_B2C}
       AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
-    GROUP BY sg.category, 2, ec.b2c_팀
+    GROUP BY 2, ec.b2c_팀
   `;
 
   const goalsMonthSql = `
     SELECT
-      sg.category as category,
       (${BRANCH_FROM_EC}) as branch,
       ec.b2c_팀 as team,
       sg.year as year,
       SUM(sg.target_weight) as target_weight
     FROM sales_goals sg
-    LEFT JOIN employee_category ec ON sg.employee_name = ec.담당자
-    WHERE sg.category_type = 'division'
-      AND CAST(TRIM(sg.month) AS INTEGER) = ${monthInt}
+    LEFT JOIN clients c_sg ON sg.client_code = c_sg.거래처코드
+    LEFT JOIN employees e_sg ON c_sg.담당자코드 = e_sg.사원_담당_코드
+    LEFT JOIN employee_category ec ON e_sg.사원_담당_명 = ec.담당자
+    WHERE CAST(TRIM(sg.month) AS INTEGER) = ${monthInt}
       AND sg.year IN ('${y1}', '${y0}')
       AND ${WHERE_B2C}
       AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
-    GROUP BY sg.category, 2, ec.b2c_팀, sg.year
+    GROUP BY 2, ec.b2c_팀, sg.year
   `;
 
   const b2bSalesYtdSql = `
@@ -556,33 +556,33 @@ export async function buildCumulativeViewPayload(params: {
 
   const b2bGoalsYtdSql = `
     SELECT
-      sg.category as category,
       (${BRANCH_FROM_EC}) as branch,
       ${B2B_TEAM} as team,
       SUM(sg.target_weight) as target_weight
     FROM sales_goals sg
-    LEFT JOIN employee_category ec ON sg.employee_name = ec.담당자
+    LEFT JOIN clients c_sg ON sg.client_code = c_sg.거래처코드
+    LEFT JOIN employees e_sg ON c_sg.담당자코드 = e_sg.사원_담당_코드
+    LEFT JOIN employee_category ec ON e_sg.사원_담당_명 = ec.담당자
     WHERE sg.year = '${y0}'
       AND CAST(TRIM(sg.month) AS INTEGER) <= ${monthInt}
-      AND sg.category_type = 'division'
       AND ${WHERE_B2B}
-    GROUP BY sg.category, 2, 3
+    GROUP BY 2, 3
   `;
 
   const b2bGoalsMonthSql = `
     SELECT
-      sg.category as category,
       (${BRANCH_FROM_EC}) as branch,
       ${B2B_TEAM} as team,
       sg.year as year,
       SUM(sg.target_weight) as target_weight
     FROM sales_goals sg
-    LEFT JOIN employee_category ec ON sg.employee_name = ec.담당자
-    WHERE sg.category_type = 'division'
-      AND CAST(TRIM(sg.month) AS INTEGER) = ${monthInt}
+    LEFT JOIN clients c_sg ON sg.client_code = c_sg.거래처코드
+    LEFT JOIN employees e_sg ON c_sg.담당자코드 = e_sg.사원_담당_코드
+    LEFT JOIN employee_category ec ON e_sg.사원_담당_명 = ec.담당자
+    WHERE CAST(TRIM(sg.month) AS INTEGER) = ${monthInt}
       AND sg.year IN ('${y1}', '${y0}')
       AND ${WHERE_B2B}
-    GROUP BY sg.category, 2, 3, sg.year
+    GROUP BY 2, 3, sg.year
   `;
 
   type SqlResult = Awaited<ReturnType<typeof executeSQL>>;
@@ -781,23 +781,21 @@ export async function buildCumulativeViewPayload(params: {
   }
 
   for (const r of goalsYtdRes?.rows || []) {
-    const cat = String(r.category);
     const branch = normBranch(r.branch);
     const team = normTeamByBranch(branch, r.team);
     if (!team) continue;
     const tw = Number(r.target_weight) || 0;
-    const gk = `${cat}\t${branch}\t${team}`;
+    const gk = `${branch}\t${team}`;
     goalsYtd.set(gk, (goalsYtd.get(gk) || 0) + tw);
   }
 
   for (const r of goalsMoRes?.rows || []) {
-    const cat = String(r.category);
     const branch = normBranch(r.branch);
     const team = normTeamByBranch(branch, r.team);
     if (!team) continue;
     const y = String(r.year);
     const tw = Number(r.target_weight) || 0;
-    const gk = `${y}\t${cat}\t${branch}\t${team}`;
+    const gk = `${y}\t${branch}\t${team}`;
     goalsMo.set(gk, (goalsMo.get(gk) || 0) + tw);
   }
 
@@ -840,22 +838,20 @@ export async function buildCumulativeViewPayload(params: {
     inner.set(cat, (inner.get(cat) || 0) + w);
   }
   for (const r of b2bGoalsYtdRes?.rows || []) {
-    const cat = String(r.category);
     const branch = normBranch(r.branch);
     const team = normTeamByBranch(branch, r.team);
     if (!team) continue;
     const tw = Number(r.target_weight) || 0;
-    const gk = `${cat}\t${branch}\t${team}`;
+    const gk = `${branch}\t${team}`;
     goalsB2bYtd.set(gk, (goalsB2bYtd.get(gk) || 0) + tw);
   }
   for (const r of b2bGoalsMoRes?.rows || []) {
-    const cat = String(r.category);
     const branch = normBranch(r.branch);
     const team = normTeamByBranch(branch, r.team);
     if (!team) continue;
     const y = String(r.year);
     const tw = Number(r.target_weight) || 0;
-    const gk = `${y}\t${cat}\t${branch}\t${team}`;
+    const gk = `${y}\t${branch}\t${team}`;
     goalsB2bMo.set(gk, (goalsB2bMo.get(gk) || 0) + tw);
   }
 
@@ -928,23 +924,6 @@ export async function buildCumulativeViewPayload(params: {
     cat: string
   ) => getPur(mB2c, y, cat) + getPur(mB2b, y, cat);
 
-  const b2bCategoryGoalYtd = (cat: string) => {
-    let s = 0;
-    for (const [k, v] of goalsB2bYtd.entries()) {
-      if (k.startsWith(`${cat}\t`)) s += v;
-    }
-    return s;
-  };
-
-  const b2bCategoryGoalMo = (y: number, cat: string) => {
-    let s = 0;
-    const prefix = `${y}\t${cat}\t`;
-    for (const [k, v] of goalsB2bMo.entries()) {
-      if (k.startsWith(prefix)) s += v;
-    }
-    return s;
-  };
-
   const addBranchTeamPair = (set: Set<string>, branch: string, team: string) => {
     const b = normBranch(branch);
     const t = String(team || '').trim();
@@ -968,25 +947,6 @@ export async function buildCumulativeViewPayload(params: {
       catMap.forEach((teamMap, branch) => {
         teamMap.forEach((_w, team) => addBranchTeamPair(pairSet, branch, team));
       });
-    }
-
-    const catPrefix = `${cat}\t`;
-    for (const k of goalsYtd.keys()) {
-      if (!k.startsWith(catPrefix)) continue;
-      const rest = k.slice(catPrefix.length);
-      const i = rest.indexOf('\t');
-      if (i < 0) continue;
-      addBranchTeamPair(pairSet, rest.slice(0, i), rest.slice(i + 1));
-    }
-
-    for (const k of goalsMo.keys()) {
-      const parts = k.split('\t');
-      if (parts.length < 4) continue;
-      const gcat = parts[1];
-      const gbranch = parts[2];
-      const gteam = parts.slice(3).join('\t');
-      if (gcat !== cat) continue;
-      addBranchTeamPair(pairSet, gbranch, gteam);
     }
 
     const byBranch = new Map<string, Set<string>>();
@@ -1028,25 +988,6 @@ export async function buildCumulativeViewPayload(params: {
       });
     }
 
-    const catPrefixB2b = `${cat}\t`;
-    for (const k of goalsB2bYtd.keys()) {
-      if (!k.startsWith(catPrefixB2b)) continue;
-      const rest = k.slice(catPrefixB2b.length);
-      const i = rest.indexOf('\t');
-      if (i < 0) continue;
-      addBranchTeamPair(pairSet, rest.slice(0, i), rest.slice(i + 1));
-    }
-
-    for (const k of goalsB2bMo.keys()) {
-      const parts = k.split('\t');
-      if (parts.length < 4) continue;
-      const gcat = parts[1];
-      const gbranch = parts[2];
-      const gteam = parts.slice(3).join('\t');
-      if (gcat !== cat) continue;
-      addBranchTeamPair(pairSet, gbranch, gteam);
-    }
-
     const byBranchB2b = new Map<string, Set<string>>();
     for (const p of pairSet) {
       const i = p.indexOf('\t');
@@ -1068,23 +1009,46 @@ export async function buildCumulativeViewPayload(params: {
     }));
   };
 
-  const goalKey = (cat: string, branch: string, team: string) => `${cat}\t${normBranch(branch)}\t${team}`;
-  const goalMoKey = (y: number, cat: string, branch: string, team: string) =>
-    `${y}\t${cat}\t${normBranch(branch)}\t${team}`;
+  const goalKey = (_cat: string, branch: string, team: string) => `${normBranch(branch)}\t${team}`;
+  const goalMoKey = (y: number, _cat: string, branch: string, team: string) =>
+    `${y}\t${normBranch(branch)}\t${team}`;
 
   const categoryGoalYtd = (cat: string) => {
     let s = 0;
-    for (const [k, v] of goalsYtd.entries()) {
-      if (k.startsWith(`${cat}\t`)) s += v;
+    for (const { branch, teams } of collectBranchGroups(cat)) {
+      for (const team of teams) {
+        s += goalsYtd.get(goalKey(cat, branch, team)) || 0;
+      }
     }
     return s;
   };
 
   const categoryGoalMo = (y: number, cat: string) => {
     let s = 0;
-    const prefix = `${y}\t${cat}\t`;
-    for (const [k, v] of goalsMo.entries()) {
-      if (k.startsWith(prefix)) s += v;
+    for (const { branch, teams } of collectBranchGroups(cat)) {
+      for (const team of teams) {
+        s += goalsMo.get(goalMoKey(y, cat, branch, team)) || 0;
+      }
+    }
+    return s;
+  };
+
+  const b2bCategoryGoalYtd = (cat: string) => {
+    let s = 0;
+    for (const { branch, teams } of collectBranchGroupsB2b(cat)) {
+      for (const team of teams) {
+        s += goalsB2bYtd.get(goalKey(cat, branch, team)) || 0;
+      }
+    }
+    return s;
+  };
+
+  const b2bCategoryGoalMo = (y: number, cat: string) => {
+    let s = 0;
+    for (const { branch, teams } of collectBranchGroupsB2b(cat)) {
+      for (const team of teams) {
+        s += goalsB2bMo.get(goalMoKey(y, cat, branch, team)) || 0;
+      }
     }
     return s;
   };

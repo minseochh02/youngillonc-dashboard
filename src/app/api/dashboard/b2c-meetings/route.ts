@@ -350,18 +350,24 @@ export async function GET(request: Request) {
         GROUP BY e.사원_담당_명, year, channel
       `;
 
-      // Query goals for Fleet/LCC by employee
+      // Client goals rolled up by employee; Fleet/LCC from client channel type
       const goalsQuery = `
         SELECT
-          employee_name,
-          category,
-          SUM(target_weight) as target_weight,
-          SUM(target_amount) as target_amount
-        FROM sales_goals
-        WHERE year = '${currentYear}'
-          AND category_type = 'business_type'
-          AND category IN ('Fleet', 'LCC')
-        GROUP BY employee_name, category
+          e.사원_담당_명 as employee_name,
+          CASE
+            WHEN ca.업종분류코드 IN ('28600', '28610', '28710') THEN 'Fleet'
+            ELSE 'LCC'
+          END as category,
+          SUM(sg.target_weight) as target_weight,
+          SUM(sg.target_amount) as target_amount
+        FROM sales_goals sg
+        LEFT JOIN clients c ON sg.client_code = c.거래처코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN company_type_auto ca ON c.업종분류코드 = ca.업종분류코드
+        WHERE sg.year = '${currentYear}'
+          AND e.사원_담당_명 IS NOT NULL
+          AND ca.업종분류코드 IS NOT NULL
+        GROUP BY e.사원_담당_명, category
       `;
 
       let employeeSalesRaw;

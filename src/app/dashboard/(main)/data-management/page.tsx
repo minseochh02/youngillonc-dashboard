@@ -128,6 +128,8 @@ export default function DataManagementPage() {
   const [selectedChannelTeam, setSelectedChannelTeam] = useState<string>('');
   const [scriptNames, setScriptNames] = useState<string[]>([]);
   const [scriptsLoading, setScriptsLoading] = useState(false);
+  const [scriptsLoadError, setScriptsLoadError] = useState<string | null>(null);
+  const [scriptsOutputDir, setScriptsOutputDir] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number; currentScript: string } | null>(null);
   const [refreshResult, setRefreshResult] = useState<{
@@ -150,13 +152,25 @@ export default function DataManagementPage() {
 
   const fetchBrowserRecordingScripts = async () => {
     setScriptsLoading(true);
+    setScriptsLoadError(null);
     try {
       const response = await apiFetch('/api/dashboard/browser-recording');
       const result = await response.json();
-      const scripts = result.success && Array.isArray(result.scripts) ? result.scripts as string[] : [];
+      if (!result.success) {
+        setScriptNames([]);
+        setScriptsOutputDir(null);
+        setScriptsLoadError(result.error || '스크립트 목록을 불러오지 못했습니다.');
+        return;
+      }
+      const scripts = Array.isArray(result.scripts) ? (result.scripts as string[]) : [];
       setScriptNames(scripts);
-    } catch {
-      // silently fail — scripts list is used internally only
+      setScriptsOutputDir(typeof result.outputDir === 'string' ? result.outputDir : null);
+    } catch (error) {
+      setScriptNames([]);
+      setScriptsOutputDir(null);
+      setScriptsLoadError(
+        error instanceof Error ? error.message : '스크립트 목록을 불러오지 못했습니다.'
+      );
     } finally {
       setScriptsLoading(false);
     }
@@ -671,7 +685,7 @@ export default function DataManagementPage() {
         const currentYear = new Date().getFullYear();
         const years = Array.from({ length: currentYear - 2022 }, (_, i) => currentYear - i);
         const months = [1,2,3,4,5,6,7,8,9,10,11,12];
-        const noScripts = !scriptsLoading && scriptNames.length === 0;
+        const noScripts = !scriptsLoading && !scriptsLoadError && scriptNames.length === 0;
         return (
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -679,6 +693,9 @@ export default function DataManagementPage() {
                 <h4 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">데이터 새로고침</h4>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
                   이카운트에서 선택한 기간의 데이터를 다시 다운로드합니다.
+                  {scriptNames.length > 0 && (
+                    <span className="ml-1 text-zinc-400">({scriptNames.length}개 스크립트)</span>
+                  )}
                 </p>
                 <div className="flex items-center gap-2 mt-3">
                   <select
@@ -703,18 +720,29 @@ export default function DataManagementPage() {
                   </select>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={refreshThisMonth}
-                disabled={isRefreshing || noScripts}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
-              >
-                {isRefreshing
-                  ? <Loader2 className="w-4 h-4 animate-spin" />
-                  : <RefreshCw className="w-4 h-4" />
-                }
-                {isRefreshing ? '새로고침 중...' : '데이터 새로고침'}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={fetchBrowserRecordingScripts}
+                  disabled={scriptsLoading || isRefreshing}
+                  className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
+                  title="스크립트 목록 다시 불러오기"
+                >
+                  {scriptsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={refreshThisMonth}
+                  disabled={isRefreshing || noScripts || !!scriptsLoadError}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isRefreshing
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <RefreshCw className="w-4 h-4" />
+                  }
+                  {isRefreshing ? '새로고침 중...' : '데이터 새로고침'}
+                </button>
+              </div>
             </div>
 
             {/* Progress */}
@@ -768,8 +796,31 @@ export default function DataManagementPage() {
               </div>
             )}
 
+            {scriptsLoadError && (
+              <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-300">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">스크립트 목록을 불러오지 못했습니다.</p>
+                  <p className="mt-0.5 opacity-90">{scriptsLoadError}</p>
+                  <p className="mt-1 opacity-80">EGDesk Desktop이 이 PC에서 실행 중인지, `.env.local`의 API URL/키가 맞는지 확인하세요.</p>
+                </div>
+              </div>
+            )}
+
             {noScripts && (
-              <p className="mt-3 text-xs text-zinc-400">등록된 스크립트가 없습니다. Browser Recorder에서 스크립트를 먼저 저장하세요.</p>
+              <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400 space-y-1">
+                <p className="font-semibold text-zinc-600 dark:text-zinc-300">
+                  등록된 스크립트가 없어 새로고침이 비활성화되어 있습니다.
+                </p>
+                <p>
+                  Browser Recorder 스크립트는 <strong>EGDesk가 설치된 PC마다 따로</strong> 저장됩니다.
+                  Mac에만 녹화해 두었다면 Windows에는 자동으로 복사되지 않습니다.
+                </p>
+                <p>해결 방법: Windows PC의 EGDesk → Browser Recorder에서 스크립트를 저장하거나, Mac의 스크립트 폴더를 Windows로 복사하세요.</p>
+                {scriptsOutputDir && (
+                  <p className="font-mono text-[11px] text-zinc-400 break-all">스크립트 폴더: {scriptsOutputDir}</p>
+                )}
+              </div>
             )}
           </div>
         );

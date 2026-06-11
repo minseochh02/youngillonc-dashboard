@@ -25,7 +25,7 @@ export default function BulkGoalSettingPage() {
             <h1 className="text-3xl font-bold">일괄 목표 설정</h1>
           </div>
           <p className="text-blue-100 ml-14">
-            작년 실적을 참고하여 팀별 매출 목표를 빠르게 설정하세요
+            작년 실적을 참고하여 고객별 매출 목표를 빠르게 설정하세요
           </p>
         </div>
 
@@ -40,7 +40,7 @@ export default function BulkGoalSettingPage() {
               </div>
               <div>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">한눈에 보기</p>
-                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">전체 팀 조회</p>
+                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">고객별 조회</p>
               </div>
             </div>
           </div>
