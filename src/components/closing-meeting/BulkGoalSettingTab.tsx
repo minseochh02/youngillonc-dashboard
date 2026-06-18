@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, Fragment, useCallback } from 'react';
-import { Loader2, Save, Download, Upload, Calendar, CheckCircle2, AlertCircle, TrendingUp, Copy, ChevronDown, ChevronRight, UserPlus, Search, X } from 'lucide-react';
+import { useState, useEffect, Fragment, useCallback, useDeferredValue, useMemo, useRef } from 'react';
+import { Loader2, Save, Calendar, CheckCircle2, AlertCircle, TrendingUp, Copy, ChevronDown, ChevronRight, UserPlus, Search, X } from 'lucide-react';
 import { useVatInclude } from '@/contexts/VatIncludeContext';
 import { useDisplayOrderBootstrap } from '@/hooks/useDisplayOrderBootstrap';
 import { compareEmployees, compareOffices, compareTeams } from '@/lib/display-order-core';
@@ -9,7 +9,7 @@ import { apiFetch } from '@/lib/api';
 import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { ExcelUploadButton } from '@/components/ExcelUploadButton';
-import { generateFilename } from '@/lib/excel-export';
+import { generateFilename, exportToExcel } from '@/lib/excel-export';
 import * as XLSX from 'xlsx';
 
 interface ClientGoalData {
@@ -20,6 +20,7 @@ interface ClientGoalData {
   team: string;
   industry_code?: string;
   industry_name?: string;
+  region_code?: string;
   last_year_weight: number;
   last_year_amount: number;
   target_weight?: number;
@@ -42,6 +43,16 @@ interface EmployeeOption {
   team?: string;
 }
 
+interface RegionOption {
+  code: string;
+  province_name?: string;
+  city_name?: string;
+  category3?: string;
+  major_category?: string;
+  detail_name?: string;
+  note?: string;
+}
+
 interface ClientSearchResult {
   client_code: string;
   client_name: string;
@@ -51,6 +62,20 @@ interface ClientSearchResult {
   employee_name?: string;
   branch?: string;
   team?: string;
+  region_code?: string;
+  target_weight?: number;
+  target_amount?: number;
+}
+
+interface NewClientForm {
+  client_code: string;
+  client_name: string;
+  industry_code: string;
+  employee_code: string;
+  new_client_date: string;
+  region_code: string;
+  target_weight: string;
+  target_amount: string;
 }
 
 interface EmployeeGroup {
@@ -79,6 +104,66 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => ({
   label: `${i + 1}월`
 }));
 
+const todayIsoDate = () => {
+  const now = new Date();
+  const localTime = now.getTime() - now.getTimezoneOffset() * 60_000;
+  return new Date(localTime).toISOString().slice(0, 10);
+};
+
+const emptyNewClientForm = (): NewClientForm => ({
+  client_code: '',
+  client_name: '',
+  industry_code: '',
+  employee_code: '',
+  new_client_date: todayIsoDate(),
+  region_code: '',
+  target_weight: '',
+  target_amount: '',
+});
+
+const KOREAN_INITIALS = [
+  'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ',
+  'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ',
+];
+
+function getKoreanInitials(text: string) {
+  return Array.from(text).map((char) => {
+    const code = char.charCodeAt(0);
+    if (code < 0xac00 || code > 0xd7a3) return char;
+    return KOREAN_INITIALS[Math.floor((code - 0xac00) / 588)];
+  }).join('');
+}
+
+function matchesSearchText(value: string | undefined, query: string) {
+  const term = query.trim().toLowerCase();
+  if (!term) return true;
+
+  const text = String(value ?? '').toLowerCase();
+  if (text.includes(term)) return true;
+
+  return getKoreanInitials(text).toLowerCase().includes(term);
+}
+
+function formatEmployeeOption(emp: EmployeeOption) {
+  const context = [emp.branch, emp.team].filter(Boolean).join(' / ');
+  return context ? `${emp.employee_name} (${context})` : emp.employee_name;
+}
+
+function formatCompanyTypeOption(ct: CompanyTypeOption) {
+  return `${ct.code} - ${ct.name || ct.industry || '미분류'}`;
+}
+
+function formatRegionOption(region: RegionOption) {
+  const label = [
+    region.province_name,
+    region.city_name,
+    region.detail_name,
+  ].filter(Boolean).join(' ');
+  const category = [region.major_category, region.category3].filter(Boolean).join(' / ');
+  const suffix = [label, category].filter(Boolean).join(' · ');
+  return suffix ? `${region.code} - ${suffix}` : region.code;
+}
+
 function upsertClientEntry(map: Map<string, ClientGoalData>, row: Partial<ClientGoalData> & { client_code: string }) {
   const key = row.client_code;
   const existing = map.get(key);
@@ -99,6 +184,7 @@ function upsertClientEntry(map: Map<string, ClientGoalData>, row: Partial<Client
     team: row.team || '미분류',
     industry_code: row.industry_code,
     industry_name: row.industry_name,
+    region_code: row.region_code,
     last_year_weight: row.last_year_weight ?? 0,
     last_year_amount: row.last_year_amount ?? 0,
     target_weight: row.target_weight,
@@ -172,6 +258,89 @@ function buildBranchGroups(
   return branchGroups.sort((a, b) => compareOffices(a.branch, b.branch, displayOrder.office));
 }
 
+function filterBranchGroups(branches: BranchGroup[], query: string): BranchGroup[] {
+  const term = query.trim().toLowerCase();
+  if (!term) return branches;
+
+  return branches
+    .map((branch) => {
+      const teams = branch.teams
+        .map((team) => {
+          const employees = team.employees
+            .map((employee) => {
+              const clients = employee.clients.filter((client) =>
+                [
+                  client.client_code,
+                  client.client_name,
+                  client.region_code,
+                  client.industry_name,
+                  employee.employee_name,
+                  team.team,
+                  branch.branch,
+                ]
+                  .filter(Boolean)
+                  .some((value) => matchesSearchText(String(value), term))
+              );
+
+              return {
+                ...employee,
+                clients,
+                total_last_year_weight: clients.reduce((sum, c) => sum + c.last_year_weight, 0),
+                total_last_year_amount: clients.reduce((sum, c) => sum + c.last_year_amount, 0),
+              };
+            })
+            .filter((employee) => employee.clients.length > 0);
+
+          return {
+            ...team,
+            employees,
+            total_last_year_weight: employees.reduce((sum, e) => sum + e.total_last_year_weight, 0),
+            total_last_year_amount: employees.reduce((sum, e) => sum + e.total_last_year_amount, 0),
+          };
+        })
+        .filter((team) => team.employees.length > 0);
+
+      return {
+        ...branch,
+        teams,
+        total_last_year_weight: teams.reduce((sum, t) => sum + t.total_last_year_weight, 0),
+        total_last_year_amount: teams.reduce((sum, t) => sum + t.total_last_year_amount, 0),
+      };
+    })
+    .filter((branch) => branch.teams.length > 0);
+}
+
+function HighlightMatch({ text, query }: { text: unknown; query: string }) {
+  const value = String(text ?? '');
+  const term = query.trim();
+  if (!term) return <>{value}</>;
+
+  const lowerText = value.toLowerCase();
+  const lowerTerm = term.toLowerCase();
+  const start = lowerText.indexOf(lowerTerm);
+
+  if (start === -1) {
+    const initials = getKoreanInitials(value).toLowerCase();
+    if (!initials.includes(lowerTerm)) return <>{value}</>;
+    return (
+      <mark className="rounded bg-yellow-200 px-0.5 text-zinc-950 dark:bg-yellow-500/40 dark:text-yellow-50">
+        {value}
+      </mark>
+    );
+  }
+
+  const end = start + term.length;
+  return (
+    <>
+      {value.slice(0, start)}
+      <mark className="rounded bg-yellow-200 px-0.5 text-zinc-950 dark:bg-yellow-500/40 dark:text-yellow-50">
+        {value.slice(start, end)}
+      </mark>
+      {value.slice(end)}
+    </>
+  );
+}
+
 export default function BulkGoalSettingTab() {
   const { includeVat } = useVatInclude();
   const displayOrder = useDisplayOrderBootstrap();
@@ -196,13 +365,28 @@ export default function BulkGoalSettingTab() {
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [companyTypes, setCompanyTypes] = useState<CompanyTypeOption[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [regionCodes, setRegionCodes] = useState<RegionOption[]>([]);
+  const [isLookupsLoading, setIsLookupsLoading] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
-  const [searchResults, setSearchResults] = useState<ClientSearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<ClientSearchResult | null>(null);
-  const [selectedIndustryCode, setSelectedIndustryCode] = useState('');
-  const [selectedEmployeeCode, setSelectedEmployeeCode] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
+  const [newClientForm, setNewClientForm] = useState<NewClientForm>(() => emptyNewClientForm());
+  const newClientCodeRef = useRef('');
+  const newClientNameRef = useRef('');
+  const [newClientTextResetKey, setNewClientTextResetKey] = useState(0);
+  const [employeeOptionSearch, setEmployeeOptionSearch] = useState('');
+  const [companyTypeOptionSearch, setCompanyTypeOptionSearch] = useState('');
+  const [regionOptionSearch, setRegionOptionSearch] = useState('');
+  const [isEmployeePickerOpen, setIsEmployeePickerOpen] = useState(false);
+  const [isCompanyTypePickerOpen, setIsCompanyTypePickerOpen] = useState(false);
+  const [isRegionPickerOpen, setIsRegionPickerOpen] = useState(false);
+  const deferredClientSearch = useDeferredValue(clientSearch);
+  const deferredEmployeeOptionSearch = useDeferredValue(employeeOptionSearch);
+  const deferredCompanyTypeOptionSearch = useDeferredValue(companyTypeOptionSearch);
+  const deferredRegionOptionSearch = useDeferredValue(regionOptionSearch);
+  const isTableSearchPending = clientSearch !== deferredClientSearch;
+  const isEmployeeSearchPending = employeeOptionSearch !== deferredEmployeeOptionSearch;
+  const isCompanyTypeSearchPending = companyTypeOptionSearch !== deferredCompanyTypeOptionSearch;
+  const isRegionSearchPending = regionOptionSearch !== deferredRegionOptionSearch;
 
   const applyBranchGroups = useCallback((branchGroups: BranchGroup[]) => {
     setBranches(branchGroups);
@@ -216,19 +400,25 @@ export default function BulkGoalSettingTab() {
   }, []);
 
   const fetchLookups = useCallback(async () => {
-    if (companyTypes.length > 0 && employees.length > 0) return;
-    const response = await apiFetch(
-      withIncludeVat(
-        `/api/dashboard/closing-meeting?tab=goal-setting&year=${year}&includeLookups=true`,
-        includeVat
-      )
-    );
-    const result = await response.json();
-    if (result.success && result.data.lookups) {
-      setCompanyTypes(result.data.lookups.companyTypes || []);
-      setEmployees(result.data.lookups.employees || []);
+    if (companyTypes.length > 0 && employees.length > 0 && regionCodes.length > 0) return;
+    setIsLookupsLoading(true);
+    try {
+      const response = await apiFetch(
+        withIncludeVat(
+          `/api/dashboard/closing-meeting?tab=goal-setting&year=${year}&includeLookups=true`,
+          includeVat
+        )
+      );
+      const result = await response.json();
+      if (result.success && result.data.lookups) {
+        setCompanyTypes(result.data.lookups.companyTypes || []);
+        setEmployees(result.data.lookups.employees || []);
+        setRegionCodes(result.data.lookups.regionCodes || []);
+      }
+    } finally {
+      setIsLookupsLoading(false);
     }
-  }, [companyTypes.length, employees.length, year, includeVat]);
+  }, [companyTypes.length, employees.length, regionCodes.length, year, includeVat]);
 
   useEffect(() => {
     fetchBulkGoalData();
@@ -238,35 +428,6 @@ export default function BulkGoalSettingTab() {
     if (!showAddPanel) return;
     fetchLookups();
   }, [showAddPanel, fetchLookups]);
-
-  useEffect(() => {
-    if (!showAddPanel || clientSearch.trim().length < 1) {
-      setSearchResults([]);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const response = await apiFetch(
-          withIncludeVat(
-            `/api/dashboard/closing-meeting?tab=goal-setting&clientSearch=${encodeURIComponent(clientSearch.trim())}`,
-            includeVat
-          )
-        );
-        const result = await response.json();
-        if (result.success) {
-          setSearchResults(result.data.searchResults || []);
-        }
-      } catch (error) {
-        console.error('Client search failed:', error);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [clientSearch, showAddPanel, includeVat]);
 
   const fetchBulkGoalData = async () => {
     setIsLoading(true);
@@ -293,8 +454,10 @@ export default function BulkGoalSettingTab() {
               team: a.team || '미분류',
               industry_code: a.industry_code,
               industry_name: a.industry_name,
+              region_code: a.region_code,
               last_year_weight: a.weight || 0,
               last_year_amount: a.amount || 0,
+              is_manual: Boolean(Number(a.is_manual || 0)),
             });
           }
         });
@@ -309,6 +472,8 @@ export default function BulkGoalSettingTab() {
             team: row.team || '미분류',
             industry_code: row.industry_code,
             industry_name: row.industry_name,
+            region_code: row.region_code,
+            is_manual: Boolean(Number(row.is_manual || 0)),
           });
         });
 
@@ -346,17 +511,45 @@ export default function BulkGoalSettingTab() {
     }
   };
 
-  const handleSelectSearchResult = (client: ClientSearchResult) => {
-    setSelectedClient(client);
-    setSelectedIndustryCode(client.industry_code || '');
-    setSelectedEmployeeCode(client.employee_code || '');
-    setClientSearch('');
-    setSearchResults([]);
-  };
+  const addClientToGrid = useCallback((client: ClientSearchResult & { is_manual?: boolean }) => {
+    const clientMap = new Map<string, ClientGoalData>();
+    branches.forEach(branch => {
+      branch.teams.forEach(team => {
+        team.employees.forEach(emp => {
+          emp.clients.forEach(c => clientMap.set(c.client_code, { ...c }));
+        });
+      });
+    });
 
-  const handleAddClientToGoals = async () => {
-    if (!selectedClient || !selectedEmployeeCode) {
-      setMessage({ type: 'error', text: '고객과 담당자를 선택해주세요.' });
+    upsertClientEntry(clientMap, {
+      client_code: client.client_code,
+      client_name: client.client_name || client.client_code,
+      employee_name: client.employee_name || '미분류',
+      branch: client.branch || '미분류',
+      team: client.team || '미분류',
+      industry_code: client.industry_code,
+      industry_name: client.industry_name,
+      region_code: client.region_code,
+      last_year_weight: 0,
+      last_year_amount: 0,
+      target_weight: client.target_weight,
+      target_amount: client.target_amount,
+      is_manual: true,
+    });
+
+    if (displayOrder.ready) {
+      applyBranchGroups(buildBranchGroups(clientMap, displayOrder));
+    }
+  }, [applyBranchGroups, branches, displayOrder]);
+
+  const handleCreateClientForGoals = async () => {
+    const clientCode = newClientCodeRef.current.trim();
+    const clientName = newClientNameRef.current.trim();
+    const targetWeight = Number(newClientForm.target_weight || 0);
+    const targetAmount = Number(newClientForm.target_amount || 0);
+
+    if (!clientCode || !clientName || !newClientForm.employee_code) {
+      setMessage({ type: 'error', text: '거래처코드, 거래처명, 담당자를 입력해주세요.' });
       setTimeout(() => setMessage(null), 3000);
       return;
     }
@@ -367,53 +560,45 @@ export default function BulkGoalSettingTab() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'assign_goal_client',
-          client_code: selectedClient.client_code,
-          industry_code: selectedIndustryCode || undefined,
-          employee_code: selectedEmployeeCode,
+          action: 'create_goal_client',
+          year,
+          month: selectedMonth,
+          client: {
+            client_code: clientCode,
+            client_name: clientName,
+            industry_code: newClientForm.industry_code || undefined,
+            employee_code: newClientForm.employee_code,
+            new_client_date: newClientForm.new_client_date || todayIsoDate(),
+            region_code: newClientForm.region_code.trim() || undefined,
+            target_weight: Number.isFinite(targetWeight) ? targetWeight : 0,
+            target_amount: Number.isFinite(targetAmount) ? targetAmount : 0,
+          },
         }),
       });
       const result = await response.json();
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to assign client');
+        throw new Error(result.error || 'Failed to create client');
       }
 
       const client = result.data.client;
-      const clientMap = new Map<string, ClientGoalData>();
-      branches.forEach(branch => {
-        branch.teams.forEach(team => {
-          team.employees.forEach(emp => {
-            emp.clients.forEach(c => clientMap.set(c.client_code, { ...c }));
-          });
-        });
-      });
-
-      upsertClientEntry(clientMap, {
-        client_code: client.client_code,
-        client_name: client.client_name || client.client_code,
-        employee_name: client.employee_name || '미분류',
-        branch: client.branch || '미분류',
-        team: client.team || '미분류',
-        industry_code: client.industry_code,
-        industry_name: client.industry_name,
-        last_year_weight: 0,
-        last_year_amount: 0,
-        is_manual: true,
-      });
-
-      if (displayOrder.ready) {
-        applyBranchGroups(buildBranchGroups(clientMap, displayOrder));
-      }
-
-      setSelectedClient(null);
-      setSelectedIndustryCode('');
-      setSelectedEmployeeCode('');
-      setMessage({ type: 'success', text: `${client.client_name} 고객이 목표 목록에 추가되었습니다.` });
+      addClientToGrid(client);
+      newClientCodeRef.current = '';
+      newClientNameRef.current = '';
+      setNewClientTextResetKey(key => key + 1);
+      setNewClientForm(emptyNewClientForm());
+      setEmployeeOptionSearch('');
+      setCompanyTypeOptionSearch('');
+      setRegionOptionSearch('');
+      setClientSearch('');
+      setMessage({ type: 'success', text: `${client.client_name} 거래처가 생성되어 목표 목록에 추가되었습니다.` });
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
-      console.error('Failed to add client:', error);
-      setMessage({ type: 'error', text: '고객 추가 중 오류가 발생했습니다.' });
+      console.error('Failed to create client:', error);
+      const text = error instanceof Error && error.message.includes('already exists')
+        ? '이미 존재하는 거래처코드입니다.'
+        : '신규 거래처 생성 중 오류가 발생했습니다.';
+      setMessage({ type: 'error', text });
       setTimeout(() => setMessage(null), 3000);
     } finally {
       setIsAssigning(false);
@@ -620,6 +805,43 @@ export default function BulkGoalSettingTab() {
       return;
     }
     applyGrowthRate(rate);
+  };
+
+  const handleCurrentDataDownload = () => {
+    const exportData: Record<string, string | number>[] = [];
+
+    branches.forEach((branch) => {
+      branch.teams.forEach((team) => {
+        team.employees.forEach((emp) => {
+          emp.clients.forEach((entry) => {
+            const key = goalEditKey(entry);
+            const edited = editingGoals.get(key);
+            exportData.push({
+              '사업소': branch.branch,
+              '팀': team.team,
+              '담당자': emp.employee_name,
+              '거래처코드': entry.client_code,
+              '거래처명': entry.client_name,
+              '작년중량(L)': entry.last_year_weight,
+              '작년금액': entry.last_year_amount,
+              '목표중량(L)': edited?.weight ?? entry.target_weight ?? 0,
+              '목표금액': edited?.amount ?? entry.target_amount ?? 0,
+            });
+          });
+        });
+      });
+    });
+
+    if (exportData.length === 0) {
+      alert('다운로드할 데이터가 없습니다.');
+      return;
+    }
+
+    exportToExcel(
+      exportData,
+      generateFilename(`${year}년_${selectedMonth}월_목표설정_현황`),
+      { referenceDate: `${year}-${selectedMonth}` }
+    );
   };
 
   const handleTemplateDownload = async () => {
@@ -868,6 +1090,114 @@ export default function BulkGoalSettingTab() {
     return 'text-red-600 dark:text-red-400';
   };
 
+  const totalEntries = branches.reduce((sum, b) =>
+    sum + b.teams.reduce((teamSum, t) =>
+      teamSum + t.employees.reduce((empSum, e) => empSum + e.clients.length, 0), 0), 0
+  );
+  const totalLastYearWeight = branches.reduce((sum, b) => sum + b.total_last_year_weight, 0);
+  const totalLastYearAmount = branches.reduce((sum, b) => sum + b.total_last_year_amount, 0);
+  const visibleBranches = useMemo(
+    () => filterBranchGroups(branches, deferredClientSearch),
+    [branches, deferredClientSearch]
+  );
+  const visibleEntries = useMemo(
+    () => visibleBranches.reduce((sum, b) =>
+      sum + b.teams.reduce((teamSum, t) =>
+        teamSum + t.employees.reduce((empSum, e) => empSum + e.clients.length, 0), 0), 0
+    ),
+    [visibleBranches]
+  );
+  const matchingEmployees = useMemo(() => employees.filter((emp) =>
+    [
+      emp.employee_code,
+      emp.employee_name,
+      emp.branch,
+      emp.team,
+    ].some((value) => matchesSearchText(value, deferredEmployeeOptionSearch))
+  ), [employees, deferredEmployeeOptionSearch]);
+  const selectedEmployee = useMemo(
+    () => employees.find((emp) => emp.employee_code === newClientForm.employee_code),
+    [employees, newClientForm.employee_code]
+  );
+  const filteredEmployees = useMemo(
+    () => selectedEmployee && !matchingEmployees.some((emp) => emp.employee_code === selectedEmployee.employee_code)
+      ? [selectedEmployee, ...matchingEmployees]
+      : matchingEmployees,
+    [matchingEmployees, selectedEmployee]
+  );
+  const matchingCompanyTypes = useMemo(() => companyTypes.filter((ct) =>
+    [
+      ct.code,
+      ct.name,
+      ct.industry,
+      ct.sector,
+    ].some((value) => matchesSearchText(value, deferredCompanyTypeOptionSearch))
+  ), [companyTypes, deferredCompanyTypeOptionSearch]);
+  const selectedCompanyType = useMemo(
+    () => companyTypes.find((ct) => ct.code === newClientForm.industry_code),
+    [companyTypes, newClientForm.industry_code]
+  );
+  const filteredCompanyTypes = useMemo(
+    () => selectedCompanyType && !matchingCompanyTypes.some((ct) => ct.code === selectedCompanyType.code)
+      ? [selectedCompanyType, ...matchingCompanyTypes]
+      : matchingCompanyTypes,
+    [matchingCompanyTypes, selectedCompanyType]
+  );
+  const employeePickerValue = useMemo(
+    () => employeeOptionSearch || (selectedEmployee ? formatEmployeeOption(selectedEmployee) : ''),
+    [employeeOptionSearch, selectedEmployee]
+  );
+  const companyTypePickerValue = useMemo(
+    () => companyTypeOptionSearch || (selectedCompanyType ? formatCompanyTypeOption(selectedCompanyType) : ''),
+    [companyTypeOptionSearch, selectedCompanyType]
+  );
+  const matchingRegionCodes = useMemo(() => regionCodes.filter((region) =>
+    [
+      region.code,
+      region.province_name,
+      region.city_name,
+      region.category3,
+      region.major_category,
+      region.detail_name,
+      region.note,
+    ].some((value) => matchesSearchText(value, deferredRegionOptionSearch))
+  ), [regionCodes, deferredRegionOptionSearch]);
+  const selectedRegion = useMemo(
+    () => regionCodes.find((region) => String(region.code) === String(newClientForm.region_code)),
+    [regionCodes, newClientForm.region_code]
+  );
+  const filteredRegionCodes = useMemo(
+    () => selectedRegion && !matchingRegionCodes.some((region) => String(region.code) === String(selectedRegion.code))
+      ? [selectedRegion, ...matchingRegionCodes]
+      : matchingRegionCodes,
+    [matchingRegionCodes, selectedRegion]
+  );
+  const regionPickerValue = useMemo(
+    () => regionOptionSearch || (selectedRegion ? formatRegionOption(selectedRegion) : ''),
+    [regionOptionSearch, selectedRegion]
+  );
+
+  useEffect(() => {
+    if (!deferredClientSearch.trim()) return;
+
+    setExpandedBranches(prev => new Set([
+      ...prev,
+      ...visibleBranches.map(branch => branch.branch),
+    ]));
+    setExpandedTeams(prev => new Set([
+      ...prev,
+      ...visibleBranches.flatMap(branch => branch.teams.map(team => `${branch.branch}_${team.team}`)),
+    ]));
+    setExpandedEmployees(prev => new Set([
+      ...prev,
+      ...visibleBranches.flatMap(branch =>
+        branch.teams.flatMap(team =>
+          team.employees.map(employee => `${branch.branch}_${team.team}_${employee.employee_name}`)
+        )
+      ),
+    ]));
+  }, [deferredClientSearch, visibleBranches]);
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-3 text-zinc-400">
@@ -876,13 +1206,6 @@ export default function BulkGoalSettingTab() {
       </div>
     );
   }
-
-  const totalEntries = branches.reduce((sum, b) =>
-    sum + b.teams.reduce((teamSum, t) =>
-      teamSum + t.employees.reduce((empSum, e) => empSum + e.clients.length, 0), 0), 0
-  );
-  const totalLastYearWeight = branches.reduce((sum, b) => sum + b.total_last_year_weight, 0);
-  const totalLastYearAmount = branches.reduce((sum, b) => sum + b.total_last_year_amount, 0);
 
   return (
     <div className="space-y-6">
@@ -919,6 +1242,11 @@ export default function BulkGoalSettingTab() {
 
           <div className="flex items-center gap-2 flex-wrap">
             <ExcelDownloadButton
+              label="현황 다운로드"
+              onClick={handleCurrentDataDownload}
+              disabled={branches.length === 0 || isLoading}
+            />
+            <ExcelDownloadButton
               label="템플릿 다운로드"
               onClick={handleTemplateDownload}
               variant="secondary"
@@ -931,6 +1259,37 @@ export default function BulkGoalSettingTab() {
           </div>
         </div>
 
+        <div className="mt-4 relative max-w-xl">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+          <input
+            type="text"
+            value={clientSearch}
+            onChange={(e) => setClientSearch(e.target.value)}
+            placeholder="거래처명, 거래처코드, 담당자, 팀 검색..."
+            className="w-full pl-9 pr-9 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          {clientSearch && (
+            <button
+              type="button"
+              onClick={() => setClientSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+              aria-label="검색어 지우기"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {(isTableSearchPending || clientSearch.trim()) && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+            {isTableSearchPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>
+              {isTableSearchPending
+                ? '검색 중...'
+                : `${visibleEntries}개 결과`}
+            </span>
+          </div>
+        )}
+
         {/* Coverage Summary */}
         <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center justify-between">
@@ -938,7 +1297,7 @@ export default function BulkGoalSettingTab() {
               <div>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">총 항목수</p>
                 <p className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                  {totalEntries}개
+                  {deferredClientSearch.trim() ? `${visibleEntries} / ${totalEntries}개` : `${totalEntries}개`}
                 </p>
               </div>
               <div className="h-12 w-px bg-zinc-200 dark:border-zinc-800" />
@@ -1024,7 +1383,7 @@ export default function BulkGoalSettingTab() {
       </div>
 
       {/* Add Client Panel */}
-      <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+      <div className="relative overflow-visible bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
         <button
           type="button"
           onClick={() => setShowAddPanel(v => !v)}
@@ -1032,7 +1391,7 @@ export default function BulkGoalSettingTab() {
         >
           <div className="flex items-center gap-2">
             <UserPlus className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">고객 추가 (업종분류 · 담당자 지정)</span>
+            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">신규 거래처 생성</span>
           </div>
           {showAddPanel ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronRight className="w-4 h-4 text-zinc-400" />}
         </button>
@@ -1040,111 +1399,341 @@ export default function BulkGoalSettingTab() {
         {showAddPanel && (
           <div className="px-6 pb-6 border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-4">
             <p className="text-xs text-zinc-500">
-              작년 실적이 없는 고객도 업종분류코드와 담당자를 지정해 목표 목록에 추가할 수 있습니다. 거래처 마스터의 담당자·업종분류가 함께 업데이트됩니다.
+              신규 거래처를 생성한 뒤 현재 월 목표 목록에 바로 추가합니다. 담당자 선택값으로 사업소와 팀이 결정됩니다.
             </p>
 
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-              <input
-                type="text"
-                value={clientSearch}
-                onChange={(e) => setClientSearch(e.target.value)}
-                placeholder="거래처명 또는 거래처코드 검색..."
-                className="w-full pl-9 pr-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              />
-              {isSearching && (
-                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-zinc-400" />
-              )}
-            </div>
-
-            {searchResults.length > 0 && (
-              <div className="max-h-48 overflow-y-auto border border-zinc-200 dark:border-zinc-700 rounded-lg divide-y divide-zinc-100 dark:divide-zinc-800">
-                {searchResults.map((client) => (
-                  <button
-                    key={client.client_code}
-                    type="button"
-                    onClick={() => handleSelectSearchResult(client)}
-                    className="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors"
-                  >
-                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{client.client_name}</div>
-                    <div className="text-xs text-zinc-500">
-                      {client.client_code}
-                      {client.industry_name ? ` · ${client.industry_name}` : ''}
-                      {client.employee_name ? ` · ${client.employee_name}` : ''}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {selectedClient && (
-              <div className="p-4 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg space-y-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{selectedClient.client_name}</p>
-                    <p className="text-xs text-zinc-500">{selectedClient.client_code}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedClient(null);
-                      setSelectedIndustryCode('');
-                      setSelectedEmployeeCode('');
+            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700 rounded-lg space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">거래처코드 *</span>
+                  <input
+                    key={`client-code-${newClientTextResetKey}`}
+                    type="text"
+                    defaultValue=""
+                    onChange={(e) => {
+                      newClientCodeRef.current = e.target.value;
                     }}
-                    className="p-1 text-zinc-400 hover:text-zinc-600"
-                    aria-label="선택 해제"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                    placeholder="예: NC00001"
+                    className="mt-1 w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">거래처명 *</span>
+                  <input
+                    key={`client-name-${newClientTextResetKey}`}
+                    type="text"
+                    defaultValue=""
+                    onChange={(e) => {
+                      newClientNameRef.current = e.target.value;
+                    }}
+                    placeholder="거래처명"
+                    className="mt-1 w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                </label>
+
+                <div
+                  className="relative"
+                  onBlur={() => setTimeout(() => setIsEmployeePickerOpen(false), 120)}
+                >
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">담당자 *</span>
+                  <div className="relative mt-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <input
+                      type="text"
+                      value={employeePickerValue}
+                      onFocus={() => setIsEmployeePickerOpen(true)}
+                      onChange={(e) => {
+                        setEmployeeOptionSearch(e.target.value);
+                        setNewClientForm(prev => ({ ...prev, employee_code: '' }));
+                        setIsEmployeePickerOpen(true);
+                      }}
+                      placeholder="담당자명, 코드, 사업소, 팀 검색..."
+                      className="w-full rounded-full border border-zinc-300 bg-white py-2 pl-9 pr-9 text-sm shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-900"
+                    />
+                    {employeePickerValue && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewClientForm(prev => ({ ...prev, employee_code: '' }));
+                          setEmployeeOptionSearch('');
+                          setIsEmployeePickerOpen(true);
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                        aria-label="담당자 선택 지우기"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  {isEmployeePickerOpen && (
+                    <div className="absolute z-50 mt-2 max-h-64 w-full overflow-y-auto rounded-2xl border border-zinc-200 bg-white py-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+                      {isLookupsLoading ? (
+                        <div className="flex items-center gap-2 px-4 py-3 text-sm text-zinc-500">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          불러오는 중...
+                        </div>
+                      ) : isEmployeeSearchPending ? (
+                        <div className="flex items-center gap-2 px-4 py-3 text-sm text-zinc-500">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          검색 중...
+                        </div>
+                      ) : filteredEmployees.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-zinc-500">검색 결과가 없습니다.</div>
+                      ) : (
+                        filteredEmployees.slice(0, 50).map((emp, index) => (
+                          <button
+                            key={`${emp.employee_code}-${emp.employee_name}-${index}`}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setNewClientForm(prev => ({ ...prev, employee_code: emp.employee_code }));
+                              setEmployeeOptionSearch(formatEmployeeOption(emp));
+                              setIsEmployeePickerOpen(false);
+                            }}
+                            className="w-full px-4 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                          >
+                            <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                              <HighlightMatch text={emp.employee_name} query={employeeOptionSearch} />
+                            </div>
+                            <div className="text-xs text-zinc-500">
+                              <HighlightMatch text={[emp.employee_code, emp.branch, emp.team].filter(Boolean).join(' · ')} query={employeeOptionSearch} />
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <label className="block">
-                    <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">업종분류코드</span>
-                    <select
-                      value={selectedIndustryCode}
-                      onChange={(e) => setSelectedIndustryCode(e.target.value)}
-                      className="mt-1 w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800"
-                    >
-                      <option value="">선택...</option>
-                      {companyTypes.map((ct) => (
-                        <option key={ct.code} value={ct.code}>
-                          {ct.code} — {ct.name || ct.industry || '미분류'}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="block">
-                    <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">담당자</span>
-                    <select
-                      value={selectedEmployeeCode}
-                      onChange={(e) => setSelectedEmployeeCode(e.target.value)}
-                      className="mt-1 w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800"
-                    >
-                      <option value="">선택...</option>
-                      {employees.map((emp) => (
-                        <option key={emp.employee_code} value={emp.employee_code}>
-                          {emp.employee_name}
-                          {emp.branch ? ` (${emp.branch}` : ''}
-                          {emp.team ? ` / ${emp.team})` : emp.branch ? ')' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                <div
+                  className="relative"
+                  onBlur={() => setTimeout(() => setIsCompanyTypePickerOpen(false), 120)}
+                >
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">업종분류코드</span>
+                  <div className="relative mt-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <input
+                      type="text"
+                      value={companyTypePickerValue}
+                      onFocus={() => setIsCompanyTypePickerOpen(true)}
+                      onChange={(e) => {
+                        setCompanyTypeOptionSearch(e.target.value);
+                        setNewClientForm(prev => ({ ...prev, industry_code: '' }));
+                        setIsCompanyTypePickerOpen(true);
+                      }}
+                      placeholder="코드, 모빌분류, 산업분류 검색..."
+                      className="w-full rounded-full border border-zinc-300 bg-white py-2 pl-9 pr-9 text-sm shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-900"
+                    />
+                    {companyTypePickerValue && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewClientForm(prev => ({ ...prev, industry_code: '' }));
+                          setCompanyTypeOptionSearch('');
+                          setIsCompanyTypePickerOpen(true);
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                        aria-label="업종분류 선택 지우기"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  {isCompanyTypePickerOpen && (
+                    <div className="absolute z-50 mt-2 max-h-64 w-full overflow-y-auto rounded-2xl border border-zinc-200 bg-white py-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+                      {isLookupsLoading ? (
+                        <div className="flex items-center gap-2 px-4 py-3 text-sm text-zinc-500">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          불러오는 중...
+                        </div>
+                      ) : isCompanyTypeSearchPending ? (
+                        <div className="flex items-center gap-2 px-4 py-3 text-sm text-zinc-500">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          검색 중...
+                        </div>
+                      ) : filteredCompanyTypes.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-zinc-500">검색 결과가 없습니다.</div>
+                      ) : (
+                        filteredCompanyTypes.slice(0, 50).map((ct, index) => (
+                          <button
+                            key={`${ct.code}-${ct.name || ct.industry || '미분류'}-${index}`}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setNewClientForm(prev => ({ ...prev, industry_code: ct.code }));
+                              setCompanyTypeOptionSearch(formatCompanyTypeOption(ct));
+                              setIsCompanyTypePickerOpen(false);
+                            }}
+                            className="w-full px-4 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                          >
+                            <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                              <HighlightMatch text={ct.code} query={companyTypeOptionSearch} />
+                              <span className="text-zinc-400"> - </span>
+                              <HighlightMatch text={ct.name || ct.industry || '미분류'} query={companyTypeOptionSearch} />
+                            </div>
+                            <div className="text-xs text-zinc-500">
+                              <HighlightMatch text={[ct.industry, ct.sector].filter(Boolean).join(' · ')} query={companyTypeOptionSearch} />
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
+                <label className="block">
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">신규일</span>
+                  <input
+                    type="date"
+                    value={newClientForm.new_client_date}
+                    onChange={(e) => setNewClientForm(prev => ({ ...prev, new_client_date: e.target.value }))}
+                    className="mt-1 w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900"
+                  />
+                </label>
+
+                <div
+                  className="relative"
+                  onBlur={() => setTimeout(() => setIsRegionPickerOpen(false), 120)}
+                >
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">지역코드</span>
+                  <div className="relative mt-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <input
+                      type="text"
+                      value={regionPickerValue}
+                      onFocus={() => setIsRegionPickerOpen(true)}
+                      onChange={(e) => {
+                        setRegionOptionSearch(e.target.value);
+                        setNewClientForm(prev => ({ ...prev, region_code: '' }));
+                        setIsRegionPickerOpen(true);
+                      }}
+                      placeholder="지역코드, 시도명, 시군구명 검색..."
+                      className="w-full rounded-full border border-zinc-300 bg-white py-2 pl-9 pr-9 text-sm shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-900"
+                    />
+                    {regionPickerValue && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewClientForm(prev => ({ ...prev, region_code: '' }));
+                          setRegionOptionSearch('');
+                          setIsRegionPickerOpen(true);
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                        aria-label="지역코드 선택 지우기"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  {isRegionPickerOpen && (
+                    <div className="absolute z-50 mt-2 max-h-64 w-full overflow-y-auto rounded-2xl border border-zinc-200 bg-white py-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+                      {isLookupsLoading ? (
+                        <div className="flex items-center gap-2 px-4 py-3 text-sm text-zinc-500">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          불러오는 중...
+                        </div>
+                      ) : isRegionSearchPending ? (
+                        <div className="flex items-center gap-2 px-4 py-3 text-sm text-zinc-500">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          검색 중...
+                        </div>
+                      ) : filteredRegionCodes.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-zinc-500">검색 결과가 없습니다.</div>
+                      ) : (
+                        filteredRegionCodes.slice(0, 50).map((region, index) => (
+                          <button
+                            key={`${region.code}-${index}`}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setNewClientForm(prev => ({ ...prev, region_code: region.code }));
+                              setRegionOptionSearch(formatRegionOption(region));
+                              setIsRegionPickerOpen(false);
+                            }}
+                            className="w-full px-4 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                          >
+                            <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                              <HighlightMatch text={region.code} query={regionOptionSearch} />
+                            </div>
+                            <div className="text-xs text-zinc-500">
+                              <HighlightMatch
+                                text={[
+                                  region.province_name,
+                                  region.city_name,
+                                  region.detail_name,
+                                  region.major_category,
+                                  region.category3,
+                                ].filter(Boolean).join(' · ')}
+                                query={regionOptionSearch}
+                              />
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <label className="block">
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">목표 중량(L)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={newClientForm.target_weight}
+                    onChange={(e) => setNewClientForm(prev => ({ ...prev, target_weight: e.target.value }))}
+                    placeholder="0"
+                    className="mt-1 w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-right focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">목표 금액(원)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="numeric"
+                    value={newClientForm.target_amount}
+                    onChange={(e) => setNewClientForm(prev => ({ ...prev, target_amount: e.target.value }))}
+                    placeholder="0"
+                    className="mt-1 w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-right focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={handleAddClientToGoals}
-                  disabled={isAssigning || !selectedEmployeeCode}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-bold rounded-lg transition-colors"
+                  onClick={() => {
+                    newClientCodeRef.current = '';
+                    newClientNameRef.current = '';
+                    setNewClientTextResetKey(key => key + 1);
+                    setNewClientForm(emptyNewClientForm());
+                    setEmployeeOptionSearch('');
+                    setCompanyTypeOptionSearch('');
+                    setRegionOptionSearch('');
+                    setIsEmployeePickerOpen(false);
+                    setIsCompanyTypePickerOpen(false);
+                    setIsRegionPickerOpen(false);
+                  }}
+                  className="px-3 py-2 text-sm font-medium border border-zinc-300 dark:border-zinc-600 rounded-lg text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  초기화
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateClientForGoals}
+                  disabled={isAssigning || !newClientForm.employee_code}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-bold rounded-lg transition-colors"
                 >
                   {isAssigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                  목표 목록에 추가
+                  생성 후 목표 목록에 추가
                 </button>
               </div>
-            )}
+            </div>
           </div>
         )}
       </div>
@@ -1174,7 +1763,26 @@ export default function BulkGoalSettingTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {branches.map((branch) => {
+              {isTableSearchPending && (
+                <tr>
+                  <td colSpan={9} className="py-10 px-4 text-center">
+                    <div className="inline-flex items-center gap-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      검색 중...
+                    </div>
+                  </td>
+                </tr>
+              )}
+
+              {!isTableSearchPending && visibleBranches.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="py-10 px-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                    검색 조건에 맞는 고객이 없습니다.
+                  </td>
+                </tr>
+              )}
+
+              {!isTableSearchPending && visibleBranches.map((branch) => {
                 const isBranchExpanded = expandedBranches.has(branch.branch);
                 const totalBranchEntries = branch.teams.reduce((sum, t) =>
                   sum + t.employees.reduce((es, e) => es + e.clients.length, 0), 0
@@ -1190,7 +1798,9 @@ export default function BulkGoalSettingTab() {
                       <td className="py-1.5 px-1 w-14 min-w-0 align-middle">
                         <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0">
                           {isBranchExpanded ? <ChevronDown className="w-3 h-3 shrink-0 text-zinc-400" /> : <ChevronRight className="w-3 h-3 shrink-0 text-zinc-400" />}
-                          <span className="font-bold text-xs text-zinc-900 dark:text-zinc-100 break-words">{branch.branch}</span>
+                          <span className="font-bold text-xs text-zinc-900 dark:text-zinc-100 break-words">
+                            <HighlightMatch text={branch.branch} query={deferredClientSearch} />
+                          </span>
                           <span className="text-[10px] leading-tight font-normal text-zinc-500 shrink-0">({totalBranchEntries}개 항목)</span>
                         </div>
                       </td>
@@ -1227,7 +1837,9 @@ export default function BulkGoalSettingTab() {
                             <td className="py-1.5 px-1 w-14 min-w-0 align-middle">
                               <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0">
                                 {isTeamExpanded ? <ChevronDown className="w-3 h-3 shrink-0 text-zinc-400" /> : <ChevronRight className="w-3 h-3 shrink-0 text-zinc-400" />}
-                                <span className="font-semibold text-xs text-zinc-800 dark:text-zinc-200 break-words">{team.team}</span>
+                                <span className="font-semibold text-xs text-zinc-800 dark:text-zinc-200 break-words">
+                                  <HighlightMatch text={team.team} query={deferredClientSearch} />
+                                </span>
                                 <span className="text-[10px] leading-tight text-zinc-500 shrink-0">({team.employees.reduce((s, e) => s + e.clients.length, 0)}개 항목)</span>
                               </div>
                             </td>
@@ -1262,7 +1874,9 @@ export default function BulkGoalSettingTab() {
                                   <td className="py-1.5 px-1 w-16 min-w-0 align-middle">
                                     <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0 pl-1">
                                       {isEmpExpanded ? <ChevronDown className="w-3 h-3 shrink-0 text-zinc-400" /> : <ChevronRight className="w-3 h-3 shrink-0 text-zinc-400" />}
-                                      <span className="font-medium text-xs text-zinc-800 dark:text-zinc-200 break-words">{emp.employee_name}</span>
+                                      <span className="font-medium text-xs text-zinc-800 dark:text-zinc-200 break-words">
+                                        <HighlightMatch text={emp.employee_name} query={deferredClientSearch} />
+                                      </span>
                                       <span className="text-[10px] leading-tight text-zinc-500 shrink-0">({emp.clients.length}개)</span>
                                     </div>
                                   </td>
@@ -1288,16 +1902,29 @@ export default function BulkGoalSettingTab() {
                                     <td className="py-1.5 px-1 w-16" />
                                     <td className="py-1.5 px-1.5 text-xs text-zinc-700 dark:text-zinc-300 min-w-0 break-words pl-2">
                                       <div className="font-medium flex items-center gap-1 flex-wrap">
-                                        {entry.client_name}
+                                        <HighlightMatch text={entry.client_name} query={deferredClientSearch} />
                                         {entry.is_manual && (
-                                          <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                                            추가
+                                          <span
+                                            title="일괄 목표 설정에서 수동 생성한 거래처입니다."
+                                            className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-800"
+                                          >
+                                            목표생성
                                           </span>
                                         )}
                                       </div>
-                                      <div className="text-[10px] text-zinc-400">{entry.client_code}</div>
+                                      <div className="text-[10px] text-zinc-400">
+                                        <HighlightMatch text={entry.client_code} query={deferredClientSearch} />
+                                        {entry.region_code && (
+                                          <>
+                                            <span> · </span>
+                                            <HighlightMatch text={entry.region_code} query={deferredClientSearch} />
+                                          </>
+                                        )}
+                                      </div>
                                       {entry.industry_name && (
-                                        <div className="text-[10px] text-zinc-500">{entry.industry_name}</div>
+                                        <div className="text-[10px] text-zinc-500">
+                                          <HighlightMatch text={entry.industry_name} query={deferredClientSearch} />
+                                        </div>
                                       )}
                                     </td>
                                     <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">

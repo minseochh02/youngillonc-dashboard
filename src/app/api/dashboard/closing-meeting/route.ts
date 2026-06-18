@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { executeSQL, insertRows, updateRows } from '@/egdesk-helpers';
+import { createTable, executeSQL, insertRows, updateRows } from '@/egdesk-helpers';
 import {
   compareEmployees,
   compareOffices,
@@ -44,6 +44,45 @@ const WHERE_EC_BRANCH_OK = `ec.전체사업소 IS NOT NULL AND TRIM(ec.전체사
 
 /** B2C 집계에서 B2B 전용(b2c_팀='B2B')만 제외. `!=`만 쓰면 b2c_팀이 NULL인 행이 SQL에서 통째로 빠짐. */
 const WHERE_B2C_CHANNEL = `(ec.b2c_팀 IS NULL OR ec.b2c_팀 != 'B2B')`;
+
+const sqlEscape = (value: unknown) => String(value ?? '').replace(/'/g, "''");
+const GOAL_SETTING_CLIENTS_TABLE = 'goal_setting_clients';
+
+async function ensureGoalSettingClientsTable() {
+  try {
+    await executeSQL(`SELECT id FROM ${GOAL_SETTING_CLIENTS_TABLE} LIMIT 1`);
+    return;
+  } catch {
+    // Table is local workflow data, separate from the ERP clients master.
+  }
+
+  try {
+    await createTable(
+      '목표설정 신규 거래처',
+      [
+        { name: 'id', type: 'INTEGER' },
+        { name: 'client_code', type: 'TEXT', notNull: true },
+        { name: 'client_name', type: 'TEXT', notNull: true },
+        { name: 'industry_code', type: 'TEXT' },
+        { name: 'employee_code', type: 'TEXT', notNull: true },
+        { name: 'region_code', type: 'TEXT' },
+        { name: 'new_client_date', type: 'TEXT' },
+        { name: 'created_at', type: 'TEXT' },
+      ],
+      {
+        tableName: GOAL_SETTING_CLIENTS_TABLE,
+        description: '일괄 목표 설정에서 생성한 임시/수동 거래처. ERP 거래처 마스터(clients)와 분리 보관.',
+        uniqueKeyColumns: ['client_code'],
+        duplicateAction: 'update',
+      }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/already exists|duplicate|exists/i.test(message)) {
+      throw error;
+    }
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -2090,6 +2129,8 @@ export async function GET(request: Request) {
     }
 
     if (tab === 'goal-setting') {
+      await ensureGoalSettingClientsTable();
+
       const selectedYear = searchParams.get('year') || currentYear.toString();
       const prevYear = (Number(selectedYear) - 1).toString();
       const includeLookups = searchParams.get('includeLookups') === 'true';
@@ -2100,6 +2141,7 @@ export async function GET(request: Request) {
         c.거래처코드 as client_code,
         c.거래처명 as client_name,
         c.업종분류코드 as industry_code,
+        c.지역코드 as region_code,
         ct.모빌분류 as industry_name,
         e.사원_담당_코드 as employee_code,
         e.사원_담당_명 as employee_name,
@@ -2107,7 +2149,8 @@ export async function GET(request: Request) {
         CASE
           WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
           ELSE COALESCE(ec.b2c_팀, '미분류')
-        END as team
+        END as team,
+        0 as is_manual
       `;
 
       if (clientSearch.length >= 1) {
@@ -2117,8 +2160,28 @@ export async function GET(request: Request) {
           LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
           LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
           LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-          WHERE (c.거래처명 LIKE '%${clientSearch}%' OR c.거래처코드 LIKE '%${clientSearch}%')
-          ORDER BY c.거래처명
+          WHERE (c.거래처명 LIKE '%${clientSearch}%' OR c.거래처코드 LIKE '%${clientSearch}%' OR c.지역코드 LIKE '%${clientSearch}%')
+          UNION ALL
+          SELECT
+            gc.client_code as client_code,
+            gc.client_name as client_name,
+            gc.industry_code as industry_code,
+            gc.region_code as region_code,
+            ct.모빌분류 as industry_name,
+            e.사원_담당_코드 as employee_code,
+            e.사원_담당_명 as employee_name,
+            ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
+            CASE
+              WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
+              ELSE COALESCE(ec.b2c_팀, '미분류')
+            END as team,
+            1 as is_manual
+          FROM ${GOAL_SETTING_CLIENTS_TABLE} gc
+          LEFT JOIN company_type ct ON gc.industry_code = ct.업종분류코드
+          LEFT JOIN employees e ON gc.employee_code = e.사원_담당_코드
+          LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+          WHERE (gc.client_name LIKE '%${clientSearch}%' OR gc.client_code LIKE '%${clientSearch}%' OR gc.region_code LIKE '%${clientSearch}%')
+          ORDER BY client_name
           LIMIT 40
         `;
         const searchRes = await executeSQL(searchQuery);
@@ -2134,6 +2197,7 @@ export async function GET(request: Request) {
           ${clientKeyExpr} as client_code,
           c.거래처명 as client_name,
           c.업종분류코드 as industry_code,
+          c.지역코드 as region_code,
           ct.모빌분류 as industry_name,
           e.사원_담당_명 as employee_name,
           ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
@@ -2141,6 +2205,7 @@ export async function GET(request: Request) {
             WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
             ELSE COALESCE(ec.b2c_팀, '미분류')
           END as team,
+          0 as is_manual,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
         FROM (${baseSalesSubquery}) s
@@ -2154,7 +2219,7 @@ export async function GET(request: Request) {
           ${sqlAndEmployeeNotSpecialHandling()}
       ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ${WHERE_EC_BRANCH_OK}
-        GROUP BY month, client_code, client_name, industry_code, industry_name, employee_name, branch, team
+        GROUP BY month, client_code, client_name, industry_code, region_code, industry_name, employee_name, branch, team
         ORDER BY branch, team, employee_name, client_name
       `;
 
@@ -2176,16 +2241,30 @@ export async function GET(request: Request) {
 
       const goalClientsQuery = `
         SELECT DISTINCT
-          ${clientMasterSelect}
+          sg.client_code as client_code,
+          COALESCE(c.거래처명, gc.client_name, sg.client_code) as client_name,
+          COALESCE(c.업종분류코드, gc.industry_code) as industry_code,
+          COALESCE(c.지역코드, gc.region_code) as region_code,
+          ct.모빌분류 as industry_name,
+          e.사원_담당_코드 as employee_code,
+          e.사원_담당_명 as employee_name,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
+          CASE
+            WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
+            ELSE COALESCE(ec.b2c_팀, '미분류')
+          END as team,
+          CASE WHEN gc.client_code IS NOT NULL AND c.거래처코드 IS NULL THEN 1 ELSE 0 END as is_manual
         FROM sales_goals sg
         LEFT JOIN clients c ON sg.client_code = c.거래처코드
-        LEFT JOIN company_type ct ON c.업종분류코드 = ct.업종분류코드
-        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        LEFT JOIN ${GOAL_SETTING_CLIENTS_TABLE} gc ON sg.client_code = gc.client_code
+        LEFT JOIN company_type ct ON COALESCE(c.업종분류코드, gc.industry_code) = ct.업종분류코드
+        LEFT JOIN employees e ON COALESCE(c.담당자코드, gc.employee_code) = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE sg.year = '${selectedYear}'
           ${monthFilter}
           AND sg.client_code IS NOT NULL
           AND TRIM(sg.client_code) != ''
+          AND COALESCE(c.거래처코드, gc.client_code) IS NOT NULL
         ORDER BY branch, team, employee_name, client_name
       `;
       const goalClientsRes = await executeSQL(goalClientsQuery);
@@ -2195,9 +2274,9 @@ export async function GET(request: Request) {
       clientActual.forEach((row: any) => uniqueClients.add(row.client_code));
       goalClients.forEach((row: any) => uniqueClients.add(row.client_code));
 
-      let lookups: { companyTypes: any[]; employees: any[] } | undefined;
+      let lookups: { companyTypes: any[]; employees: any[]; regionCodes: any[] } | undefined;
       if (includeLookups) {
-        const [companyTypesRes, employeesRes] = await Promise.all([
+        const [companyTypesRes, employeesRes, regionCodesRes] = await Promise.all([
           executeSQL(`
             SELECT 업종분류코드 as code, 모빌분류 as name, 산업분류 as industry, 영일분류 as sector
             FROM company_type
@@ -2219,10 +2298,24 @@ export async function GET(request: Request) {
               ${sqlAndEmployeeNotSpecialHandling('e')}
             ORDER BY employee_name
           `),
+          executeSQL(`
+            SELECT
+              지역코드 as code,
+              시도명 as province_name,
+              시군구명 as city_name,
+              "3분류" as category3,
+              대분류 as major_category,
+              지역세분 as detail_name,
+              비고 as note
+            FROM region_code
+            WHERE 지역코드 IS NOT NULL AND TRIM(지역코드) != ''
+            ORDER BY code
+          `),
         ]);
         lookups = {
           companyTypes: companyTypesRes?.rows || [],
           employees: employeesRes?.rows || [],
+          regionCodes: regionCodesRes?.rows || [],
         };
       }
 
@@ -2311,6 +2404,119 @@ export async function POST(request: Request) {
       const client = clientRowRes?.rows?.[0];
       if (!client) {
         return NextResponse.json({ success: false, error: 'Client not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({ success: true, data: { client } });
+    }
+
+    if (body.action === 'create_goal_client') {
+      await ensureGoalSettingClientsTable();
+
+      const rawClient = body.client || {};
+      const year = Number(body.year);
+      const month = String(body.month || '').trim();
+      const clientCode = String(rawClient.client_code || '').trim();
+      const clientName = String(rawClient.client_name || '').trim();
+      const employeeCode = String(rawClient.employee_code || '').trim();
+      const industryCode = String(rawClient.industry_code || '').trim();
+      const newClientDate = String(rawClient.new_client_date || '').trim();
+      const regionCode = String(rawClient.region_code || '').trim();
+      const targetWeight = Number(rawClient.target_weight) || 0;
+      const targetAmount = Number(rawClient.target_amount) || 0;
+
+      if (!clientCode || !clientName || !employeeCode) {
+        return NextResponse.json(
+          { success: false, error: 'client_code, client_name and employee_code are required' },
+          { status: 400 }
+        );
+      }
+
+      const existingClientRes = await executeSQL(`
+        SELECT client_code
+        FROM (
+          SELECT 거래처코드 as client_code FROM clients WHERE 거래처코드 = '${sqlEscape(clientCode)}'
+          UNION ALL
+          SELECT client_code FROM ${GOAL_SETTING_CLIENTS_TABLE} WHERE client_code = '${sqlEscape(clientCode)}'
+        )
+        LIMIT 1
+      `);
+      if ((existingClientRes?.rows || []).length > 0) {
+        return NextResponse.json(
+          { success: false, error: 'Client already exists' },
+          { status: 409 }
+        );
+      }
+
+      const employeeRes = await executeSQL(`
+        SELECT
+          e.사원_담당_코드 as employee_code,
+          e.사원_담당_명 as employee_name,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
+          CASE
+            WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
+            ELSE COALESCE(ec.b2c_팀, '미분류')
+          END as team
+        FROM employees e
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE e.사원_담당_코드 = '${sqlEscape(employeeCode)}'
+        LIMIT 1
+      `);
+      const employee = employeeRes?.rows?.[0];
+      if (!employee) {
+        return NextResponse.json(
+          { success: false, error: 'Employee not found' },
+          { status: 400 }
+        );
+      }
+
+      await insertRows(GOAL_SETTING_CLIENTS_TABLE, [{
+        client_code: clientCode,
+        client_name: clientName,
+        industry_code: industryCode || null,
+        employee_code: employeeCode,
+        region_code: regionCode || null,
+        new_client_date: newClientDate || null,
+        created_at: new Date().toISOString(),
+      }]);
+
+      if (year && month) {
+        await insertRows('sales_goals', [{
+          year,
+          month,
+          client_code: clientCode,
+          target_weight: targetWeight,
+          target_amount: targetAmount,
+        }]);
+      }
+
+      const clientRowRes = await executeSQL(`
+        SELECT
+          gc.client_code as client_code,
+          gc.client_name as client_name,
+          gc.industry_code as industry_code,
+          gc.region_code as region_code,
+          ct.모빌분류 as industry_name,
+          e.사원_담당_코드 as employee_code,
+          e.사원_담당_명 as employee_name,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
+          CASE
+            WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
+            ELSE COALESCE(ec.b2c_팀, '미분류')
+          END as team,
+          ${targetWeight} as target_weight,
+          ${targetAmount} as target_amount,
+          1 as is_manual
+        FROM ${GOAL_SETTING_CLIENTS_TABLE} gc
+        LEFT JOIN company_type ct ON gc.industry_code = ct.업종분류코드
+        LEFT JOIN employees e ON gc.employee_code = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        WHERE gc.client_code = '${sqlEscape(clientCode)}'
+        LIMIT 1
+      `);
+
+      const client = clientRowRes?.rows?.[0];
+      if (!client) {
+        return NextResponse.json({ success: false, error: 'Client not found after create' }, { status: 500 });
       }
 
       return NextResponse.json({ success: true, data: { client } });

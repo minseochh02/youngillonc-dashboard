@@ -35,6 +35,14 @@ const baselineTables = [
     keyColumns: ['거래처코드', '거래처명', '사업소', '담당자명', '업종분류코드', '모빌분류', '산업분류', '영일분류', '오토_대분류', '모빌_대시보드채널'],
   },
   {
+    id: 'region_code',
+    label: '지역코드 (Region Code)',
+    icon: MapPin,
+    description: '지역코드 마스터 - 시도명, 시군구명, 지역세분 등',
+    rowCount: '~256',
+    keyColumns: ['지역코드', '시도명', '시군구명', '지역세분', '대분류', '3분류', '비고'],
+  },
+  {
     id: 'employees',
     label: '사원 (Employees)',
     icon: Users,

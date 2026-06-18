@@ -1,7 +1,6 @@
 import { Metadata } from 'next';
 import BulkGoalSettingTab from '@/components/closing-meeting/BulkGoalSettingTab';
-import { Target, ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
+import { Target } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: '일괄 목표 설정 | 영일온씨',
@@ -15,16 +14,10 @@ export default function BulkGoalSettingPage() {
         {/* Page Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white shadow-lg">
           <div className="flex items-center gap-3 mb-2">
-            <Link
-              href="/dashboard/closing-meeting"
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
             <Target className="w-8 h-8" />
             <h1 className="text-3xl font-bold">일괄 목표 설정</h1>
           </div>
-          <p className="text-blue-100 ml-14">
+          <p className="text-blue-100 ml-11">
             작년 실적을 참고하여 고객별 매출 목표를 빠르게 설정하세요
           </p>
         </div>

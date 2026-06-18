@@ -172,6 +172,19 @@ export async function POST(request: Request) {
           await insertRows('employee_category', [insertPayload]);
         }
       }
+    } else if (tableName === 'region_code') {
+      for (const fr of filteredRows) {
+        const rawId = fr.id;
+        const idNum =
+          rawId != null && rawId !== '' && Number.isFinite(Number(rawId)) ? Number(rawId) : NaN;
+        if (Number.isFinite(idNum)) {
+          const { id: _omitId, ...updates } = fr;
+          await updateRows('region_code', updates, { ids: [idNum] });
+        } else {
+          const { id: _omitId, ...insertPayload } = fr;
+          await insertRows('region_code', [insertPayload]);
+        }
+      }
     } else {
       await insertRows(tableName, filteredRows);
     }
