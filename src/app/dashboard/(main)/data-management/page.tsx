@@ -232,7 +232,9 @@ export default function DataManagementPage() {
 
       try {
         const rebuildResponse = await apiFetch('/api/admin/rebuild-computed-inventory', {
-          method: 'POST'
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fromMonth: `${year}-${String(month + 1).padStart(2, '0')}` })
         });
         const rebuildResult = await rebuildResponse.json();
         if (!rebuildResult.success) {

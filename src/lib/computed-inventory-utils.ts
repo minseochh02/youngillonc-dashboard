@@ -109,12 +109,268 @@ async function clearTable(): Promise<void> {
   }
 }
 
+function getPriorMonth(monthStr: string): string {
+  let [y, m] = monthStr.split('-').map(Number);
+  m--;
+  if (m === 0) {
+    m = 12;
+    y--;
+  }
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+function getMonthsRange(start: string, end: string): string[] {
+  const list: string[] = [];
+  let [sy, sm] = start.split('-').map(Number);
+  const [ey, em] = end.split('-').map(Number);
+  while (sy < ey || (sy === ey && sm <= em)) {
+    list.push(`${sy}-${String(sm).padStart(2, '0')}`);
+    sm++;
+    if (sm > 12) {
+      sm = 1;
+      sy++;
+    }
+  }
+  return list;
+}
+
+async function deleteComputedInventoryFrom(fromMonth: string): Promise<void> {
+  const query = `SELECT id FROM ${TABLE_NAME} WHERE month >= '${fromMonth}'`;
+  const res = await executeSQL(query);
+  const rows = res?.rows || [];
+  const ids = rows.map((r: any) => Number(r.id)).filter((id: number) => Number.isFinite(id));
+  
+  const batchSize = 300;
+  for (let i = 0; i < ids.length; i += batchSize) {
+    await deleteRows(TABLE_NAME, { ids: ids.slice(i, i + batchSize) });
+  }
+}
+
 /**
  * Rebuilds the computed_inventory_monthly table.
- * This is a heavy operation as it recalculates everything from the baseline snapshot.
+ * This is optimized to support incremental rebuild from a given month.
  */
-export async function rebuildComputedInventoryMonthly() {
+export async function rebuildComputedInventoryMonthly(fromMonth?: string) {
   await ensureTable();
+
+  const isValidMonth = typeof fromMonth === 'string' && /^\d{4}-\d{2}$/.test(fromMonth);
+  const isPartialRebuild = isValidMonth && fromMonth! > SNAPSHOT_MONTH;
+
+  if (isPartialRebuild) {
+    // -------------------------------------------------------------
+    // PARTIAL REBUILD LOGIC (Incremental)
+    // -------------------------------------------------------------
+    const startMonth = fromMonth!;
+    const priorMonth = getPriorMonth(startMonth);
+    const priorRes = await executeSQL(`
+      SELECT category, inventory_weight
+      FROM ${TABLE_NAME}
+      WHERE month = '${priorMonth}'
+    `);
+    const priorRows = priorRes?.rows || [];
+
+    if (priorRows.length === CATEGORIES.length) {
+      const startingInventory = new Map<Category, number>();
+      for (const c of CATEGORIES) startingInventory.set(c, 0);
+      priorRows.forEach((r: any) => {
+        startingInventory.set(ensureCategory(String(r.category)), Number(r.inventory_weight) || 0);
+      });
+
+      await deleteComputedInventoryFrom(startMonth);
+
+      const dateFilterClause = `AND p.일자 >= '${startMonth}-01'`;
+      const purchaseMonthlySql = `
+        SELECT
+          substr(p.일자, 1, 7) as month,
+          ${categoryExpr('p')} as category,
+          SUM(CAST(REPLACE(p.중량, ',', '') AS NUMERIC)) as purchase_weight
+        FROM (
+          SELECT p.일자, i.품목그룹1코드, p.중량, p.거래처코드
+          FROM purchases p
+          LEFT JOIN items i ON p.품목코드 = i.품목코드
+          WHERE ${sqlMeetingPurchaseIncludedClientPredicate('p.거래처코드')}
+        ) p
+        WHERE p.일자 IS NOT NULL AND p.일자 != '' AND LENGTH(p.일자) >= 7
+          ${dateFilterClause}
+        GROUP BY 1, 2
+      `;
+
+      const salesDateFilterClause = `AND s.일자 >= '${startMonth}-01'`;
+      const salesMonthlySql = `
+        SELECT
+          substr(s.일자, 1, 7) as month,
+          ${categoryExpr('s')} as category,
+          SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as sales_weight
+        FROM (
+          SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, i.품목그룹1코드
+          FROM sales s
+          LEFT JOIN items i ON s.품목코드 = i.품목코드
+          UNION ALL
+          SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, i.품목그룹1코드
+          FROM east_division_sales s
+          LEFT JOIN items i ON s.품목코드 = i.품목코드
+          UNION ALL
+          SELECT s.일자, s.품목코드, s.중량, s.적요, s.거래처코드, i.품목그룹1코드
+          FROM west_division_sales s
+          LEFT JOIN items i ON s.품목코드 = i.품목코드
+        ) s
+        LEFT JOIN clients c ON s.거래처코드 = c.거래처코드
+        LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
+        WHERE s.일자 IS NOT NULL AND s.일자 != '' AND LENGTH(s.일자) >= 7
+          ${sqlAndEmployeeNotSpecialHandling()}
+          ${sqlAndSalesRemarkNotExact('s.적요')}
+          ${salesDateFilterClause}
+        GROUP BY 1, 2
+      `;
+
+      const internalUseDateFilterClause = `AND u.month_date >= '${startMonth}-01'`;
+      const internalUseMonthlySql = `
+        SELECT
+          substr(u.month_date, 1, 7) as month,
+          ${categoryExpr('u')} as category,
+          SUM(u.weight) as internal_use_weight
+        FROM (
+          SELECT u.일자 as month_date, i.품목그룹1코드, CAST(REPLACE(u.중량, ',', '') AS NUMERIC) as weight
+          FROM internal_uses u
+          LEFT JOIN items i ON u.품목코드 = i.품목코드
+          UNION ALL
+          SELECT u.월_일 as month_date, i.품목그룹1코드, ${weightFromQtyAndSpec('u.수량', 'i.규격정보')} as weight
+          FROM east_internal_uses u
+          LEFT JOIN items i ON u.품목코드 = i.품목코드
+          UNION ALL
+          SELECT u.월_일 as month_date, i.품목그룹1코드, ${weightFromQtyAndSpec('u.수량', 'i.규격정보')} as weight
+          FROM west_internal_uses u
+          LEFT JOIN items i ON u.품목코드 = i.품목코드
+        ) u
+        WHERE u.month_date IS NOT NULL AND u.month_date != '' AND LENGTH(u.month_date) >= 7
+          ${internalUseDateFilterClause}
+        GROUP BY 1, 2
+      `;
+
+      const disposedDateFilterClause = `AND d.month_date >= '${startMonth}-01'`;
+      const disposedMonthlySql = `
+        SELECT
+          substr(d.month_date, 1, 7) as month,
+          ${categoryExpr('d')} as category,
+          SUM(d.weight) as disposed_weight
+        FROM (
+          SELECT d.일자 as month_date, i.품목그룹1코드, ${weightFromQtyAndSpec('d.수량', 'i.규격정보')} as weight
+          FROM disposed_inventory d
+          LEFT JOIN items i ON d.품목코드 = i.품목코드
+          UNION ALL
+          SELECT d.일자 as month_date, i.품목그룹1코드, CAST(REPLACE(d.중량, ',', '') AS NUMERIC) as weight
+          FROM east_disposed_inventory d
+          LEFT JOIN items i ON d.품목코드 = i.품목코드
+        ) d
+        WHERE d.month_date IS NOT NULL AND d.month_date != '' AND LENGTH(d.month_date) >= 7
+          ${disposedDateFilterClause}
+        GROUP BY 1, 2
+      `;
+
+      const [purRes, salesRes, internalRes, disposedRes] = await Promise.all([
+        executeSQL(purchaseMonthlySql),
+        executeSQL(salesMonthlySql),
+        executeSQL(internalUseMonthlySql),
+        executeSQL(disposedMonthlySql),
+      ]);
+
+      const purchaseByMonthCat = new Map<string, number>();
+      const salesByMonthCat = new Map<string, number>();
+      const internalUseByMonthCat = new Map<string, number>();
+      const disposedByMonthCat = new Map<string, number>();
+      const key = (m: string, c: Category) => `${m}\t${c}`;
+
+      for (const row of purRes?.rows || []) {
+        const m = String(row.month);
+        const c = ensureCategory(String(row.category));
+        purchaseByMonthCat.set(key(m, c), Number(row.purchase_weight) || 0);
+      }
+      for (const row of salesRes?.rows || []) {
+        const m = String(row.month);
+        const c = ensureCategory(String(row.category));
+        salesByMonthCat.set(key(m, c), Number(row.sales_weight) || 0);
+      }
+      for (const row of internalRes?.rows || []) {
+        const m = String(row.month);
+        const c = ensureCategory(String(row.category));
+        internalUseByMonthCat.set(key(m, c), Number(row.internal_use_weight) || 0);
+      }
+      for (const row of disposedRes?.rows || []) {
+        const m = String(row.month);
+        const c = ensureCategory(String(row.category));
+        disposedByMonthCat.set(key(m, c), Number(row.disposed_weight) || 0);
+      }
+
+      let maxMonth = startMonth;
+      const checkMax = (rows: any[]) => {
+        rows.forEach((r) => {
+          if (r.month && String(r.month) > maxMonth) {
+            maxMonth = String(r.month);
+          }
+        });
+      };
+      checkMax(purRes?.rows || []);
+      checkMax(salesRes?.rows || []);
+      checkMax(internalRes?.rows || []);
+      checkMax(disposedRes?.rows || []);
+
+      const months = getMonthsRange(startMonth, maxMonth);
+
+      const currentInventory = new Map<Category, number>(startingInventory);
+      const rowsToInsert: Array<Record<string, any>> = [];
+      const now = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+      months.forEach((m) => {
+        for (const c of CATEGORIES) {
+          const pur = purchaseByMonthCat.get(key(m, c)) || 0;
+          const sales = salesByMonthCat.get(key(m, c)) || 0;
+          const internalUse = internalUseByMonthCat.get(key(m, c)) || 0;
+          const disposed = disposedByMonthCat.get(key(m, c)) || 0;
+          const net = pur - sales - internalUse - disposed;
+
+          const prevInv = currentInventory.get(c) || 0;
+          const inv = prevInv + net;
+          currentInventory.set(c, inv);
+
+          rowsToInsert.push({
+            month: m,
+            month_end_date: monthEndDate(m),
+            category: c,
+            purchase_weight: pur,
+            sales_weight: sales,
+            internal_use_weight: internalUse,
+            disposed_weight: disposed,
+            net_weight: net,
+            inventory_weight: inv,
+            snapshot_month: SNAPSHOT_MONTH,
+            snapshot_date: SNAPSHOT_IMPORTED_AT,
+            computed_at: now,
+          });
+        }
+      });
+
+      const batchSize = 300;
+      for (let i = 0; i < rowsToInsert.length; i += batchSize) {
+        await insertRows(TABLE_NAME, rowsToInsert.slice(i, i + batchSize));
+      }
+
+      return {
+        table: TABLE_NAME,
+        rowsInserted: rowsToInsert.length,
+        months: months.length,
+        categories: CATEGORIES.length,
+        snapshotMonth: SNAPSHOT_MONTH,
+        snapshotDate: SNAPSHOT_IMPORTED_AT,
+        isIncremental: true,
+      };
+    } else {
+      console.warn(`[computed-inventory-utils] Prior month ${priorMonth} data incomplete or missing. Falling back to full rebuild.`);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // FULL REBUILD LOGIC (Original backwards/forwards computation)
+  // -------------------------------------------------------------
   await clearTable();
 
   const snapshotSql = `
@@ -146,6 +402,7 @@ export async function rebuildComputedInventoryMonthly() {
     WHERE p.일자 IS NOT NULL AND p.일자 != '' AND LENGTH(p.일자) >= 7
     GROUP BY 1, 2
   `;
+
   const salesMonthlySql = `
     SELECT
       substr(s.일자, 1, 7) as month,
@@ -323,5 +580,6 @@ export async function rebuildComputedInventoryMonthly() {
     categories: CATEGORIES.length,
     snapshotMonth: SNAPSHOT_MONTH,
     snapshotDate: SNAPSHOT_IMPORTED_AT,
+    isIncremental: false,
   };
 }

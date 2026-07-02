@@ -1,6 +1,6 @@
 /**
  * EGDesk User Data Configuration
- * Generated at: 2026-07-02T01:40:23.481Z
+ * Generated at: 2026-07-02T08:43:42.013Z
  *
  * This file contains type-safe definitions for your EGDesk tables.
  */
@@ -56,7 +56,7 @@ export const TABLES = {
     name: 'drive_file_events',
     displayName: 'Drive File Events',
     description: 'Logs all Google Drive file change events',
-    rowCount: 0,
+    rowCount: 19,
     columnCount: 12,
     columns: ['id', 'file_id', 'file_name', 'mime_type', 'folder_id', 'event_type', 'modified_time', 'detected_at', 'downloaded', 'download_path', 'file_size', 'metadata']
   } as TableDefinition,
@@ -85,7 +85,7 @@ export const TABLES = {
   table9: {
     name: 'east_internal_uses',
     displayName: '동부자가사용',
-    rowCount: 229,
+    rowCount: 232,
     columnCount: 14,
     columns: ['id', '월_일', '월_일_번호', '사용유형', '적요', '품목코드', '품목명', '수량', '사용자지정_숫자형_1', '입고단가', '원가', '담당자코드명', '창고명', '품목그룹3코드']
   } as TableDefinition,
@@ -171,42 +171,42 @@ export const TABLES = {
   table20: {
     name: 'east_division_purchases',
     displayName: '동부구매현황',
-    rowCount: 5695,
+    rowCount: 5739,
     columnCount: 13,
     columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '단가', '중량', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
   table21: {
     name: 'east_division_sales',
     displayName: '동부판매현황',
-    rowCount: 41607,
+    rowCount: 41869,
     columnCount: 15,
     columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
   } as TableDefinition,
   table22: {
     name: 'west_division_purchases',
     displayName: '서부구매현황',
-    rowCount: 7510,
+    rowCount: 7554,
     columnCount: 13,
     columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
   table23: {
     name: 'west_division_sales',
     displayName: '서부판매현황',
-    rowCount: 54291,
+    rowCount: 54745,
     columnCount: 15,
     columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
   } as TableDefinition,
   table24: {
     name: 'purchases',
     displayName: '구매현황',
-    rowCount: 130316,
+    rowCount: 130630,
     columnCount: 13,
     columns: ['id', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
   table25: {
     name: 'sales',
     displayName: '판매현황',
-    rowCount: 611598,
+    rowCount: 612217,
     columnCount: 15,
     columns: ['id', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
   } as TableDefinition,
@@ -241,7 +241,7 @@ export const TABLES = {
   table30: {
     name: 'pending_purchases',
     displayName: '미구매현황',
-    rowCount: 1780,
+    rowCount: 1805,
     columnCount: 12,
     columns: ['id', '일자', '품목코드', '수량', '잔량', '잔량_중량_', '단가', '합계', '납기일자', '거래처코드', '창고명', '품목별납기일자']
   } as TableDefinition,
@@ -263,7 +263,7 @@ export const TABLES = {
     name: 'ledger',
     displayName: '계정별원장',
     description: 'Exact schema from 계정별원장-거래처코드포함2.xlsx',
-    rowCount: 35989,
+    rowCount: 38972,
     columnCount: 13,
     columns: ['id', '일자', '최초작성일자', '최종수정일자', '어음만기일자', '거래유형', '적요', '계정코드', '거래처코드', '차변금액', '대변금액', '잔액', 'imported_at']
   } as TableDefinition,
@@ -277,14 +277,14 @@ export const TABLES = {
   table35: {
     name: 'promissory_notes',
     displayName: '받을어음거래내역',
-    rowCount: 400,
+    rowCount: 449,
     columnCount: 13,
     columns: ['id', '일자', '증감구분', '어음번호', '거래처코드', '계정명', '부서명', '프로젝트명', '적요', '증가금액', '감소금액', '잔액', 'imported_at']
   } as TableDefinition,
   table36: {
     name: 'purchase_orders',
     displayName: '발주서현황',
-    rowCount: 3300,
+    rowCount: 3446,
     columnCount: 10,
     columns: ['id', '일자', '품목코드', '창고코드', '품목그룹1코드', '수량', '단가', '합계', '거래처코드', '적요']
   } as TableDefinition,
@@ -299,7 +299,7 @@ export const TABLES = {
     name: 'employee_activity_log',
     displayName: '직원활동로그',
     description: 'Individual activities extracted from KakaoTalk messages',
-    rowCount: 41668,
+    rowCount: 48083,
     columnCount: 16,
     columns: ['id', 'source_message_id', 'employee_name', 'activity_date', 'activity_type', 'activity_label', 'customer', 'location', 'products', 'outcome', 'issue_severity', 'action_taken', 'resolved_by', 'chat_room', 'extracted_at', 'confidence_score']
   } as TableDefinition,
@@ -307,7 +307,7 @@ export const TABLES = {
     name: 'kakaotalk_raw_messages',
     displayName: '카카오톡원본메시지',
     description: 'Raw KakaoTalk messages with multi-line support',
-    rowCount: 6103,
+    rowCount: 7143,
     columnCount: 5,
     columns: ['id', 'chat_room', 'chat_date', 'user_name', 'message']
   } as TableDefinition,
@@ -357,14 +357,14 @@ export const TABLES = {
   table46: {
     name: 'inventory_transfers',
     displayName: '창고이동현황',
-    rowCount: 331,
+    rowCount: 339,
     columnCount: 13,
     columns: ['id', '일자', '일자_번호', '출고창고명', '입고창고명', '품목명_규격', '수량', '중량', '금액_수량_입고단가', '품목그룹1코드', '품목그룹3코드', '적요', 'imported_at']
   } as TableDefinition,
   table47: {
     name: 'internal_uses',
     displayName: '자가사용현황',
-    rowCount: 117,
+    rowCount: 122,
     columnCount: 15,
     columns: ['id', '일자', '일자_번호', '사용유형', '적요', '품목코드', '품명_및_규격', '수량', '중량', '입고단가', '원가', '담당자코드명', '창고명', '품목그룹3코드', 'imported_at']
   } as TableDefinition

@@ -18,8 +18,13 @@ config({ path: '.env.local' });
 import { rebuildComputedInventoryMonthly } from '../src/lib/computed-inventory-utils';
 
 async function main() {
-  console.log('Starting rebuild-computed-inventory-monthly...');
-  const result = await rebuildComputedInventoryMonthly();
+  const fromMonth = process.argv[2];
+  if (fromMonth) {
+    console.log(`Starting rebuild-computed-inventory-monthly from month ${fromMonth}...`);
+  } else {
+    console.log('Starting rebuild-computed-inventory-monthly (full rebuild)...');
+  }
+  const result = await rebuildComputedInventoryMonthly(fromMonth);
   console.log(JSON.stringify(result, null, 2));
   console.log('Rebuild complete.');
 }
