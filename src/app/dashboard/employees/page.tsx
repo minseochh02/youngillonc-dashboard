@@ -271,7 +271,11 @@ export default function EmployeesPage() {
       const trackerDataJson = await trackerRes.json();
       
       // 2. Load summary data (companies and products)
-      const summaryParams = new URLSearchParams({ employee: name });
+      const summaryParams = new URLSearchParams({
+        employee: name,
+        startDate,
+        endDate
+      });
       const summaryRes = await apiFetch(`/api/employee-summary?${summaryParams}`);
       const summaryDataJson = await summaryRes.json();
 
@@ -725,8 +729,8 @@ export default function EmployeesPage() {
               {activeTab === 'tracker' && (
                 <div className="space-y-6 max-w-5xl">
                   {/* Tracker Controls with Cycle Thresholds */}
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
-                    <div className="flex min-w-0 items-center bg-white py-2 px-3 rounded-lg border border-gray-200">
+                  <div className="flex flex-col md:flex-row md:items-center gap-3">
+                    <div className="flex shrink-0 items-center bg-white py-2 px-3 rounded-lg border border-gray-200">
                       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [-webkit-overflow-scrolling:touch]">
                         <div className="flex shrink-0 items-center gap-1.5">
                           <Calendar className="h-3.5 w-3.5 text-gray-400" />
@@ -761,7 +765,7 @@ export default function EmployeesPage() {
                       </div>
                     </div>
 
-                    <div className="flex min-w-0 items-center bg-white py-1.5 px-2.5 rounded-lg border border-gray-200">
+                    <div className="flex shrink-0 items-center bg-white py-1.5 px-2.5 rounded-lg border border-gray-200 w-fit">
                       <div className="flex min-w-0 flex-1 items-center gap-x-1 gap-y-0.5 overflow-x-auto text-[9px] leading-none sm:overflow-visible">
                         <span className="shrink-0 font-medium text-gray-500">기준</span>
                         <span className="shrink-0 text-gray-300" aria-hidden>·</span>
@@ -917,85 +921,129 @@ export default function EmployeesPage() {
                 </div>
               )}
 
-              {activeTab === 'issues' && (
-                <div className="max-w-5xl">
-                  <div className="space-y-4">
-                    {loadingDetails ? (
-                      <div className="text-center py-12 text-gray-500">로딩 중...</div>
-                    ) : calendarActivities.filter(a => a.activity_type === 'issue').length > 0 ? (
-                      calendarActivities
-                        .filter(a => a.activity_type === 'issue')
-                        .sort((a, b) => b.activity_date.localeCompare(a.activity_date))
-                        .map((issue, idx) => (
-                          <div key={idx} className="bg-white p-6 rounded-2xl border-l-4 border-red-500 shadow-sm hover:shadow-md transition-all">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-3 mb-2">
-                                  <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-black uppercase tracking-wider">
-                                    Issue
-                                  </span>
-                                  {issue.issue_severity && (
-                                    <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
-                                      issue.issue_severity === 'high' ? 'bg-red-200 text-red-800' :
-                                      issue.issue_severity === 'medium' ? 'bg-orange-200 text-orange-800' :
-                                      'bg-yellow-200 text-yellow-800'
-                                    }`}>
-                                      {issue.issue_severity}
-                                    </span>
-                                  )}
-                                  <span className="text-sm font-bold text-gray-500">
-                                    {formatDate(issue.activity_date)}
-                                  </span>
-                                </div>
-                                <h3 className="text-sm font-bold text-gray-900 mb-2">{issue.activity_label}</h3>
-                                <p className="text-xs text-gray-700 leading-relaxed mb-3">
-                                  {issue.activity_summary}
-                                </p>
-                                <div className="space-y-2">
-                                  {issue.customer_name && (
-                                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                                      <Building2 className="w-4 h-4" />
-                                      <span className="font-bold">{issue.customer_name}</span>
-                                    </div>
-                                  )}
-                                  {issue.action_taken && (
-                                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                                      <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">Action Taken</p>
-                                      <p className="text-xs text-gray-900">{issue.action_taken}</p>
-                                    </div>
-                                  )}
-                                  {issue.resolved_by && (
-                                    <div className="bg-green-50 border border-green-100 rounded-lg p-3">
-                                      <p className="text-xs font-bold text-green-600 uppercase tracking-wider mb-1">Resolved By</p>
-                                      <p className="text-xs text-gray-900">{issue.resolved_by}</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            {issue.products_mentioned && issue.products_mentioned.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
-                                {issue.products_mentioned.map((p: string, pIdx: number) => (
-                                  <span key={pIdx} className="bg-gray-100 px-3 py-1 rounded-lg text-xs font-bold text-gray-700">
-                                    {p}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))
-                    ) : (
-                      <div className="text-center py-24 bg-white rounded-3xl border-2 border-dashed border-gray-200">
-                        <AlertTriangle className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-                        <p className="text-gray-500 font-bold">보고된 이슈가 없습니다.</p>
+              {activeTab === 'issues' && (() => {
+                const filteredIssues = calendarActivities.filter(
+                  a => a.activity_type === 'issue' && a.activity_date >= startDate && a.activity_date <= endDate
+                );
+                return (
+                  <div className="max-w-5xl space-y-4">
+                    {/* Date Range Picker */}
+                    <div className="flex shrink-0 items-center bg-white py-1.5 px-3 rounded-lg border border-gray-200 shadow-sm max-w-sm">
+                      <div className="flex items-center gap-1.5 w-full">
+                        <Calendar className="h-3.5 w-3.5 text-gray-400" />
+                        <input 
+                          type="date" 
+                          value={startDate} 
+                          onChange={(e) => setStartDate(e.target.value)}
+                          className="h-7 w-[8.25rem] shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-xs text-gray-900 [color-scheme:light] focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                        />
+                        <span className="shrink-0 text-xs font-bold text-gray-400">~</span>
+                        <input 
+                          type="date" 
+                          value={endDate} 
+                          onChange={(e) => setEndDate(e.target.value)}
+                          className="h-7 w-[8.25rem] shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-xs text-gray-900 [color-scheme:light] focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                        />
                       </div>
-                    )}
+                    </div>
+
+                    <div className="space-y-4">
+                      {loadingDetails ? (
+                        <div className="text-center py-12 text-gray-500">로딩 중...</div>
+                      ) : filteredIssues.length > 0 ? (
+                        filteredIssues
+                          .sort((a, b) => b.activity_date.localeCompare(a.activity_date))
+                          .map((issue, idx) => (
+                            <div key={idx} className="bg-white p-6 rounded-2xl border-l-4 border-red-500 shadow-sm hover:shadow-md transition-all">
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3 mb-2">
+                                    <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-black uppercase tracking-wider">
+                                      Issue
+                                    </span>
+                                    {issue.issue_severity && (
+                                      <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                                        issue.issue_severity === 'high' ? 'bg-red-200 text-red-800' :
+                                        issue.issue_severity === 'medium' ? 'bg-orange-200 text-orange-800' :
+                                        'bg-yellow-200 text-yellow-800'
+                                      }`}>
+                                        {issue.issue_severity}
+                                      </span>
+                                    )}
+                                    <span className="text-sm font-bold text-gray-500">
+                                      {formatDate(issue.activity_date)}
+                                    </span>
+                                  </div>
+                                  <h3 className="text-sm font-bold text-gray-900 mb-2">{issue.activity_label}</h3>
+                                  <p className="text-xs text-gray-700 leading-relaxed mb-3">
+                                    {issue.activity_summary}
+                                  </p>
+                                  <div className="space-y-2">
+                                    {issue.customer_name && (
+                                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                                        <Building2 className="w-4 h-4" />
+                                        <span className="font-bold">{issue.customer_name}</span>
+                                      </div>
+                                    )}
+                                    {issue.action_taken && (
+                                      <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                                        <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">Action Taken</p>
+                                        <p className="text-xs text-gray-900">{issue.action_taken}</p>
+                                      </div>
+                                    )}
+                                    {issue.resolved_by && (
+                                      <div className="bg-green-50 border border-green-100 rounded-lg p-3">
+                                        <p className="text-xs font-bold text-green-600 uppercase tracking-wider mb-1">Resolved By</p>
+                                        <p className="text-xs text-gray-900">{issue.resolved_by}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              {issue.products_mentioned && issue.products_mentioned.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
+                                  {issue.products_mentioned.map((p: string, pIdx: number) => (
+                                    <span key={pIdx} className="bg-gray-100 px-3 py-1 rounded-lg text-xs font-bold text-gray-700">
+                                      {p}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))
+                      ) : (
+                        <div className="text-center py-24 bg-white rounded-3xl border-2 border-dashed border-gray-200">
+                          <AlertTriangle className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                          <p className="text-gray-500 font-bold">보고된 이슈가 없습니다.</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {activeTab === 'companies' && (
-                <div className="max-w-5xl">
+                <div className="max-w-5xl space-y-4">
+                  {/* Date Range Picker */}
+                  <div className="flex shrink-0 items-center bg-white py-1.5 px-3 rounded-lg border border-gray-200 shadow-sm max-w-sm">
+                    <div className="flex items-center gap-1.5 w-full">
+                      <Calendar className="h-3.5 w-3.5 text-gray-400" />
+                      <input 
+                        type="date" 
+                        value={startDate} 
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="h-7 w-[8.25rem] shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-xs text-gray-900 [color-scheme:light] focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      />
+                      <span className="shrink-0 text-xs font-bold text-gray-400">~</span>
+                      <input 
+                        type="date" 
+                        value={endDate} 
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="h-7 w-[8.25rem] shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-xs text-gray-900 [color-scheme:light] focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      />
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {summaryData.companies.map((company, idx) => (
                       <button
@@ -1026,7 +1074,27 @@ export default function EmployeesPage() {
               )}
 
               {activeTab === 'products' && (
-                <div className="max-w-5xl">
+                <div className="max-w-5xl space-y-4">
+                  {/* Date Range Picker */}
+                  <div className="flex shrink-0 items-center bg-white py-1.5 px-3 rounded-lg border border-gray-200 shadow-sm max-w-sm">
+                    <div className="flex items-center gap-1.5 w-full">
+                      <Calendar className="h-3.5 w-3.5 text-gray-400" />
+                      <input 
+                        type="date" 
+                        value={startDate} 
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="h-7 w-[8.25rem] shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-xs text-gray-900 [color-scheme:light] focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      />
+                      <span className="shrink-0 text-xs font-bold text-gray-400">~</span>
+                      <input 
+                        type="date" 
+                        value={endDate} 
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="h-7 w-[8.25rem] shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-xs text-gray-900 [color-scheme:light] focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      />
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {summaryData.products.map((product, idx) => (
                       <button

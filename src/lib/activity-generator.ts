@@ -214,6 +214,10 @@ EXCLUDE these activities (don't extract):
 
 Extract ALL OTHER activities from these messages and return them as a JSON array. Each activity should be a separate object.
 
+IMPORTANT: employee_name must be EXACTLY ONE person — never a comma-separated list. If several people
+collaborate on the same activity (e.g. a joint/accompanied visit "동행 방문", or team work), emit a
+SEPARATE activity object for EACH person, duplicating the activity details with that person's name.
+
 Activity types:
 - completed_task: Something they did today
 - planned_task: Something they plan to do (look for "내일", "예정", "방문 예정")
@@ -226,7 +230,7 @@ Return JSON array (extract metadata ONLY, do NOT rewrite the message):
 [
   {
     "message_ids": [array of message IDs this activity spans - can be multiple if split messages or conversation],
-    "employee_name": "person doing the activity",
+    "employee_name": "the SINGLE person doing the activity (exactly one name, never a list)",
     "activity_type": "completed_task|planned_task|issue|meeting|other",
     "activity_label": "short label (2-4 words max, e.g., '고객 방문', '미팅', '납품', '문제 보고')",
     "customer": "customer/company name extracted from message or null",

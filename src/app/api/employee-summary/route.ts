@@ -4,6 +4,8 @@ import { executeSQL } from '@/egdesk-helpers';
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const employeeName = searchParams.get('employee');
+  const startDate = searchParams.get('startDate');
+  const endDate = searchParams.get('endDate');
 
   if (!employeeName) {
     return NextResponse.json({
@@ -13,6 +15,14 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    let dateFilter = '';
+    if (startDate) {
+      dateFilter += ` AND activity_date >= '${startDate}'`;
+    }
+    if (endDate) {
+      dateFilter += ` AND activity_date <= '${endDate}'`;
+    }
+
     // 1. Get unique customers and their visit counts
     const customersQuery = `
       SELECT
@@ -23,6 +33,7 @@ export async function GET(request: NextRequest) {
       WHERE employee_name = '${employeeName}'
         AND customer IS NOT NULL
         AND customer != ''
+        ${dateFilter}
       GROUP BY customer
       ORDER BY visit_count DESC
     `;
@@ -36,6 +47,7 @@ export async function GET(request: NextRequest) {
         AND products IS NOT NULL
         AND products != '[]'
         AND products != ''
+        ${dateFilter}
     `;
 
     const [customersResult, productsRawResult] = await Promise.all([
