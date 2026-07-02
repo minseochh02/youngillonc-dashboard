@@ -14,12 +14,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeSQL, insertRows, updateRows } from '../../../../../egdesk-helpers';
 import { createDriveClient, getStartPageToken } from '../../../../lib/google-drive-client';
+import { snapshotTargetFolders } from '../../../../lib/drive-webhook-processor';
 
 export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
     const reset = searchParams.get('reset') === 'true';
     const folderIdsParam = searchParams.get('folderIds');
+    // Snapshot existing folder contents on init (default on). Pass
+    // ?snapshot=false to only register the forward-only change cursor.
+    const snapshot = searchParams.get('snapshot') !== 'false';
 
     // Get target folder IDs from query param or env var
     const envFolderIds = process.env.DRIVE_TARGET_FOLDER_IDS;
@@ -93,10 +97,24 @@ export async function GET(req: NextRequest) {
 
     console.log(`✅ Sync state initialized with ${targetFolderIds.length} target folder(s)`);
 
+    // Snapshot existing folder contents. The page token above was captured
+    // BEFORE this runs, so anything that changes mid-snapshot is still picked
+    // up by the change stream (and deduped against what we log here).
+    let snapshotResult = null;
+    if (snapshot) {
+      try {
+        snapshotResult = await snapshotTargetFolders();
+      } catch (error: any) {
+        console.error('❌ Snapshot failed (sync state still initialized):', error);
+        snapshotResult = { error: error.message };
+      }
+    }
+
     return NextResponse.json({
       status: 'initialized',
       pageToken: pageToken.substring(0, 20) + '...',
       targetFolderIds,
+      snapshot: snapshotResult,
       message: 'Drive sync initialized successfully. Next: Register webhook with POST /api/drive/watch'
     });
 

@@ -12,10 +12,13 @@ import {
   createDriveClient,
   listChanges,
   isFileInTargetFolders,
+  listFolderContentsAll,
   downloadFile,
   getFileMetadata,
   deleteFileFromDrive
 } from './google-drive-client';
+
+const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 import { processEMLFile, updateDeletionStatus, InsertResult } from './eml-processor';
 import { generateActivitiesForDateRange } from './activity-generator';
 
@@ -105,6 +108,19 @@ export async function logFileEvent(
   ]);
 
   console.log(`📝 Logged ${eventType} event: ${fileName} (${fileId})`);
+}
+
+/**
+ * Check whether a file already has an event logged (any event type).
+ * Used to make the snapshot idempotent so re-running init does not
+ * re-process / re-download files that were already captured.
+ */
+export async function hasFileEvent(fileId: string): Promise<boolean> {
+  const escapedFileId = fileId.replace(/'/g, "''");
+  const result = await executeSQL(
+    `SELECT 1 FROM drive_file_events WHERE file_id = '${escapedFileId}' LIMIT 1`
+  );
+  return !!(result.rows && result.rows.length > 0);
 }
 
 /**
@@ -369,6 +385,65 @@ async function triggerActivityGeneration(
 }
 
 /**
+ * Process a file that is known to live in a target folder.
+ *
+ * Logs the event, downloads the file when appropriate, and kicks off EML
+ * processing in the background. Shared by the change stream (processFileChange)
+ * and the init-time snapshot (snapshotTargetFolders).
+ *
+ * @returns whether the file was logged and whether it was downloaded
+ */
+async function processTargetFile(
+  drive: drive_v3.Drive,
+  file: drive_v3.Schema$File,
+  eventType: 'created' | 'modified'
+): Promise<{ logged: boolean; downloaded: boolean }> {
+  const fileId = file.id;
+  if (!fileId) {
+    return { logged: false, downloaded: false };
+  }
+
+  // Get parent folder ID
+  const folderId = file.parents && file.parents.length > 0 ? file.parents[0] : undefined;
+
+  // Log the event
+  await logFileEvent(fileId, file.name || 'Unknown', eventType, {
+    mimeType: file.mimeType || undefined,
+    folderId,
+    modifiedTime: file.modifiedTime || undefined,
+    fileSize: file.size ? parseInt(file.size) : undefined
+  });
+
+  let downloaded = false;
+
+  // Download file if appropriate
+  if (shouldDownloadFile(file.mimeType)) {
+    try {
+      const downloadPath = getDownloadPath(fileId, file.name || 'unknown');
+      await downloadFile(drive, fileId, downloadPath);
+      await markFileDownloaded(fileId, downloadPath);
+      downloaded = true;
+
+      // Process EML files automatically
+      if (shouldProcessEML(file.mimeType, file.name || '')) {
+        console.log(`📧 Detected EML file: ${file.name}`);
+
+        // Process in background (don't await to avoid blocking)
+        processEMLInBackground(drive, fileId, downloadPath, file.name || 'unknown')
+          .catch(error => {
+            console.error(`❌ Background EML processing failed:`, error);
+          });
+      }
+    } catch (error: any) {
+      console.error(`❌ Failed to download file ${fileId}: ${error.message}`);
+      // Continue processing other files even if download fails
+    }
+  }
+
+  return { logged: true, downloaded };
+}
+
+/**
  * Process a single file change
  */
 async function processFileChange(
@@ -401,39 +476,7 @@ async function processFileChange(
   // If file's creation time is close to modification time, it's likely new
   const eventType: 'created' | 'modified' = 'modified'; // Simplified for now
 
-  // Get parent folder ID
-  const folderId = file.parents && file.parents.length > 0 ? file.parents[0] : undefined;
-
-  // Log the event
-  await logFileEvent(fileId, file.name || 'Unknown', eventType, {
-    mimeType: file.mimeType || undefined,
-    folderId,
-    modifiedTime: file.modifiedTime || undefined,
-    fileSize: file.size ? parseInt(file.size) : undefined
-  });
-
-  // Download file if appropriate
-  if (shouldDownloadFile(file.mimeType)) {
-    try {
-      const downloadPath = getDownloadPath(fileId, file.name || 'unknown');
-      await downloadFile(drive, fileId, downloadPath);
-      await markFileDownloaded(fileId, downloadPath);
-
-      // Process EML files automatically
-      if (shouldProcessEML(file.mimeType, file.name || '')) {
-        console.log(`📧 Detected EML file: ${file.name}`);
-
-        // Process in background (don't await to avoid blocking)
-        processEMLInBackground(drive, fileId, downloadPath, file.name || 'unknown')
-          .catch(error => {
-            console.error(`❌ Background EML processing failed:`, error);
-          });
-      }
-    } catch (error: any) {
-      console.error(`❌ Failed to download file ${fileId}: ${error.message}`);
-      // Continue processing other files even if download fails
-    }
-  }
+  await processTargetFile(drive, file, eventType);
 }
 
 /**
@@ -514,4 +557,103 @@ export async function processChanges(): Promise<{
     filesLogged,
     filesDownloaded
   };
+}
+
+/**
+ * Snapshot the current contents of all target folders.
+ *
+ * The change stream (getStartPageToken / processChanges) is forward-only: it
+ * only sees changes made AFTER the sync state was initialized. Files that
+ * already exist in the target folders at init time would otherwise never be
+ * processed. This walks every target folder (recursing into sub-folders) and
+ * runs each existing file through the same log/download/EML pipeline.
+ *
+ * Idempotent: files already present in drive_file_events are skipped, so it is
+ * safe to run on reset/re-init or alongside the change stream (overlap is
+ * deduped here and, for EML messages, again at the message level).
+ */
+export async function snapshotTargetFolders(): Promise<{
+  filesFound: number;
+  filesLogged: number;
+  filesDownloaded: number;
+  filesSkipped: number;
+}> {
+  console.log('📸 Snapshotting current target folder contents...');
+
+  const state = await getSyncState();
+  if (!state) {
+    throw new Error('Sync state not initialized. Run /api/drive/init first.');
+  }
+
+  const targetFolderIds = parseTargetFolderIds(state);
+  if (targetFolderIds.length === 0) {
+    console.log('⚠️  No target folders configured. Skipping snapshot.');
+    return { filesFound: 0, filesLogged: 0, filesDownloaded: 0, filesSkipped: 0 };
+  }
+
+  console.log(`📂 Snapshotting folders: ${targetFolderIds.join(', ')}`);
+
+  const drive = createDriveClient();
+  let filesFound = 0;
+  let filesLogged = 0;
+  let filesDownloaded = 0;
+  let filesSkipped = 0;
+
+  // Breadth-first walk through target folders and their sub-folders.
+  const visited = new Set<string>();
+  const queue: string[] = [...targetFolderIds];
+
+  while (queue.length > 0) {
+    const folderId = queue.shift()!;
+    if (visited.has(folderId)) {
+      continue; // Guard against cycles / shared sub-folders
+    }
+    visited.add(folderId);
+
+    let entries: drive_v3.Schema$File[];
+    try {
+      entries = await listFolderContentsAll(drive, folderId);
+    } catch (error: any) {
+      console.error(`❌ Failed to list folder ${folderId}: ${error.message}`);
+      continue; // Skip this folder but keep snapshotting the rest
+    }
+
+    for (const file of entries) {
+      // Recurse into sub-folders
+      if (file.mimeType === FOLDER_MIME_TYPE) {
+        if (file.id) {
+          queue.push(file.id);
+        }
+        continue;
+      }
+
+      if (!file.id) {
+        continue;
+      }
+
+      filesFound++;
+
+      try {
+        // Skip files already captured (idempotent re-runs / stream overlap)
+        if (await hasFileEvent(file.id)) {
+          filesSkipped++;
+          continue;
+        }
+
+        const { logged, downloaded } = await processTargetFile(drive, file, 'created');
+        if (logged) filesLogged++;
+        if (downloaded) filesDownloaded++;
+      } catch (error: any) {
+        console.error(`❌ Error snapshotting file ${file.id}: ${error.message}`);
+        // Continue with next file
+      }
+    }
+  }
+
+  console.log(
+    `✅ Snapshot complete: ${filesFound} found, ${filesLogged} logged, ` +
+    `${filesDownloaded} downloaded, ${filesSkipped} already known`
+  );
+
+  return { filesFound, filesLogged, filesDownloaded, filesSkipped };
 }

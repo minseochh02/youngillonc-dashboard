@@ -27,6 +27,8 @@ interface ClientGoalData {
   target_amount?: number;
   goal_id?: number;
   is_manual?: boolean;
+  new_client_date?: string;
+  created_at?: string;
 }
 
 interface CompanyTypeOption {
@@ -361,6 +363,7 @@ export default function BulkGoalSettingTab() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [customGrowthRate, setCustomGrowthRate] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [manualClients, setManualClients] = useState<ClientGoalData[]>([]);
 
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [companyTypes, setCompanyTypes] = useState<CompanyTypeOption[]>([]);
@@ -477,6 +480,24 @@ export default function BulkGoalSettingTab() {
           });
         });
 
+        // Load all manually created temporary clients so they exist in the grid even if they have 0 goal
+        result.data.manualClients?.forEach((row: any) => {
+          if (!row.client_code) return;
+          upsertClientEntry(clientMap, {
+            client_code: row.client_code,
+            client_name: row.client_name || row.client_code,
+            employee_name: row.employee_name || '미분류',
+            branch: row.branch || '미분류',
+            team: row.team || '미분류',
+            industry_code: row.industry_code,
+            industry_name: row.industry_name,
+            region_code: row.region_code,
+            last_year_weight: 0,
+            last_year_amount: 0,
+            is_manual: true,
+          });
+        });
+
         result.data.goals?.forEach((g: any) => {
           const monthPart = g.month?.split('-')[1] || g.month;
           if (monthPart === selectedMonth) {
@@ -499,6 +520,8 @@ export default function BulkGoalSettingTab() {
             }
           }
         });
+
+        setManualClients(result.data.manualClients || []);
 
         if (displayOrder.ready) {
           applyBranchGroups(buildBranchGroups(clientMap, displayOrder));
@@ -582,7 +605,6 @@ export default function BulkGoalSettingTab() {
       }
 
       const client = result.data.client;
-      addClientToGrid(client);
       newClientCodeRef.current = '';
       newClientNameRef.current = '';
       setNewClientTextResetKey(key => key + 1);
@@ -593,6 +615,7 @@ export default function BulkGoalSettingTab() {
       setClientSearch('');
       setMessage({ type: 'success', text: `${client.client_name} 거래처가 생성되어 목표 목록에 추가되었습니다.` });
       setTimeout(() => setMessage(null), 3000);
+      await fetchBulkGoalData();
     } catch (error) {
       console.error('Failed to create client:', error);
       const text = error instanceof Error && error.message.includes('already exists')
@@ -602,6 +625,36 @@ export default function BulkGoalSettingTab() {
       setTimeout(() => setMessage(null), 3000);
     } finally {
       setIsAssigning(false);
+    }
+  };
+
+  const handleDeleteClient = async (clientCode: string) => {
+    if (!confirm(`거래처 코드 [${clientCode}]를 삭제하시겠습니까? 등록된 해당 거래처의 목표 데이터도 모두 삭제됩니다.`)) {
+      return;
+    }
+
+    try {
+      const response = await apiFetch('/api/dashboard/closing-meeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_goal_client',
+          client_code: clientCode,
+        }),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setMessage({ type: 'success', text: '신규 거래처가 성공적으로 삭제되었습니다.' });
+        setTimeout(() => setMessage(null), 3000);
+        await fetchBulkGoalData();
+      } else {
+        throw new Error(result.error || '삭제 실패');
+      }
+    } catch (error) {
+      console.error('Failed to delete manual client:', error);
+      setMessage({ type: 'error', text: '거래처 삭제 중 오류가 발생했습니다.' });
+      setTimeout(() => setMessage(null), 3000);
     }
   };
 
@@ -1734,6 +1787,51 @@ export default function BulkGoalSettingTab() {
                 </button>
               </div>
             </div>
+
+            {/* Registered Manual Clients List */}
+            {manualClients.length > 0 && (
+              <div className="mt-6 border-t border-zinc-200 dark:border-zinc-800 pt-6 space-y-3">
+                <h4 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">등록된 신규 거래처 목록</h4>
+                <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-800 rounded-lg">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-zinc-50 dark:bg-zinc-800/45 text-zinc-500 font-bold uppercase">
+                      <tr>
+                        <th className="py-2 px-3">거래처코드</th>
+                        <th className="py-2 px-3">거래처명</th>
+                        <th className="py-2 px-3">담당자</th>
+                        <th className="py-2 px-3">사업소/팀</th>
+                        <th className="py-2 px-3">업종</th>
+                        <th className="py-2 px-3">지역</th>
+                        <th className="py-2 px-3">신규일</th>
+                        <th className="py-2 px-3 text-center">삭제</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                      {manualClients.map((client) => (
+                        <tr key={client.client_code} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30">
+                          <td className="py-2 px-3 font-mono font-medium">{client.client_code}</td>
+                          <td className="py-2 px-3 font-medium">{client.client_name}</td>
+                          <td className="py-2 px-3">{client.employee_name}</td>
+                          <td className="py-2 px-3 text-zinc-500">{client.branch} / {client.team}</td>
+                          <td className="py-2 px-3 text-zinc-500">{client.industry_name || client.industry_code || '-'}</td>
+                          <td className="py-2 px-3 text-zinc-500">{client.region_code || '-'}</td>
+                          <td className="py-2 px-3 text-zinc-500">{client.new_client_date || '-'}</td>
+                          <td className="py-2 px-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteClient(client.client_code)}
+                              className="px-2 py-1 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 rounded transition-colors"
+                            >
+                              삭제
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

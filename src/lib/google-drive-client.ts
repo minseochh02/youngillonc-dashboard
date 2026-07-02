@@ -62,6 +62,41 @@ export async function listFolderContents(
 }
 
 /**
+ * List ALL contents of a folder, following pagination.
+ *
+ * Unlike listFolderContents, this returns every non-trashed entry (including
+ * sub-folders, identified by mimeType 'application/vnd.google-apps.folder') so
+ * callers can recurse. Used for the init-time snapshot of existing files.
+ */
+export async function listFolderContentsAll(
+  drive: drive_v3.Drive,
+  folderId: string,
+  pageSize: number = 100
+): Promise<drive_v3.Schema$File[]> {
+  const files: drive_v3.Schema$File[] = [];
+  let pageToken: string | undefined = undefined;
+
+  try {
+    do {
+      const response: any = await drive.files.list({
+        q: `'${folderId}' in parents and trashed = false`,
+        pageSize,
+        pageToken,
+        fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, size, parents)',
+        orderBy: 'modifiedTime desc'
+      });
+
+      files.push(...(response.data.files || []));
+      pageToken = response.data.nextPageToken || undefined;
+    } while (pageToken);
+
+    return files;
+  } catch (error: any) {
+    throw new Error(`Failed to list folder contents: ${error.message}`);
+  }
+}
+
+/**
  * Get file metadata
  */
 export async function getFileMetadata(

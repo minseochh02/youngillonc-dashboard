@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createTable, executeSQL, insertRows, updateRows } from '@/egdesk-helpers';
+import { createTable, deleteRows, executeSQL, insertRows, updateRows } from '@/egdesk-helpers';
 import {
   compareEmployees,
   compareOffices,
@@ -2235,6 +2235,30 @@ export async function GET(request: Request) {
       const goalsRes = await executeSQL(goalsQuery);
       const goals = goalsRes?.rows || [];
 
+      const manualClientsQuery = `
+        SELECT
+          gc.client_code as client_code,
+          gc.client_name as client_name,
+          gc.industry_code as industry_code,
+          gc.region_code as region_code,
+          ct.모빌분류 as industry_name,
+          e.사원_담당_코드 as employee_code,
+          e.사원_담당_명 as employee_name,
+          ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
+          CASE
+            WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
+            ELSE COALESCE(ec.b2c_팀, '미분류')
+          END as team,
+          gc.new_client_date as new_client_date
+        FROM ${GOAL_SETTING_CLIENTS_TABLE} gc
+        LEFT JOIN company_type ct ON gc.industry_code = ct.업종분류코드
+        LEFT JOIN employees e ON gc.employee_code = e.사원_담당_코드
+        LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
+        ORDER BY gc.new_client_date DESC
+      `;
+      const manualClientsRes = await executeSQL(manualClientsQuery);
+      const manualClients = manualClientsRes?.rows || [];
+
       const monthFilter = selectedMonthParam
         ? `AND printf('%02d', CAST(sg.month AS INTEGER)) = printf('%02d', CAST('${selectedMonthParam}' AS INTEGER))`
         : '';
@@ -2325,6 +2349,7 @@ export async function GET(request: Request) {
           clientActual,
           goalClients,
           goals,
+          manualClients,
           uniqueClients: Array.from(uniqueClients),
           lookups,
           year: selectedYear,
@@ -2520,6 +2545,24 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ success: true, data: { client } });
+    }
+
+    if (body.action === 'delete_goal_client') {
+      await ensureGoalSettingClientsTable();
+      const { client_code } = body;
+      if (!client_code) {
+        return NextResponse.json({ success: false, error: 'client_code is required' }, { status: 400 });
+      }
+
+      await deleteRows(GOAL_SETTING_CLIENTS_TABLE, {
+        filters: { client_code: String(client_code) }
+      });
+
+      await deleteRows('sales_goals', {
+        filters: { client_code: String(client_code) }
+      });
+
+      return NextResponse.json({ success: true });
     }
 
     // Handle save_goal action (single goal save)

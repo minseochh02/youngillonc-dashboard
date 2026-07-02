@@ -9,6 +9,13 @@ export async function GET(request: NextRequest) {
   const branchesParam = searchParams.get('branches') || '';
   const selectedBranches = branchesParam ? branchesParam.split(',').filter(Boolean) : [];
 
+  // ar_baselines snapshots each client's receivable as of this date. The running
+  // balance starts from that baseline, so only ledger movements ON OR AFTER it may
+  // be accumulated — earlier rows (e.g. Jan 2026) are already baked into the
+  // baseline and would double-count. Keeps this drill-down consistent with the
+  // summary route. See scratch/verify_hwaseong_feb.ts.
+  const BASELINE_DATE = '2026-02-01';
+
   // Parse the selected month
   const [year, monthNum] = month.split('-').map(Number);
   
@@ -82,7 +89,7 @@ export async function GET(request: NextRequest) {
         LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
         LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
         WHERE l.계정코드 = '1089'
-          AND l.일자 >= '${startDateStr}'
+          AND l.일자 >= '${startDateStr > BASELINE_DATE ? startDateStr : BASELINE_DATE}'
           AND l.일자 <= '${endDateStr}'
           ${branchFilter}
         GROUP BY c.거래처코드, strftime('%Y-%m', l.일자)

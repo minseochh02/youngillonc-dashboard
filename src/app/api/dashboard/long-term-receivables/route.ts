@@ -9,6 +9,13 @@ export async function GET(request: NextRequest) {
   const branchesParam = searchParams.get('branches') || '';
   const selectedBranches = branchesParam ? branchesParam.split(',').filter(Boolean) : [];
 
+  // ar_baselines snapshots each client's receivable balance as of this date.
+  // Ledger movements must be summed ONLY from this date forward — counting
+  // earlier (January) rows double-counts activity already baked into the
+  // baseline. Verified: with this bound, 화성 Feb AR reproduces the company's
+  // reported 2,023,638,205 exactly. See scratch/verify_hwaseong_feb.ts.
+  const BASELINE_DATE = '2026-02-01';
+
   // Parse the selected month
   const [year, monthNum] = month.split('-').map(Number);
   
@@ -116,7 +123,7 @@ export async function GET(request: NextRequest) {
           JOIN clients c ON l.거래처코드 = c.거래처코드
           LEFT JOIN employees e ON c.담당자코드 = e.사원_담당_코드
           LEFT JOIN employee_category ec ON e.사원_담당_명 = ec.담당자
-          WHERE l.계정코드 = '1089' AND l.일자 <= '${endDate}'
+          WHERE l.계정코드 = '1089' AND l.일자 >= '${BASELINE_DATE}' AND l.일자 <= '${endDate}'
           GROUP BY c.거래처코드
         ) t ON all_codes.client_code = t.client_code
         LEFT JOIN (
