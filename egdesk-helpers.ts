@@ -1625,6 +1625,121 @@ export async function callLocalAgent(prompt: string, options: LocalAgentCallOpti
 }
 
 // ==========================================
+// AI Caller (MCP) — Gemini with token tracking
+// ==========================================
+
+/**
+ * Call EGDesk AI Caller MCP tool (Gemini API with token usage tracking).
+ *
+ * Every call is logged to SQLite for rate/cost tracking.
+ *
+ * - Server: `POST {apiUrl}/ai-caller/tools/call`
+ * - Client: `POST /api/ai-caller` via apiFetch (see app/api/ai-caller/route.ts)
+ */
+export async function callAiCallerTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const body = JSON.stringify({ tool: toolName, arguments: args });
+
+  const isServer = typeof window === 'undefined';
+
+  let response: Response;
+  if (isServer) {
+    const apiUrl =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_URL) ||
+      EGDESK_CONFIG.apiUrl;
+    response = await fetch(`${apiUrl}/ai-caller/tools/call`, {
+      method: 'POST',
+      headers: buildServerEgdeskHeaders(),
+      body
+    });
+  } else {
+    response = await apiFetch('/api/ai-caller', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+  }
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+/** Known API key names discovered at setup time from EGDesk AI Keys Manager */
+export const AI_KEY_NAMES = ['01ONC'] as const;
+
+export type AiCallerCallOptions = {
+  systemPrompt?: string;
+  model?: string;
+  temperature?: number;
+  maxOutputTokens?: number;
+  caller?: string;
+  responseSchema?: Record<string, any>;
+  /** Base64 strings (raw or data URLs) */
+  images?: string[];
+  /** Absolute paths — images, text files, .pdf, .docx, video (same rules as filesystem MCP) */
+  filePaths?: string[];
+  /** Inline file uploads when callers cannot use filePaths */
+  files?: Array<{
+    name: string;
+    content: string;
+    encoding?: 'utf8' | 'base64';
+    mimeType?: string;
+  }>;
+  /** Select a specific Google API key by name (as saved in EGDesk AI Keys Manager). Leave empty to use the default key. */
+  keyName?: '01ONC' | (string & {});
+};
+
+/**
+ * Call Gemini and log token usage. Returns the AI response plus a usage summary.
+ * Supports images, filePaths, and inline files (documents, text, video frames).
+ */
+export async function callAiCaller(prompt: string, options: AiCallerCallOptions = {}) {
+  return callAiCallerTool('ai_caller_call', { prompt, ...options });
+}
+
+export type AiCallerUsageOptions = {
+  caller?: string;
+  model?: string;
+  since?: string;
+  until?: string;
+  groupBy?: 'caller' | 'model' | 'day' | 'hour';
+};
+
+/**
+ * Get aggregated token usage stats. Supports filtering and grouping.
+ */
+export async function getAiCallerUsage(options: AiCallerUsageOptions = {}) {
+  return callAiCallerTool('ai_caller_get_usage', options);
+}
+
+export type AiCallerLogsOptions = {
+  caller?: string;
+  model?: string;
+  since?: string;
+  limit?: number;
+};
+
+/**
+ * Get raw AI call log entries, newest first.
+ */
+export async function getAiCallerLogs(options: AiCallerLogsOptions = {}) {
+  return callAiCallerTool('ai_caller_get_logs', options);
+}
+
+export type AiCallerModelsResult = {
+  models: string[];
+  defaultModel: string;
+};
+
+/**
+ * List Gemini models available for text generation, fetched live from the Google API via EGDesk.
+ */
+export async function listAiCallerModels(): Promise<AiCallerModelsResult> {
+  return callAiCallerTool('ai_caller_list_models', {});
+}
+
+// ==========================================
 // PageIndex (MCP) — PDF RAG
 // ==========================================
 
