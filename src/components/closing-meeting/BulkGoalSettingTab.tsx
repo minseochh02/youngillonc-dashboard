@@ -10,6 +10,12 @@ import { withIncludeVat } from '@/lib/vat-query';
 import { ExcelDownloadButton } from '@/components/ExcelDownloadButton';
 import { ExcelUploadButton } from '@/components/ExcelUploadButton';
 import { generateFilename, exportToExcel } from '@/lib/excel-export';
+import {
+  GOAL_CATEGORY_ORDER,
+  GOAL_CATEGORY_TYPE,
+  normalizeGoalCategory,
+  type GoalProductCategory,
+} from '@/lib/sales-goals-categories';
 import * as XLSX from 'xlsx';
 
 interface ClientGoalData {
@@ -18,6 +24,7 @@ interface ClientGoalData {
   employee_name: string;
   branch: string;
   team: string;
+  category: GoalProductCategory;
   industry_code?: string;
   industry_name?: string;
   region_code?: string;
@@ -76,6 +83,7 @@ interface NewClientForm {
   employee_code: string;
   new_client_date: string;
   region_code: string;
+  category: GoalProductCategory;
   target_weight: string;
   target_amount: string;
 }
@@ -119,9 +127,14 @@ const emptyNewClientForm = (): NewClientForm => ({
   employee_code: '',
   new_client_date: todayIsoDate(),
   region_code: '',
+  category: '기타',
   target_weight: '',
   target_amount: '',
 });
+
+function goalRowKey(clientCode: string, category: string) {
+  return `${clientCode}\t${normalizeGoalCategory(category)}`;
+}
 
 const KOREAN_INITIALS = [
   'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ',
@@ -166,13 +179,18 @@ function formatRegionOption(region: RegionOption) {
   return suffix ? `${region.code} - ${suffix}` : region.code;
 }
 
-function upsertClientEntry(map: Map<string, ClientGoalData>, row: Partial<ClientGoalData> & { client_code: string }) {
-  const key = row.client_code;
+function upsertClientEntry(
+  map: Map<string, ClientGoalData>,
+  row: Partial<ClientGoalData> & { client_code: string; category?: string }
+) {
+  const category = normalizeGoalCategory(row.category);
+  const key = goalRowKey(row.client_code, category);
   const existing = map.get(key);
   if (existing) {
     map.set(key, {
       ...existing,
       ...row,
+      category,
       last_year_weight: row.last_year_weight ?? existing.last_year_weight,
       last_year_amount: row.last_year_amount ?? existing.last_year_amount,
     });
@@ -184,6 +202,7 @@ function upsertClientEntry(map: Map<string, ClientGoalData>, row: Partial<Client
     employee_name: row.employee_name || '미분류',
     branch: row.branch || '미분류',
     team: row.team || '미분류',
+    category,
     industry_code: row.industry_code,
     industry_name: row.industry_name,
     region_code: row.region_code,
@@ -220,7 +239,11 @@ function buildBranchGroups(
       const employees: EmployeeGroup[] = [];
 
       empMap.forEach((clients, employeeName) => {
-        const sortedClients = clients.sort((a, b) => a.client_name.localeCompare(b.client_name));
+        const sortedClients = clients.sort((a, b) => {
+          const nameCmp = a.client_name.localeCompare(b.client_name);
+          if (nameCmp !== 0) return nameCmp;
+          return GOAL_CATEGORY_ORDER.indexOf(a.category) - GOAL_CATEGORY_ORDER.indexOf(b.category);
+        });
         employees.push({
           employee_name: employeeName,
           clients: sortedClients,
@@ -274,6 +297,7 @@ function filterBranchGroups(branches: BranchGroup[], query: string): BranchGroup
                 [
                   client.client_code,
                   client.client_name,
+                  client.category,
                   client.region_code,
                   client.industry_name,
                   employee.employee_name,
@@ -455,6 +479,7 @@ export default function BulkGoalSettingTab() {
               employee_name: a.employee_name || '미분류',
               branch: a.branch || '미분류',
               team: a.team || '미분류',
+              category: a.category,
               industry_code: a.industry_code,
               industry_name: a.industry_name,
               region_code: a.region_code,
@@ -465,14 +490,18 @@ export default function BulkGoalSettingTab() {
           }
         });
 
+        // Goal-only / manual clients: seed a placeholder row (기타) so they appear before category goals attach
         result.data.goalClients?.forEach((row: any) => {
           if (!row.client_code) return;
+          const hasAny = Array.from(clientMap.keys()).some((k) => k.startsWith(`${row.client_code}\t`));
+          if (hasAny) return;
           upsertClientEntry(clientMap, {
             client_code: row.client_code,
             client_name: row.client_name || row.client_code,
             employee_name: row.employee_name || '미분류',
             branch: row.branch || '미분류',
             team: row.team || '미분류',
+            category: '기타',
             industry_code: row.industry_code,
             industry_name: row.industry_name,
             region_code: row.region_code,
@@ -480,15 +509,17 @@ export default function BulkGoalSettingTab() {
           });
         });
 
-        // Load all manually created temporary clients so they exist in the grid even if they have 0 goal
         result.data.manualClients?.forEach((row: any) => {
           if (!row.client_code) return;
+          const hasAny = Array.from(clientMap.keys()).some((k) => k.startsWith(`${row.client_code}\t`));
+          if (hasAny) return;
           upsertClientEntry(clientMap, {
             client_code: row.client_code,
             client_name: row.client_name || row.client_code,
             employee_name: row.employee_name || '미분류',
             branch: row.branch || '미분류',
             team: row.team || '미분류',
+            category: '기타',
             industry_code: row.industry_code,
             industry_name: row.industry_name,
             region_code: row.region_code,
@@ -500,24 +531,32 @@ export default function BulkGoalSettingTab() {
 
         result.data.goals?.forEach((g: any) => {
           const monthPart = g.month?.split('-')[1] || g.month;
-          if (monthPart === selectedMonth) {
-            const existing = clientMap.get(g.client_code);
-            if (existing) {
-              existing.target_weight = g.target_weight;
-              existing.target_amount = g.target_amount;
-              existing.goal_id = g.id;
-            } else {
-              upsertClientEntry(clientMap, {
-                client_code: g.client_code,
-                client_name: g.client_code,
-                employee_name: '미분류',
-                branch: '미분류',
-                team: '미분류',
-                target_weight: g.target_weight,
-                target_amount: g.target_amount,
-                goal_id: g.id,
-              });
-            }
+          if (monthPart !== selectedMonth || !g.client_code) return;
+          const category = normalizeGoalCategory(g.category);
+          const key = goalRowKey(g.client_code, category);
+          const existing = clientMap.get(key);
+          if (existing) {
+            existing.target_weight = g.target_weight;
+            existing.target_amount = g.target_amount;
+            existing.goal_id = g.id;
+          } else {
+            // Prefer master info from any other category row for this client
+            const sibling = Array.from(clientMap.values()).find((c) => c.client_code === g.client_code);
+            upsertClientEntry(clientMap, {
+              client_code: g.client_code,
+              client_name: sibling?.client_name || g.client_code,
+              employee_name: sibling?.employee_name || '미분류',
+              branch: sibling?.branch || '미분류',
+              team: sibling?.team || '미분류',
+              category,
+              industry_code: sibling?.industry_code,
+              industry_name: sibling?.industry_name,
+              region_code: sibling?.region_code,
+              target_weight: g.target_weight,
+              target_amount: g.target_amount,
+              goal_id: g.id,
+              is_manual: sibling?.is_manual,
+            });
           }
         });
 
@@ -534,12 +573,12 @@ export default function BulkGoalSettingTab() {
     }
   };
 
-  const addClientToGrid = useCallback((client: ClientSearchResult & { is_manual?: boolean }) => {
+  const addClientToGrid = useCallback((client: ClientSearchResult & { is_manual?: boolean; category?: string }) => {
     const clientMap = new Map<string, ClientGoalData>();
     branches.forEach(branch => {
       branch.teams.forEach(team => {
         team.employees.forEach(emp => {
-          emp.clients.forEach(c => clientMap.set(c.client_code, { ...c }));
+          emp.clients.forEach(c => clientMap.set(goalRowKey(c.client_code, c.category), { ...c }));
         });
       });
     });
@@ -547,6 +586,7 @@ export default function BulkGoalSettingTab() {
     upsertClientEntry(clientMap, {
       client_code: client.client_code,
       client_name: client.client_name || client.client_code,
+      category: normalizeGoalCategory(client.category),
       employee_name: client.employee_name || '미분류',
       branch: client.branch || '미분류',
       team: client.team || '미분류',
@@ -593,6 +633,7 @@ export default function BulkGoalSettingTab() {
             employee_code: newClientForm.employee_code,
             new_client_date: newClientForm.new_client_date || todayIsoDate(),
             region_code: newClientForm.region_code.trim() || undefined,
+            category: newClientForm.category,
             target_weight: Number.isFinite(targetWeight) ? targetWeight : 0,
             target_amount: Number.isFinite(targetAmount) ? targetAmount : 0,
           },
@@ -658,8 +699,8 @@ export default function BulkGoalSettingTab() {
     }
   };
 
-  const goalEditKey = (entry: Pick<ClientGoalData, 'client_code'>) =>
-    `${entry.client_code}_${selectedMonth}`;
+  const goalEditKey = (entry: Pick<ClientGoalData, 'client_code' | 'category'>) =>
+    `${entry.client_code}_${entry.category}_${selectedMonth}`;
 
   const updateClientEntry = (
     branches: BranchGroup[],
@@ -673,7 +714,7 @@ export default function BulkGoalSettingTab() {
         employees: team.employees.map(emp => ({
           ...emp,
           clients: emp.clients.map(client =>
-            client.client_code === entry.client_code
+            client.client_code === entry.client_code && client.category === entry.category
               ? { ...client, ...patch }
               : client
           )
@@ -719,6 +760,8 @@ export default function BulkGoalSettingTab() {
           year,
           month: selectedMonth,
           client_code: entry.client_code,
+          category_type: GOAL_CATEGORY_TYPE,
+          category: entry.category,
           target_weight: goalWeight,
           target_amount: goalAmount
         }),
@@ -760,6 +803,8 @@ export default function BulkGoalSettingTab() {
                   year,
                   month: selectedMonth,
                   client_code: entry.client_code,
+                  category_type: GOAL_CATEGORY_TYPE,
+                  category: entry.category,
                   target_weight: goalWeight,
                   target_amount: goalAmount
                 });
@@ -875,6 +920,7 @@ export default function BulkGoalSettingTab() {
               '담당자': emp.employee_name,
               '거래처코드': entry.client_code,
               '거래처명': entry.client_name,
+              '제품군': entry.category,
               '작년중량(L)': entry.last_year_weight,
               '작년금액': entry.last_year_amount,
               '목표중량(L)': edited?.weight ?? entry.target_weight ?? 0,
@@ -917,24 +963,28 @@ export default function BulkGoalSettingTab() {
         employee_name: string;
         branch: string;
         team: string;
+        category: GoalProductCategory;
         monthlyData: { [month: string]: { last_year_weight: number; last_year_amount: number; target_weight?: number; target_amount?: number } };
       }>();
 
       result.data.clientActual?.forEach((a: any) => {
         const monthPart = a.month?.split('-')[1] || a.month;
         if (a.client_code) {
-          if (!clientMap.has(a.client_code)) {
-            clientMap.set(a.client_code, {
+          const category = normalizeGoalCategory(a.category);
+          const key = goalRowKey(a.client_code, category);
+          if (!clientMap.has(key)) {
+            clientMap.set(key, {
               client_code: a.client_code,
               client_name: a.client_name || a.client_code,
               employee_name: a.employee_name || '미분류',
               branch: a.branch || '미분류',
               team: a.team || '미분류',
+              category,
               monthlyData: {}
             });
           }
 
-          const entry = clientMap.get(a.client_code)!;
+          const entry = clientMap.get(key)!;
           if (!entry.monthlyData[monthPart]) {
             entry.monthlyData[monthPart] = { last_year_weight: 0, last_year_amount: 0 };
           }
@@ -945,20 +995,33 @@ export default function BulkGoalSettingTab() {
 
       result.data.goals?.forEach((g: any) => {
         const monthPart = g.month?.split('-')[1] || g.month;
-        const existing = clientMap.get(g.client_code);
-        if (existing) {
-          if (!existing.monthlyData[monthPart]) {
-            existing.monthlyData[monthPart] = { last_year_weight: 0, last_year_amount: 0 };
-          }
-          existing.monthlyData[monthPart].target_weight = g.target_weight;
-          existing.monthlyData[monthPart].target_amount = g.target_amount;
+        if (!g.client_code) return;
+        const category = normalizeGoalCategory(g.category);
+        const key = goalRowKey(g.client_code, category);
+        let existing = clientMap.get(key);
+        if (!existing) {
+          const sibling = Array.from(clientMap.values()).find((c) => c.client_code === g.client_code);
+          existing = {
+            client_code: g.client_code,
+            client_name: sibling?.client_name || g.client_code,
+            employee_name: sibling?.employee_name || '미분류',
+            branch: sibling?.branch || '미분류',
+            team: sibling?.team || '미분류',
+            category,
+            monthlyData: {},
+          };
+          clientMap.set(key, existing);
         }
+        if (!existing.monthlyData[monthPart]) {
+          existing.monthlyData[monthPart] = { last_year_weight: 0, last_year_amount: 0 };
+        }
+        existing.monthlyData[monthPart].target_weight = g.target_weight;
+        existing.monthlyData[monthPart].target_amount = g.target_amount;
       });
 
       const sheetData: any[] = [];
-      const headerRow = ['사업소', '팀', '담당자', '거래처코드', '거래처명'];
+      const headerRow = ['사업소', '팀', '담당자', '거래처코드', '거래처명', '제품군'];
       for (let m = 1; m <= 12; m++) {
-        const month = m.toString().padStart(2, '0');
         headerRow.push(`${m}월 목표(중량L)`, `${m}월 목표(금액원)`);
       }
       sheetData.push(headerRow);
@@ -971,7 +1034,9 @@ export default function BulkGoalSettingTab() {
         if (tc !== 0) return tc;
         const ec = compareEmployees(a.team, a.employee_name, b.employee_name, displayOrder.empB2c, displayOrder.empB2b);
         if (ec !== 0) return ec;
-        return a.client_name.localeCompare(b.client_name);
+        const nc = a.client_name.localeCompare(b.client_name);
+        if (nc !== 0) return nc;
+        return GOAL_CATEGORY_ORDER.indexOf(a.category) - GOAL_CATEGORY_ORDER.indexOf(b.category);
       });
 
       sortedEntries.forEach(entry => {
@@ -980,7 +1045,8 @@ export default function BulkGoalSettingTab() {
           entry.team,
           entry.employee_name,
           entry.client_code,
-          entry.client_name
+          entry.client_name,
+          entry.category,
         ];
 
         for (let m = 1; m <= 12; m++) {
@@ -1007,7 +1073,8 @@ export default function BulkGoalSettingTab() {
         { wch: 15 },
         { wch: 15 },
         { wch: 14 },
-        { wch: 20 }
+        { wch: 20 },
+        { wch: 10 },
       ];
       // Add column widths for 12 months x 2 columns each
       for (let m = 0; m < 12; m++) {
@@ -1042,23 +1109,25 @@ export default function BulkGoalSettingTab() {
       let updateCount = 0;
 
       // Skip header row (row 0), process data rows (row 1+)
+      // Columns: 사업소, 팀, 담당자, 거래처코드, 거래처명, 제품군, then 12×(중량,금액)
       for (let i = 1; i < sheet.data.length; i++) {
         const row = sheet.data[i];
-        // 5 base columns + 24 month columns = 29 minimum
-        if (!row || row.length < 29) continue;
+        // 6 base columns + 24 month columns = 30 minimum
+        if (!row || row.length < 30) continue;
 
         const clientCode = String(row[3] || '').trim();
         if (!clientCode) continue;
+        const category = normalizeGoalCategory(row[5]);
 
         for (let m = 1; m <= 12; m++) {
           const month = m.toString().padStart(2, '0');
-          const weightColIndex = 5 + (m - 1) * 2;
-          const amountColIndex = 6 + (m - 1) * 2;
+          const weightColIndex = 6 + (m - 1) * 2;
+          const amountColIndex = 7 + (m - 1) * 2;
           const goalWeight = parseFloat(row[weightColIndex]) || 0;
           const goalAmount = parseFloat(row[amountColIndex]) || 0;
 
           if (goalWeight > 0 || goalAmount > 0) {
-            const key = `${clientCode}_${month}`;
+            const key = `${clientCode}_${category}_${month}`;
             newEditing.set(key, { weight: goalWeight, amount: goalAmount });
             updateCount++;
           }
@@ -1729,6 +1798,22 @@ export default function BulkGoalSettingTab() {
                 </div>
 
                 <label className="block">
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">제품군</span>
+                  <select
+                    value={newClientForm.category}
+                    onChange={(e) => setNewClientForm(prev => ({
+                      ...prev,
+                      category: normalizeGoalCategory(e.target.value),
+                    }))}
+                    className="mt-1 w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  >
+                    {GOAL_CATEGORY_ORDER.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
                   <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">목표 중량(L)</span>
                   <input
                     type="number"
@@ -1842,7 +1927,7 @@ export default function BulkGoalSettingTab() {
           <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
             고객별 목표 설정
           </h3>
-          <p className="text-xs text-zinc-500 mt-0.5">고객당 월별 목표 1건입니다. 담당자·팀 목표는 자동 합산됩니다. 각 항목별로 즉시 저장하거나, 모두 입력 후 &quot;전체 저장&quot;을 누르세요.</p>
+          <p className="text-xs text-zinc-500 mt-0.5">고객×제품군 단위로 월별 목표를 설정합니다. 작년 실적 복사·성장률은 제품군별로 적용됩니다. 담당자·팀 목표는 자동 합산됩니다.</p>
         </div>
 
         <div className="overflow-x-auto">
@@ -1852,7 +1937,8 @@ export default function BulkGoalSettingTab() {
                 <th className="py-2 px-1 text-left w-14 min-w-0">사업소</th>
                 <th className="py-2 px-1 text-left w-14 min-w-0">팀</th>
                 <th className="py-2 px-1 text-left w-16 min-w-0">담당자</th>
-                <th className="py-2 px-1.5 text-left w-32 min-w-0">고객</th>
+                <th className="py-2 px-1.5 text-left w-28 min-w-0">고객</th>
+                <th className="py-2 px-1 text-left w-14 min-w-0">제품군</th>
                 <th className="py-2 px-2 text-right bg-zinc-100 dark:bg-zinc-800 w-[7.5rem]">작년 중량(L)</th>
                 <th className="py-2 px-2 text-right bg-zinc-100 dark:bg-zinc-800 w-[7.5rem]">작년 금액(원)</th>
                 <th className="py-2 px-2 text-right bg-blue-50 dark:bg-blue-900/20 w-[7rem]">목표 중량(L)</th>
@@ -1863,7 +1949,7 @@ export default function BulkGoalSettingTab() {
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {isTableSearchPending && (
                 <tr>
-                  <td colSpan={9} className="py-10 px-4 text-center">
+                  <td colSpan={10} className="py-10 px-4 text-center">
                     <div className="inline-flex items-center gap-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       검색 중...
@@ -1874,7 +1960,7 @@ export default function BulkGoalSettingTab() {
 
               {!isTableSearchPending && visibleBranches.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-10 px-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                  <td colSpan={10} className="py-10 px-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
                     검색 조건에 맞는 고객이 없습니다.
                   </td>
                 </tr>
@@ -1904,7 +1990,8 @@ export default function BulkGoalSettingTab() {
                       </td>
                       <td className="py-1.5 px-1 w-14" />
                       <td className="py-1.5 px-1 w-16" />
-                      <td className="py-1.5 px-1.5 w-32" />
+                      <td className="py-1.5 px-1.5 w-28" />
+                      <td className="py-1.5 px-1 w-14" />
                       <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-600 dark:text-zinc-400">
                         {formatNumber(branch.total_last_year_weight)}
                       </td>
@@ -1942,7 +2029,8 @@ export default function BulkGoalSettingTab() {
                               </div>
                             </td>
                             <td className="py-1.5 px-1 w-16" />
-                            <td className="py-1.5 px-1.5 w-32" />
+                            <td className="py-1.5 px-1.5 w-28" />
+                            <td className="py-1.5 px-1 w-14" />
                             <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">
                               {formatNumber(team.total_last_year_weight)}
                             </td>
@@ -1978,7 +2066,8 @@ export default function BulkGoalSettingTab() {
                                       <span className="text-[10px] leading-tight text-zinc-500 shrink-0">({emp.clients.length}개)</span>
                                     </div>
                                   </td>
-                                  <td className="py-1.5 px-1.5 w-32" />
+                                  <td className="py-1.5 px-1.5 w-28" />
+                                  <td className="py-1.5 px-1 w-14" />
                                   <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">
                                     {formatNumber(emp.total_last_year_weight)}
                                   </td>
@@ -1992,7 +2081,7 @@ export default function BulkGoalSettingTab() {
 
                                 {isEmpExpanded && emp.clients.map((entry) => (
                                   <tr
-                                    key={`client-${entry.client_code}`}
+                                    key={`client-${entry.client_code}-${entry.category}`}
                                     className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
                                   >
                                     <td className="py-1.5 px-1 w-14" />
@@ -2024,6 +2113,9 @@ export default function BulkGoalSettingTab() {
                                           <HighlightMatch text={entry.industry_name} query={deferredClientSearch} />
                                         </div>
                                       )}
+                                    </td>
+                                    <td className="py-1.5 px-1 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                                      <HighlightMatch text={entry.category} query={deferredClientSearch} />
                                     </td>
                                     <td className="py-1.5 px-2 text-right font-mono text-xs text-zinc-500 dark:text-zinc-400">
                                       {formatNumber(entry.last_year_weight)}
@@ -2077,11 +2169,11 @@ export default function BulkGoalSettingTab() {
       <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
         <p className="font-semibold mb-2">💡 사용 팁:</p>
         <ul className="list-disc list-inside space-y-1 ml-2">
-          <li><strong>작년 실적 복사:</strong> 작년과 동일한 목표를 빠르게 설정</li>
-          <li><strong>성장률 적용:</strong> % 입력 후 &quot;성장 적용&quot;으로 작년 대비 목표 일괄 설정 (음수 입력 시 감소)</li>
-          <li><strong>템플릿 다운로드:</strong> 작년 실적이 포함된 Excel 파일 다운로드하여 오프라인 작업</li>
-          <li><strong>목표 업로드:</strong> Excel에서 편집한 목표를 업로드하여 일괄 반영</li>
-          <li><strong>개별 저장:</strong> 각 항목의 저장 버튼으로 즉시 저장 가능</li>
+          <li><strong>작년 실적 복사:</strong> 제품군별 작년 실적을 동일 목표로 복사</li>
+          <li><strong>성장률 적용:</strong> % 입력 후 &quot;성장 적용&quot;으로 제품군별 작년 대비 목표 일괄 설정 (음수 입력 시 감소)</li>
+          <li><strong>템플릿 다운로드:</strong> 제품군 열이 포함된 Excel 파일 다운로드하여 오프라인 작업</li>
+          <li><strong>목표 업로드:</strong> Excel에서 편집한 목표를 업로드하여 일괄 반영 (제품군 열 필수)</li>
+          <li><strong>개별 저장:</strong> 각 고객×제품군 행의 저장 버튼으로 즉시 저장 가능</li>
           <li><strong>전체 저장:</strong> 모든 변경사항을 한 번에 저장</li>
         </ul>
       </div>

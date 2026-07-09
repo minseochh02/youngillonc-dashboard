@@ -152,8 +152,8 @@ export const TABLES = {
   sales_goals: {
     name: 'sales_goals',
     displayName: '판매 목표',
-    columns: ['id', 'year', 'month', 'client_code', 'target_weight', 'target_amount'],
-    columnCount: 6,
+    columns: ['id', 'year', 'month', 'client_code', 'category_type', 'category', 'target_weight', 'target_amount'],
+    columnCount: 8,
     rowCount: 0,
   },
   sales_goals_client_category_backup: {

@@ -461,6 +461,7 @@ export async function buildCumulativeViewPayload(params: {
     SELECT
       (${BRANCH_FROM_EC}) as branch,
       ec.b2c_팀 as team,
+      COALESCE(NULLIF(TRIM(sg.category), ''), '기타') as category,
       SUM(sg.target_weight) as target_weight
     FROM sales_goals sg
     LEFT JOIN clients c_sg ON sg.client_code = c_sg.거래처코드
@@ -470,7 +471,7 @@ export async function buildCumulativeViewPayload(params: {
       AND CAST(TRIM(sg.month) AS INTEGER) <= ${monthInt}
       AND ${WHERE_B2C}
       AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
-    GROUP BY 2, ec.b2c_팀
+    GROUP BY 1, 2, 3
   `;
 
   const goalsMonthSql = `
@@ -478,6 +479,7 @@ export async function buildCumulativeViewPayload(params: {
       (${BRANCH_FROM_EC}) as branch,
       ec.b2c_팀 as team,
       sg.year as year,
+      COALESCE(NULLIF(TRIM(sg.category), ''), '기타') as category,
       SUM(sg.target_weight) as target_weight
     FROM sales_goals sg
     LEFT JOIN clients c_sg ON sg.client_code = c_sg.거래처코드
@@ -487,7 +489,7 @@ export async function buildCumulativeViewPayload(params: {
       AND sg.year IN ('${y1}', '${y0}')
       AND ${WHERE_B2C}
       AND ec.b2c_팀 IS NOT NULL AND TRIM(ec.b2c_팀) != ''
-    GROUP BY 2, ec.b2c_팀, sg.year
+    GROUP BY 1, 2, sg.year, 4
   `;
 
   const b2bSalesYtdSql = `
@@ -558,6 +560,7 @@ export async function buildCumulativeViewPayload(params: {
     SELECT
       (${BRANCH_FROM_EC}) as branch,
       ${B2B_TEAM} as team,
+      COALESCE(NULLIF(TRIM(sg.category), ''), '기타') as category,
       SUM(sg.target_weight) as target_weight
     FROM sales_goals sg
     LEFT JOIN clients c_sg ON sg.client_code = c_sg.거래처코드
@@ -566,7 +569,7 @@ export async function buildCumulativeViewPayload(params: {
     WHERE sg.year = '${y0}'
       AND CAST(TRIM(sg.month) AS INTEGER) <= ${monthInt}
       AND ${WHERE_B2B}
-    GROUP BY 1, 2
+    GROUP BY 1, 2, 3
   `;
 
   const b2bGoalsMonthSql = `
@@ -574,6 +577,7 @@ export async function buildCumulativeViewPayload(params: {
       (${BRANCH_FROM_EC}) as branch,
       ${B2B_TEAM} as team,
       sg.year as year,
+      COALESCE(NULLIF(TRIM(sg.category), ''), '기타') as category,
       SUM(sg.target_weight) as target_weight
     FROM sales_goals sg
     LEFT JOIN clients c_sg ON sg.client_code = c_sg.거래처코드
@@ -582,7 +586,7 @@ export async function buildCumulativeViewPayload(params: {
     WHERE CAST(TRIM(sg.month) AS INTEGER) = ${monthInt}
       AND sg.year IN ('${y1}', '${y0}')
       AND ${WHERE_B2B}
-    GROUP BY 2, 3, sg.year
+    GROUP BY 1, 2, sg.year, 4
   `;
 
   type SqlResult = Awaited<ReturnType<typeof executeSQL>>;
@@ -784,8 +788,9 @@ export async function buildCumulativeViewPayload(params: {
     const branch = normBranch(r.branch);
     const team = normTeamByBranch(branch, r.team);
     if (!team) continue;
+    const cat = String(r.category || '기타');
     const tw = Number(r.target_weight) || 0;
-    const gk = `${branch}\t${team}`;
+    const gk = `${cat}\t${branch}\t${team}`;
     goalsYtd.set(gk, (goalsYtd.get(gk) || 0) + tw);
   }
 
@@ -794,8 +799,9 @@ export async function buildCumulativeViewPayload(params: {
     const team = normTeamByBranch(branch, r.team);
     if (!team) continue;
     const y = String(r.year);
+    const cat = String(r.category || '기타');
     const tw = Number(r.target_weight) || 0;
-    const gk = `${y}\t${branch}\t${team}`;
+    const gk = `${y}\t${cat}\t${branch}\t${team}`;
     goalsMo.set(gk, (goalsMo.get(gk) || 0) + tw);
   }
 
@@ -841,8 +847,9 @@ export async function buildCumulativeViewPayload(params: {
     const branch = normBranch(r.branch);
     const team = normTeamByBranch(branch, r.team);
     if (!team) continue;
+    const cat = String(r.category || '기타');
     const tw = Number(r.target_weight) || 0;
-    const gk = `${branch}\t${team}`;
+    const gk = `${cat}\t${branch}\t${team}`;
     goalsB2bYtd.set(gk, (goalsB2bYtd.get(gk) || 0) + tw);
   }
   for (const r of b2bGoalsMoRes?.rows || []) {
@@ -850,8 +857,9 @@ export async function buildCumulativeViewPayload(params: {
     const team = normTeamByBranch(branch, r.team);
     if (!team) continue;
     const y = String(r.year);
+    const cat = String(r.category || '기타');
     const tw = Number(r.target_weight) || 0;
-    const gk = `${y}\t${branch}\t${team}`;
+    const gk = `${y}\t${cat}\t${branch}\t${team}`;
     goalsB2bMo.set(gk, (goalsB2bMo.get(gk) || 0) + tw);
   }
 
@@ -1009,9 +1017,10 @@ export async function buildCumulativeViewPayload(params: {
     }));
   };
 
-  const goalKey = (_cat: string, branch: string, team: string) => `${normBranch(branch)}\t${team}`;
-  const goalMoKey = (y: number, _cat: string, branch: string, team: string) =>
-    `${y}\t${normBranch(branch)}\t${team}`;
+  const goalKey = (cat: string, branch: string, team: string) =>
+    `${cat}\t${normBranch(branch)}\t${team}`;
+  const goalMoKey = (y: number, cat: string, branch: string, team: string) =>
+    `${y}\t${cat}\t${normBranch(branch)}\t${team}`;
 
   const categoryGoalYtd = (cat: string) => {
     let s = 0;

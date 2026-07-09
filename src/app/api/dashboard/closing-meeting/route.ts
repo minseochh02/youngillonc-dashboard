@@ -18,6 +18,14 @@ import {
   sqlSalesResolvedClientKeyExpr,
 } from '@/lib/special-handling-employees';
 import { SQL_SALES_GOALS_FROM } from '@/lib/sales-goals-sql';
+import {
+  GOAL_CATEGORY_TYPE,
+  SQL_SALES_GOAL_CATEGORY_CASE,
+  mapGoalCategoryToB2b,
+  mapGoalCategoryToB2c,
+  mapGoalCategoryToMonthlySummary,
+  normalizeGoalCategory,
+} from '@/lib/sales-goals-categories';
 import { sqlPurchaseAmountExpr, sqlSalesAmountExpr } from '@/lib/vat-amount-sql';
 
 /**
@@ -313,11 +321,13 @@ export async function GET(request: Request) {
       const goalsQuery = `
         SELECT
           month,
+          category,
           SUM(target_weight) as target_weight,
           SUM(target_amount) as target_amount
         FROM sales_goals
         WHERE year = '${currentYear}'
-        GROUP BY month
+          AND (category_type = '${GOAL_CATEGORY_TYPE}' OR category_type IS NULL OR TRIM(category_type) = '')
+        GROUP BY month, category
       `;
 
       const [salesResult, purchasesResult, lastYearSalesResult, goalsResult] = await Promise.all([
@@ -354,9 +364,10 @@ export async function GET(request: Request) {
       const monthGoalsMap = new Map<string, { weight: number; amount: number }>();
       goalsData.forEach((row: any) => {
         const monthNum = String(row.month).padStart(2, '0');
+        const prev = monthGoalsMap.get(monthNum) || { weight: 0, amount: 0 };
         monthGoalsMap.set(monthNum, {
-          weight: Number(row.target_weight) || 0,
-          amount: Number(row.target_amount) || 0,
+          weight: prev.weight + (Number(row.target_weight) || 0),
+          amount: prev.amount + (Number(row.target_amount) || 0),
         });
       });
 
@@ -400,11 +411,20 @@ export async function GET(request: Request) {
         purchasesRawCategoryMap.set(`${row.month}_${row.raw_category}`, Number(row.weight) || 0);
       });
 
-      /** Goals are per client (not per product category). Category breakdown shows actuals only. */
-      const getCategoryGoal = (_cat: string, _monthNum: string): { weight: number; amount: number } => ({
-        weight: 0,
-        amount: 0,
+      const categoryGoalsByMonth = new Map<string, { weight: number; amount: number }>();
+      (goalsResult?.rows || []).forEach((row: any) => {
+        const monthPart = String(row.month || '').padStart(2, '0');
+        const displayCat = mapGoalCategoryToMonthlySummary(String(row.category || '기타'));
+        const key = `${monthPart}_${displayCat}`;
+        const prev = categoryGoalsByMonth.get(key) || { weight: 0, amount: 0 };
+        categoryGoalsByMonth.set(key, {
+          weight: prev.weight + (Number(row.target_weight) || 0),
+          amount: prev.amount + (Number(row.target_amount) || 0),
+        });
       });
+
+      const getCategoryGoal = (cat: string, monthNum: string): { weight: number; amount: number } =>
+        categoryGoalsByMonth.get(`${monthNum}_${cat}`) || { weight: 0, amount: 0 };
 
       const categories = ['MB', 'AVI', 'MAR', 'AUTO', 'IL', '기타'];
       const snapshotMonthStr = SNAPSHOT_IMPORTED_AT.slice(0, 7);
@@ -587,7 +607,7 @@ export async function GET(request: Request) {
           const key = `${monthStr}_${cat}`;
           const s = salesMap.get(key) || { weight: 0, amount: 0 };
           const p = purchasesMap.get(key) || { weight: 0, amount: 0 };
-          const g = getDivisionGoal(cat, monthNum, monthStr);
+          const g = getCategoryGoal(cat, monthNum);
           ytdPurchase += p.weight;
           ytdPurchaseAmount += p.amount;
           ytdSales += s.weight;
@@ -609,7 +629,7 @@ export async function GET(request: Request) {
           const key = `${monthStr}_${cat}`;
           const s = salesMap.get(key) || { weight: 0, amount: 0 };
           const p = purchasesMap.get(key) || { weight: 0, amount: 0 };
-          const g = getDivisionGoal(cat, monthNum, monthStr);
+          const g = getCategoryGoal(cat, monthNum);
           const agg = currentYearCategoryYtd.get(cat)!;
           agg.purchase += p.weight;
           agg.sales += s.weight;
@@ -663,7 +683,7 @@ export async function GET(request: Request) {
           achievement_rate: 0,
           yoy_growth_rate: 0,
           breakdown: categories.map((cat) => {
-            const g = getDivisionGoal(cat, selectedMonthNumOnly, currentMonthStr);
+            const g = getCategoryGoal(cat, selectedMonthNumOnly);
             return {
               category: cat,
               purchase_weight: 0,
@@ -1135,13 +1155,15 @@ export async function GET(request: Request) {
       const b2cGoalsQuery = `
         SELECT
           ec.b2c_팀 as team,
+          sg.category as category,
           SUM(sg.target_weight) as target_weight
         ${SQL_SALES_GOALS_FROM}
         WHERE sg.year = '${currentYear}'
           AND sg.month = '${monthNum}'
           AND ec.b2c_팀 IS NOT NULL
           AND ${WHERE_B2C_CHANNEL}
-        GROUP BY team
+          AND (sg.category_type = '${GOAL_CATEGORY_TYPE}' OR sg.category_type IS NULL OR TRIM(sg.category_type) = '')
+        GROUP BY team, category
       `;
 
       // YTD monthly B2C sales (L) by calendar month and product group — same scope as b2cCategoryQuery
@@ -1218,13 +1240,19 @@ export async function GET(request: Request) {
         monthlyCategoryRows.reduce((s, row) => s + row.rowTotal, 0)
       );
 
-      // Build goalsMap for categories (aggregate all teams)
+      // Build goalsMap for categories (aggregate all teams) + team-category map
       const categoryGoalsMap = new Map<string, number>();
       const teamGoalsMap = new Map<string, number>();
+      const teamCategoryGoalsMap = new Map<string, number>();
 
       goalsData.forEach((g: any) => {
         const teamKey = g.team;
-        teamGoalsMap.set(teamKey, (teamGoalsMap.get(teamKey) || 0) + (Number(g.target_weight) || 0));
+        const displayCat = mapGoalCategoryToB2c(String(g.category || '기타'));
+        const tw = Number(g.target_weight) || 0;
+        teamGoalsMap.set(teamKey, (teamGoalsMap.get(teamKey) || 0) + tw);
+        categoryGoalsMap.set(displayCat, (categoryGoalsMap.get(displayCat) || 0) + tw);
+        const tcKey = `${teamKey}\t${displayCat}`;
+        teamCategoryGoalsMap.set(tcKey, (teamCategoryGoalsMap.get(tcKey) || 0) + tw);
       });
 
       const goalsMap = categoryGoalsMap;
@@ -1261,12 +1289,14 @@ export async function GET(request: Request) {
           sg.year as year,
           ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           ec.b2c_팀 as team,
+          sg.category as category,
           SUM(sg.target_weight) as target_weight
         ${SQL_SALES_GOALS_FROM}
         WHERE ec.b2c_팀 IS NOT NULL
           AND ${WHERE_B2C_CHANNEL}
           AND sg.month <= '${monthNum}'
-        GROUP BY 1, 2, 3
+          AND (sg.category_type = '${GOAL_CATEGORY_TYPE}' OR sg.category_type IS NULL OR TRIM(sg.category_type) = '')
+        GROUP BY 1, 2, 3, 4
       `;
       const yearlyPurchaseQuery = `
         SELECT
@@ -1355,24 +1385,23 @@ export async function GET(request: Request) {
           yearlyAutoRawMap.set(year, auto);
         }
       });
-      const yearlyTeamGoalAppliedB2c = new Set<string>();
       yearlyGoalRows.forEach((r: any) => {
         const year = String(r.year);
-        const dedupeKey = `${year}\t${r.branch}\t${r.team}`;
-        if (yearlyTeamGoalAppliedB2c.has(dedupeKey)) return;
-        yearlyTeamGoalAppliedB2c.add(dedupeKey);
+        const displayCat = mapGoalCategoryToB2c(String(r.category || '기타'));
         const targetWeight = Number(r.target_weight) || 0;
         if (!yearlyMap.has(year)) return;
         const categoriesMap = yearlyMap.get(year) as Map<string, any>;
-        for (const cat of categoriesMap.values()) {
-          const branch = cat.branchesMap?.get(r.branch);
-          if (branch?.teamsMap?.has(r.team)) {
-            cat.target_weight += targetWeight;
-            branch.target_weight += targetWeight;
-            branch.teamsMap.get(r.team).target_weight = targetWeight;
-            break;
-          }
+        const cat = categoriesMap.get(displayCat);
+        if (!cat) return;
+        cat.target_weight += targetWeight;
+        if (!cat.branchesMap.has(r.branch)) {
+          cat.branchesMap.set(r.branch, { branch: r.branch, sales_weight: 0, target_weight: 0, teamsMap: new Map() });
         }
+        const branch = cat.branchesMap.get(r.branch);
+        branch.target_weight += targetWeight;
+        const teamObj = branch.teamsMap.get(r.team) || { sales_weight: 0, target_weight: 0 };
+        teamObj.target_weight = (Number(teamObj.target_weight) || 0) + targetWeight;
+        branch.teamsMap.set(r.team, teamObj);
       });
       yearlyPurchaseRows.forEach((r: any) => {
         const year = String(r.year);
@@ -1516,6 +1545,7 @@ export async function GET(request: Request) {
         const actualWeight = Number(row.current_month_weight) || 0;
         const lastWeight = Number(row.last_month_weight) || 0;
         const yoyWeight = Number(row.yoy_weight) || 0;
+        const catTarget = teamCategoryGoalsMap.get(`${row.team}\t${row.category}`) || 0;
         
         teamObj.categories.push({
           category: row.category,
@@ -1524,8 +1554,8 @@ export async function GET(request: Request) {
           last_month_weight: Math.round(lastWeight),
           yoy_weight: Math.round(yoyWeight),
           yoy_growth_rate: yoyWeight > 0 ? ((actualWeight - yoyWeight) / yoyWeight) * 100 : 0,
-          target_weight: 0, // Goals are set per Team, not per Team-Category
-          achievement_rate: 0,
+          target_weight: Math.round(catTarget),
+          achievement_rate: catTarget > 0 ? (actualWeight / catTarget) * 100 : 0,
         });
       });
 
@@ -1718,13 +1748,15 @@ export async function GET(request: Request) {
       const b2bGoalsQuery = `
         SELECT
           ec.b2b팀 as team,
+          sg.category as category,
           SUM(sg.target_weight) as target_weight
         ${SQL_SALES_GOALS_FROM}
         WHERE sg.year = '${currentYear}'
           AND sg.month = '${monthNum}'
           AND ec.b2c_팀 = 'B2B'
           AND ec.b2b팀 IS NOT NULL
-        GROUP BY team
+          AND (sg.category_type = '${GOAL_CATEGORY_TYPE}' OR sg.category_type IS NULL OR TRIM(sg.category_type) = '')
+        GROUP BY team, category
       `;
 
       const [catResult, hierarchyResult, b2cResult, b2bYtdResult, goalsResult] = await Promise.all([
@@ -1741,13 +1773,21 @@ export async function GET(request: Request) {
       const b2bYtdData = b2bYtdResult?.rows?.[0] || { weight: 0, amount: 0 };
       const goalsData = goalsResult?.rows || [];
 
-      // Build goalsMap for categories (aggregate all teams)
+      // Build goalsMap for categories (aggregate all teams) + team-category map
       const categoryGoalsMap = new Map<string, number>();
       const teamGoalsMap = new Map<string, number>();
+      const teamCategoryGoalsMap = new Map<string, number>();
 
       goalsData.forEach((g: any) => {
         const teamKey = g.team;
-        teamGoalsMap.set(teamKey, (teamGoalsMap.get(teamKey) || 0) + (Number(g.target_weight) || 0));
+        const displayCat = mapGoalCategoryToB2b(String(g.category || ''));
+        const tw = Number(g.target_weight) || 0;
+        teamGoalsMap.set(teamKey, (teamGoalsMap.get(teamKey) || 0) + tw);
+        if (displayCat) {
+          categoryGoalsMap.set(displayCat, (categoryGoalsMap.get(displayCat) || 0) + tw);
+          const tcKey = `${teamKey}\t${displayCat}`;
+          teamCategoryGoalsMap.set(tcKey, (teamCategoryGoalsMap.get(tcKey) || 0) + tw);
+        }
       });
 
       const goalsMap = categoryGoalsMap;
@@ -1781,12 +1821,14 @@ export async function GET(request: Request) {
           sg.year as year,
           ${BRANCH_FROM_EMPLOYEE_CATEGORY_SQL} as branch,
           ec.b2b팀 as team,
+          sg.category as category,
           SUM(sg.target_weight) as target_weight
         ${SQL_SALES_GOALS_FROM}
         WHERE ec.b2c_팀 = 'B2B'
           AND ec.b2b팀 IS NOT NULL
           AND sg.month <= '${monthNum}'
-        GROUP BY 1, 2, 3
+          AND (sg.category_type = '${GOAL_CATEGORY_TYPE}' OR sg.category_type IS NULL OR TRIM(sg.category_type) = '')
+        GROUP BY 1, 2, 3, 4
       `;
       const yearlyPurchaseQuery = `
         SELECT
@@ -1869,24 +1911,24 @@ export async function GET(request: Request) {
         teamObj.sales_weight += weight;
         branch.teamsMap.set(r.team, teamObj);
       });
-      const yearlyTeamGoalAppliedB2b = new Set<string>();
       yearlyGoalRows.forEach((r: any) => {
         const year = String(r.year);
-        const dedupeKey = `${year}\t${r.branch}\t${r.team}`;
-        if (yearlyTeamGoalAppliedB2b.has(dedupeKey)) return;
-        yearlyTeamGoalAppliedB2b.add(dedupeKey);
+        const displayCat = mapGoalCategoryToB2b(String(r.category || ''));
+        if (!displayCat) return;
         const targetWeight = Number(r.target_weight) || 0;
         if (!yearlyMap.has(year)) return;
         const categoriesMap = yearlyMap.get(year) as Map<string, any>;
-        for (const cat of categoriesMap.values()) {
-          const branch = cat.branchesMap?.get(r.branch);
-          if (branch?.teamsMap?.has(r.team)) {
-            cat.target_weight += targetWeight;
-            branch.target_weight += targetWeight;
-            branch.teamsMap.get(r.team).target_weight = targetWeight;
-            break;
-          }
+        const cat = categoriesMap.get(displayCat);
+        if (!cat) return;
+        cat.target_weight += targetWeight;
+        if (!cat.branchesMap.has(r.branch)) {
+          cat.branchesMap.set(r.branch, { branch: r.branch, sales_weight: 0, target_weight: 0, teamsMap: new Map() });
         }
+        const branch = cat.branchesMap.get(r.branch);
+        branch.target_weight += targetWeight;
+        const teamObj = branch.teamsMap.get(r.team) || { sales_weight: 0, target_weight: 0 };
+        teamObj.target_weight = (Number(teamObj.target_weight) || 0) + targetWeight;
+        branch.teamsMap.set(r.team, teamObj);
       });
       yearlyPurchaseRows.forEach((r: any) => {
         const year = String(r.year);
@@ -2027,7 +2069,8 @@ export async function GET(request: Request) {
         const actualWeight = Number(row.current_month_weight) || 0;
         const lastWeight = Number(row.last_month_weight) || 0;
         const yoyWeight = Number(row.yoy_weight) || 0;
-        
+        const catTarget = teamCategoryGoalsMap.get(`${row.team}\t${row.category}`) || 0;
+
         teamObj.categories.push({
           category: row.category,
           current_month_weight: Math.round(actualWeight),
@@ -2035,8 +2078,8 @@ export async function GET(request: Request) {
           last_month_weight: Math.round(lastWeight),
           yoy_weight: Math.round(yoyWeight),
           yoy_growth_rate: yoyWeight > 0 ? ((actualWeight - yoyWeight) / yoyWeight) * 100 : 0,
-          target_weight: 0,
-          achievement_rate: 0,
+          target_weight: Math.round(catTarget),
+          achievement_rate: catTarget > 0 ? (actualWeight / catTarget) * 100 : 0,
         });
       });
 
@@ -2205,6 +2248,7 @@ export async function GET(request: Request) {
             WHEN ec.b2c_팀 = 'B2B' THEN COALESCE(ec.b2b팀, '미분류')
             ELSE COALESCE(ec.b2c_팀, '미분류')
           END as team,
+          ${SQL_SALES_GOAL_CATEGORY_CASE} as category,
           0 as is_manual,
           SUM(CAST(REPLACE(s.중량, ',', '') AS NUMERIC)) as weight,
           SUM(${sqlSalesAmountExpr('s', includeVat)}) as amount
@@ -2219,17 +2263,18 @@ export async function GET(request: Request) {
           ${sqlAndEmployeeNotSpecialHandling()}
       ${sqlAndSalesRemarkNotExact('s.적요')}
           AND ${WHERE_EC_BRANCH_OK}
-        GROUP BY month, client_code, client_name, industry_code, region_code, industry_name, employee_name, branch, team
-        ORDER BY branch, team, employee_name, client_name
+        GROUP BY month, client_code, client_name, industry_code, region_code, industry_name, employee_name, branch, team, category
+        ORDER BY branch, team, employee_name, client_name, category
       `;
 
       const clientActualRes = await executeSQL(clientActualQuery);
       const clientActual = clientActualRes?.rows || [];
 
       const goalsQuery = `
-        SELECT id, year, month, client_code, target_weight, target_amount
+        SELECT id, year, month, client_code, category_type, category, target_weight, target_amount
         FROM sales_goals
         WHERE year = '${selectedYear}'
+          AND (category_type = '${GOAL_CATEGORY_TYPE}' OR category_type IS NULL OR TRIM(category_type) = '')
       `;
 
       const goalsRes = await executeSQL(goalsQuery);
@@ -2380,6 +2425,8 @@ export async function POST(request: Request) {
         year: goal.year,
         month: goal.month,
         client_code: goal.client_code,
+        category_type: goal.category_type || GOAL_CATEGORY_TYPE,
+        category: normalizeGoalCategory(goal.category),
         target_weight: goal.target_weight || 0,
         target_amount: goal.target_amount || 0
       }));
@@ -2448,6 +2495,7 @@ export async function POST(request: Request) {
       const regionCode = String(rawClient.region_code || '').trim();
       const targetWeight = Number(rawClient.target_weight) || 0;
       const targetAmount = Number(rawClient.target_amount) || 0;
+      const category = normalizeGoalCategory(rawClient.category || '기타');
 
       if (!clientCode || !clientName || !employeeCode) {
         return NextResponse.json(
@@ -2509,6 +2557,8 @@ export async function POST(request: Request) {
           year,
           month,
           client_code: clientCode,
+          category_type: GOAL_CATEGORY_TYPE,
+          category,
           target_weight: targetWeight,
           target_amount: targetAmount,
         }]);
@@ -2568,6 +2618,7 @@ export async function POST(request: Request) {
     // Handle save_goal action (single goal save)
     if (body.action === 'save_goal') {
       const { year, month, client_code, target_weight, target_amount } = body;
+      const category = normalizeGoalCategory(body.category);
 
       if (!year || !month || !client_code) {
         return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
@@ -2577,6 +2628,8 @@ export async function POST(request: Request) {
         year,
         month,
         client_code,
+        category_type: body.category_type || GOAL_CATEGORY_TYPE,
+        category,
         target_weight: target_weight || 0,
         target_amount: target_amount || 0
       }]);

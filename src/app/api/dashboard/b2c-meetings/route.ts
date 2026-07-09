@@ -350,7 +350,8 @@ export async function GET(request: Request) {
         GROUP BY e.사원_담당_명, year, channel
       `;
 
-      // Client goals rolled up by employee; Fleet/LCC from client channel type
+      // Client goals rolled up by employee; Fleet/LCC from client channel type.
+      // Only AUTO product goals (PVL/CVL) — matches manager sales scope.
       const goalsQuery = `
         SELECT
           e.사원_담당_명 as employee_name,
@@ -367,6 +368,11 @@ export async function GET(request: Request) {
         WHERE sg.year = '${currentYear}'
           AND e.사원_담당_명 IS NOT NULL
           AND ca.업종분류코드 IS NOT NULL
+          AND (
+            sg.category IN ('PVL', 'CVL')
+            OR sg.category IS NULL
+            OR TRIM(COALESCE(sg.category, '')) = ''
+          )
         GROUP BY e.사원_담당_명, category
       `;
 
