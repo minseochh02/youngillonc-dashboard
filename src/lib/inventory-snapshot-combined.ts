@@ -18,9 +18,8 @@ const SNAP_WHERE = `DATE(imported_at) = DATE('${SNAPSHOT_IMPORTED_AT}')`;
  */
 export function combinedInventoryUnionSql(): string {
   return `
-    SELECT 품목코드, 창고코드, 재고수량, 중량, 총중량, imported_at
+    SELECT 품목코드, 창고코드, 재고수량, 중량, (재고수량 * 중량) AS 총중량, DATE('${SNAPSHOT_IMPORTED_AT}') AS imported_at
     FROM ${TABLE_YOUNGIL_SNAPSHOT}
-    WHERE ${SNAP_WHERE}
     UNION ALL
     SELECT 품목코드, 창고코드, 재고수량, 중량, 총중량, imported_at
     FROM ${TABLE_WEST_SNAPSHOT}

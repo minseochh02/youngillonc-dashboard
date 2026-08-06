@@ -351,6 +351,351 @@ export async function renameTable(
 }
 
 // ==========================================
+// FILE STORAGE HELPERS
+// ==========================================
+
+/**
+ * Upload a file to a user data table row.
+ * Data must be base64-encoded. Files <10KB are stored as uncompressed blobs,
+ * 10-100KB as gzip-compressed blobs, >100KB on the filesystem via BucketManager.
+ */
+export async function uploadFile(
+  tableName: string,
+  rowId: number,
+  columnName: string,
+  filename: string,
+  data: string,
+  options: {
+    mimeType?: string;
+    forceStorageType?: 'blob' | 'file';
+    compress?: boolean;
+  } = {}
+) {
+  return callUserDataTool('user_data_upload_file', {
+    tableName,
+    rowId,
+    columnName,
+    filename,
+    data,
+    ...options
+  });
+}
+
+/**
+ * Download a file from a user data table row.
+ * Look up by fileId, or by (tableName, rowId, columnName).
+ */
+export async function downloadFile(options: {
+  fileId?: string;
+  tableName?: string;
+  rowId?: number;
+  columnName?: string;
+}) {
+  return callUserDataTool('user_data_download_file', options);
+}
+
+/**
+ * Delete a file from a user data table row.
+ * Look up by fileId, or by (tableName, rowId, columnName).
+ */
+export async function deleteFile(options: {
+  fileId?: string;
+  tableName?: string;
+  rowId?: number;
+  columnName?: string;
+}) {
+  return callUserDataTool('user_data_delete_file', options);
+}
+
+/**
+ * List all files attached to a specific table row.
+ */
+export async function listFiles(tableName: string, rowId: number) {
+  return callUserDataTool('user_data_list_files', { tableName, rowId });
+}
+
+/**
+ * Get file storage statistics for all tables or a specific table.
+ */
+export async function getFileStats(tableName?: string) {
+  return callUserDataTool('user_data_get_file_stats', {
+    ...(tableName != null ? { tableName } : {})
+  });
+}
+
+// ==========================================
+// USER DATA REAL-TIME SUBSCRIPTIONS
+// ==========================================
+
+export interface UserDataChangeEvent {
+  kind: 'schema' | 'data';
+  action: 'create_table' | 'delete_table' | 'rename_table' | 'insert' | 'update' | 'delete';
+  tableName?: string;
+  tableId?: string;
+  source?: 'mcp' | 'ipc' | 'sync' | 'import';
+}
+
+/**
+ * Subscribe to real-time user-data change events via SSE.
+ * Works in browser only (uses EventSource).
+ *
+ * @param callback  Called whenever a user-data mutation occurs (insert, update, delete, schema change).
+ * @param options   Optional filter: only fire for a specific table or event kind.
+ * @returns An unsubscribe function that closes the SSE connection.
+ *
+ * @example
+ * // Listen for all changes
+ * const unsub = onUserDataChanged((event) => {
+ *   console.log(`${event.action} on ${event.tableName}`);
+ * });
+ *
+ * // Listen only for changes to "orders" table
+ * const unsub = onUserDataChanged(
+ *   (event) => { refreshOrders(); },
+ *   { tableName: 'orders' }
+ * );
+ *
+ * // Cleanup
+ * unsub();
+ */
+export function onUserDataChanged(
+  callback: (event: UserDataChangeEvent) => void,
+  options?: { tableName?: string; kind?: 'schema' | 'data' }
+): () => void {
+  if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
+    console.warn('onUserDataChanged() is only available in the browser.');
+    return () => {};
+  }
+
+  const apiUrl = EGDESK_CONFIG.apiUrl || '';
+  const apiKey = EGDESK_CONFIG.apiKey || '';
+  const sseUrl = apiKey ? `${apiUrl}/user-data/sse?key=${encodeURIComponent(apiKey)}` : `${apiUrl}/user-data/sse`;
+  const es = new EventSource(sseUrl);
+
+  es.addEventListener('message', (e: MessageEvent) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.method !== 'egdesk/user-data-changed') return;
+
+      const event: UserDataChangeEvent = msg.params;
+      if (options?.tableName && event.tableName !== options.tableName) return;
+      if (options?.kind && event.kind !== options.kind) return;
+
+      callback(event);
+    } catch {
+      // ignore malformed messages
+    }
+  });
+
+  es.addEventListener('error', () => {
+    console.warn('[EGDesk] User-data SSE connection error — will auto-reconnect.');
+  });
+
+  return () => { es.close(); };
+}
+
+// ==========================================
+// KAKAO CHANNEL / CHATBOT HELPERS
+// ==========================================
+//
+// Login model (read this before using `service`):
+// - One Kakao account (KakaoTalk QR). EGDesk stores cookies in a persistent Chrome
+//   profile per `profileName`.
+// - business.kakao.com and chatbot.kakao.com share that profile — scan QR once.
+// - `service` on beginKakaoLogin only picks which admin site opens first for the QR
+//   flow; it is NOT a separate login type.
+// - list/create tools reuse the profile and skip QR when already logged in.
+
+/**
+ * Call EGDesk Kakao MCP tool.
+ *
+ * Kakao tools drive browser automation for Kakao Business and chatbot admin,
+ * so the `kakao` MCP service must be enabled in EGDesk before use.
+ *
+ * All tools for a given `profileName` share one Chrome profile and one Kakao login.
+ */
+export async function callKakaoTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const body = JSON.stringify({ tool: toolName, arguments: args });
+
+  const isServer = typeof window === 'undefined';
+
+  let response: Response;
+  if (isServer) {
+    const apiUrl =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_URL) ||
+      EGDESK_CONFIG.apiUrl;
+    response = await fetch(`${apiUrl}/kakao/tools/call`, {
+      method: 'POST',
+      headers: buildServerEgdeskHeaders(),
+      body
+    });
+  } else {
+    response = await apiFetch('/__kakao_proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+  }
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+export type KakaoLoginSession = {
+  success: boolean;
+  loginId: string;
+  /** Admin site opened for this QR flow (`chatbot` or `business`) — same Kakao account either way. */
+  service: 'business' | 'chatbot';
+  profileName: string;
+  profileDir: string;
+  status: 'starting' | 'waiting_for_qr' | 'logged_in' | 'expired' | 'failed' | 'closed';
+  message?: string;
+  error?: string;
+  qrImageDataUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+};
+
+/**
+ * Start Kakao QR login in a persistent EGDesk Chrome profile.
+ *
+ * One Kakao account, one session: scanning the QR logs into KakaoTalk/accounts.kakao.com.
+ * Cookies are saved under `profileName` and shared by business.kakao.com and
+ * chatbot.kakao.com — you do not need separate logins for channels vs bots.
+ *
+ * `options.service` only chooses which admin site EGDesk navigates to before showing
+ * the QR code (`'chatbot'` → chatbot.kakao.com, `'business'` → business.kakao.com).
+ *
+ * Returns `loginId` and `qrImageDataUrl`. Poll with `kakaoLoginStatus()` until
+ * `status` is `'logged_in'`, or call `closeKakaoLogin()` to cancel.
+ */
+export async function beginKakaoLogin(
+  profileName: string,
+  options: {
+    /** Entry URL for the QR flow. Defaults to `'chatbot'`. Same Kakao login either way. */
+    service?: 'business' | 'chatbot';
+    /** Run browser headless. Defaults to true; pass false to show Chrome. */
+    headless?: boolean;
+    waitMs?: number;
+  } = {}
+): Promise<KakaoLoginSession> {
+  return callKakaoTool('kakao_begin_login', { profileName, ...options });
+}
+
+/** Poll Kakao QR login status by loginId. */
+export async function kakaoLoginStatus(
+  profileName: string,
+  loginId: string
+): Promise<KakaoLoginSession> {
+  return callKakaoTool('kakao_login_status', { profileName, loginId });
+}
+
+/** Close a pending Kakao login browser session. */
+export async function closeKakaoLogin(
+  profileName: string,
+  loginId: string
+): Promise<{ success: boolean; loginId: string; message?: string; error?: string }> {
+  return callKakaoTool('kakao_close_login', { profileName, loginId });
+}
+
+export type KakaoChannel = {
+  id: string;
+  name: string;
+  searchId: string;
+  adminUrl: string;
+  channelUrl: string;
+  chatUrl?: string;
+  isPublic?: boolean;
+  searchEnabled?: boolean;
+  connectedBotName?: string;
+  connectedBotId?: string;
+  connectedChatbots?: Array<{ name: string; id?: string }>;
+  status?: string;
+  detailError?: string;
+};
+
+export type KakaoBot = {
+  id: string;
+  name: string;
+  status?: string;
+  isInactive?: boolean;
+  page: number;
+  index: number;
+  callbackStatus?: Record<string, any>;
+};
+
+/** List Kakao Business channels. Reuses the profile session; shows QR only if not logged in. */
+export async function listKakaoChannels(
+  profileName: string,
+  options: { enrichDetails?: boolean } = {}
+) {
+  return callKakaoTool('kakao_list_channels', { profileName, ...options });
+}
+
+/** List Kakao chatbot admin bots. Reuses the profile session; shows QR only if not logged in. */
+export async function listKakaoBots(profileName: string) {
+  return callKakaoTool('kakao_list_bots', { profileName });
+}
+
+/** List both Kakao Business channels and chatbot admin bots. */
+export async function listKakaoResources(
+  profileName: string,
+  options: { enrichDetails?: boolean } = {}
+) {
+  return callKakaoTool('kakao_list_resources', { profileName, ...options });
+}
+
+/** Persist a selected Kakao channel into the EGDesk profile metadata. */
+export async function selectKakaoChannel(profileName: string, channel: KakaoChannel) {
+  return callKakaoTool('kakao_select_channel', { profileName, channel });
+}
+
+/** Webhook URLs, API key, identity fields, and setup modes for BYO AI chatbots. */
+export async function getKakaoWebhookInfo(profileName: string) {
+  return callKakaoTool('kakao_get_webhook_info', { profileName });
+}
+
+/** Check whether Kakao bot skill/callback URLs match the current EGDesk tunnel. */
+export async function checkKakaoCallbackStatuses(
+  profileName: string,
+  options: { bots?: KakaoBot[]; channels?: KakaoChannel[] } = {}
+) {
+  return callKakaoTool('kakao_check_callback_statuses', { profileName, ...options });
+}
+
+/** Repair Kakao bot skill URL, headers, fallback link, and deploy the bot. */
+export async function repairKakaoCallbackSetup(
+  profileName: string,
+  options: { bots?: KakaoBot[]; channels?: KakaoChannel[] } = {}
+) {
+  return callKakaoTool('kakao_repair_callback_setup', { profileName, ...options });
+}
+
+/** Create or reuse a Kakao Business channel. Reuses profile login; may show QR if needed. */
+export async function createKakaoChannel(options: {
+  profileName: string;
+  channelName: string;
+  searchId: string;
+  reuseExisting?: boolean;
+}) {
+  return callKakaoTool('kakao_create_channel', options);
+}
+
+/** Create or reuse a Kakao chatbot, configure skill/callback, link fallback block, and deploy. Reuses profile login. */
+export async function createKakaoBot(options: {
+  profileName: string;
+  botName: string;
+  channelSearchId: string;
+  skillUrl?: string;
+  reuseExisting?: boolean;
+}) {
+  return callKakaoTool('kakao_create_bot', options);
+}
+
+// ==========================================
 // FINANCEHUB HELPERS
 // ==========================================
 
@@ -488,6 +833,15 @@ export async function getSyncHistory(limit: number = 50) {
  */
 export async function listHometaxConnections() {
   return callFinanceHubTool('financehub_list_hometax_connections', {});
+}
+
+/**
+ * List registered Hometax client companies for a business, including sales stats and saved risk data.
+ */
+export async function listHometaxClients(options: {
+  businessNumber?: string;
+} = {}) {
+  return callFinanceHubTool('financehub_list_hometax_clients', options);
 }
 
 /**
@@ -1672,9 +2026,17 @@ export type AiCallerCallOptions = {
   systemPrompt?: string;
   model?: string;
   temperature?: number;
+  /** Max output tokens. Omit to auto-use the selected model's Gemini API maximum. */
   maxOutputTokens?: number;
   caller?: string;
   responseSchema?: Record<string, any>;
+  /** Gemini function declarations for tool use */
+  tools?: Array<Record<string, any>>;
+  /** Function-calling mode and restrictions */
+  toolConfig?: {
+    mode?: 'AUTO' | 'ANY' | 'NONE' | 'MODE_UNSPECIFIED';
+    allowedFunctionNames?: string[];
+  };
   /** Base64 strings (raw or data URLs) */
   images?: string[];
   /** Absolute paths — images, text files, .pdf, .docx, video (same rules as filesystem MCP) */
@@ -1690,11 +2052,58 @@ export type AiCallerCallOptions = {
   keyName?: '01ONC' | (string & {});
 };
 
+export type AiCallerModelDetails = {
+  name: string;
+  displayName: string;
+  inputTokenLimit: number | null;
+  outputTokenLimit: number | null;
+};
+
+export type AiCallerOutputTokens = {
+  configured: number;
+  modelMax: number | null;
+  autoMaxed: boolean;
+};
+
+export type AiCallerUsageSummary = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  durationMs: number;
+};
+
+export type AiCallerAttachmentsSummary = {
+  imageCount?: number;
+  textFileCount?: number;
+  documentFileCount?: number;
+  videoFileCount?: number;
+};
+
+export type AiCallerFunctionCall = {
+  name: string;
+  args: Record<string, unknown>;
+};
+
+export type AiCallerCallResult = {
+  content: string;
+  json: unknown | null;
+  functionCalls: AiCallerFunctionCall[];
+  groundingMetadata: unknown | null;
+  codeExecutionResult: string | null;
+  finishReason: string | null;
+  outputTokens: AiCallerOutputTokens;
+  usage: AiCallerUsageSummary;
+  apiKey: { name: string; id: string | null } | null;
+  attachments: AiCallerAttachmentsSummary;
+  logId: string;
+};
+
 /**
  * Call Gemini and log token usage. Returns the AI response plus a usage summary.
  * Supports images, filePaths, and inline files (documents, text, video frames).
+ * Omit `maxOutputTokens` to auto-use the selected model's maximum from the Gemini API.
  */
-export async function callAiCaller(prompt: string, options: AiCallerCallOptions = {}) {
+export async function callAiCaller(prompt: string, options: AiCallerCallOptions = {}): Promise<AiCallerCallResult> {
   return callAiCallerTool('ai_caller_call', { prompt, ...options });
 }
 
@@ -1730,10 +2139,12 @@ export async function getAiCallerLogs(options: AiCallerLogsOptions = {}) {
 export type AiCallerModelsResult = {
   models: string[];
   defaultModel: string;
+  modelDetails?: AiCallerModelDetails[];
 };
 
 /**
  * List Gemini models available for text generation, fetched live from the Google API via EGDesk.
+ * Includes per-model input/output token limits when available.
  */
 export async function listAiCallerModels(): Promise<AiCallerModelsResult> {
   return callAiCallerTool('ai_caller_list_models', {});
@@ -1808,4 +2219,91 @@ export async function getPageIndexPages(docId: string, pages: string) {
 /** Delete an indexed document */
 export async function deletePageIndexDocument(docId: string) {
   return callPageIndexTool('pageindex_delete_document', { doc_id: docId });
+}
+
+// ==========================================
+// EGDesk Config (MCP) — Gemini / Google API keys
+// ==========================================
+
+/**
+ * Call EGDesk Config MCP tool (Gemini keys from AI Keys Manager).
+ *
+ * - Server: `POST {apiUrl}/egdesk-config/tools/call`
+ * - Client: `POST /__egdesk_config_proxy` (see proxy.ts / middleware)
+ */
+export async function callEgdeskConfigTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const body = JSON.stringify({ tool: toolName, arguments: args });
+
+  const isServer = typeof window === 'undefined';
+
+  let response: Response;
+  if (isServer) {
+    const apiUrl =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_URL) ||
+      EGDESK_CONFIG.apiUrl;
+    response = await fetch(`${apiUrl}/egdesk-config/tools/call`, {
+      method: 'POST',
+      headers: buildServerEgdeskHeaders(),
+      body
+    });
+  } else {
+    response = await apiFetch('/__egdesk_config_proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+  }
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+/** Get the preferred API key EGDesk would use for an AI provider */
+export async function getApiKey(options: {
+  provider?: 'google' | 'openai' | 'anthropic' | 'azure' | 'custom';
+  keyId?: string;
+  name?: string;
+  apiKey?: string;
+} = {}) {
+  return callEgdeskConfigTool('egdesk_get_api_key', options);
+}
+
+/** Save an API key into EGDesk AI Keys Manager for a given provider */
+export async function setApiKey(options: {
+  provider?: 'google' | 'openai' | 'anthropic' | 'azure' | 'custom';
+  apiKey: string;
+  name?: string;
+  keyId?: string;
+  setActive?: boolean;
+}) {
+  return callEgdeskConfigTool('egdesk_set_api_key', options);
+}
+
+/** List API keys in AI Keys Manager, optionally filtered by provider */
+export async function listApiKeys(options: {
+  provider?: 'google' | 'openai' | 'anthropic' | 'azure' | 'custom';
+} = {}) {
+  return callEgdeskConfigTool('egdesk_list_api_keys', options);
+}
+
+/** Get the preferred Google/Gemini API key EGDesk would use */
+export async function getGeminiApiKey(options: { keyId?: string; name?: string; apiKey?: string } = {}) {
+  return getApiKey({ provider: 'google', ...options });
+}
+
+/** Save a Google/Gemini API key into EGDesk AI Keys Manager */
+export async function setGeminiApiKey(options: {
+  apiKey: string;
+  name?: string;
+  keyId?: string;
+  setActive?: boolean;
+}) {
+  return setApiKey({ provider: 'google', ...options });
+}
+
+/** List all Google/Gemini keys in AI Keys Manager */
+export async function listGeminiApiKeys() {
+  return listApiKeys({ provider: 'google' });
 }

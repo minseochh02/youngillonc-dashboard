@@ -17,7 +17,7 @@ import { createTable, deleteTable, executeSQL } from '../egdesk-helpers';
 
 const FORCE = process.argv.includes('--force');
 
-/** 영일 / 서부 / 동부 스냅샷 공통 컬럼 */
+/** 서부 / 동부 스냅샷 공통 컬럼 */
 const SNAPSHOT_SCHEMA = [
   { name: '품목코드', type: 'TEXT' as const, notNull: true },
   { name: '창고코드', type: 'TEXT' as const, notNull: true },
@@ -25,6 +25,14 @@ const SNAPSHOT_SCHEMA = [
   { name: '중량', type: 'REAL' as const, notNull: true },
   { name: '총중량', type: 'REAL' as const, notNull: true },
   { name: 'imported_at', type: 'DATE' as const }
+] as const;
+
+/** 영일 스냅샷 컬럼 */
+const YOUNGIL_SNAPSHOT_SCHEMA = [
+  { name: '품목코드', type: 'TEXT' as const, notNull: true },
+  { name: '창고코드', type: 'TEXT' as const, notNull: true },
+  { name: '재고수량', type: 'REAL' as const, notNull: true },
+  { name: '중량', type: 'REAL' as const, notNull: true }
 ] as const;
 
 const UNIQUE = ['품목코드', '창고코드'];
@@ -44,7 +52,7 @@ async function main() {
       displayName: '영일재고 20251231스냅샷',
       tableName: 'youngil_inventory_20251231',
       description: '본사 ESZ018R 스냅샷',
-      schema: [...SNAPSHOT_SCHEMA],
+      schema: [...YOUNGIL_SNAPSHOT_SCHEMA],
       uniqueKeyColumns: UNIQUE
     },
     {

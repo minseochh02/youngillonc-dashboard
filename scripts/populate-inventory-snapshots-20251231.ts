@@ -93,14 +93,11 @@ async function main() {
   const classic = parseClassicInventorySheet(loadMatrix(youngilXlsx));
   const youngilRows = classic.map((r) => {
     const uw = roundW(r.unitWeight);
-    const total = roundW(r.qty * r.unitWeight);
     return {
       품목코드: r.code,
       창고코드: r.warehouse,
       재고수량: r.qty,
-      중량: uw,
-      총중량: total,
-      imported_at: SNAPSHOT_DATE
+      중량: uw
     };
   });
 
