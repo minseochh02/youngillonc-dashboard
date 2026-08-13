@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import * as fs from 'fs';
 import { executeSQL } from '@/egdesk-helpers';
 import { compareOffices, loadOfficeOrderMap } from '@/lib/display-order';
 import { combinedInventoryUnionSql } from '@/lib/inventory-snapshot-combined';
@@ -12,7 +13,22 @@ import { sqlAndPurchaseExcludeCounterpartyCodes } from '@/lib/special-handling-e
  * Ending Inventory = (Feb 1st Snapshot) + (Purchases Feb 2nd to Date) - (Sales Feb 2nd to Date)
  * 재고폐기(disposed_inventory) is shown as 이동(transfer) and reduces ending stock like outbound.
  */
+export const dynamic = 'force-dynamic';
+
+function stripComments(sql: string): string {
+  return sql
+    .split('\n')
+    .map(line => {
+      const idx = line.indexOf('--');
+      return idx === -1 ? line : line.substring(0, idx);
+    })
+    .join('\n')
+    .trim();
+}
+
 export async function GET(request: Request) {
+  let queryStr = '';
+  let disposedSqlStr = '';
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
@@ -92,7 +108,15 @@ export async function GET(request: Request) {
     `;
 
     const hqWhFilter = (column: string) => `
-      (CAST(${column} AS TEXT) IN ('02', '2', '03', '3', '05', '5', '06', '6', '09', '9', '34', '42', '50', '51', '54', '32', '36', '45', 'P1', 'P2', 'P3', 'P4'))
+      (CAST(${column} AS TEXT) IN ('02', '2', '03', '3', '05', '5', '06', '6', '09', '9', '42', '50', '51', '54', 'P1', 'P2', 'P3', 'P4'))
+    `;
+
+    const vehicleExclusionList = "'10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '32', '33', '34', '36', '37', '38', '40', '41', '42', '45', '52', '56', '57', '58', '59'";
+    const excludeVehiclesFilter = (column: string) => `
+      (CAST(${column} AS TEXT) NOT IN (${vehicleExclusionList}))
+    `;
+    const excludeVehiclesJoinFilter = (whAlias: string) => `
+      (${whAlias}.창고코드 IS NULL OR CAST(${whAlias}.창고코드 AS TEXT) NOT IN (${vehicleExclusionList}))
     `;
 
     // 1. Calculate Baseline (Inventory at start of 'date')
@@ -167,7 +191,7 @@ export async function GET(request: Request) {
               WHEN u.창고명 LIKE '%동부%' OR u.창고명 LIKE '%남양주%' THEN '02'
               WHEN u.창고명 LIKE '%서부%' OR u.창고명 LIKE '%인천%' THEN '03'
               ELSE 'unknown'
-            END IN ('02','03','05','06','09','34','42','50','51','54','32','36','45','P1','P2','P3','P4')
+            END IN ('02','03','05','06','09','42','50','51','54','P1','P2','P3','P4')
           )
 
         UNION ALL
@@ -202,7 +226,7 @@ export async function GET(request: Request) {
               WHEN d.창고명 LIKE '%동부%' OR d.창고명 LIKE '%남양주%' THEN '02'
               WHEN d.창고명 LIKE '%서부%' OR d.창고명 LIKE '%인천%' THEN '03'
               ELSE 'unknown'
-            END IN ('02','03','05','06','09','34','42','50','51','54','32','36','45','P1','P2','P3','P4')
+            END IN ('02','03','05','06','09','42','50','51','54','P1','P2','P3','P4')
           )
 
         UNION ALL
@@ -246,7 +270,7 @@ export async function GET(request: Request) {
               WHEN t.[${colIpgo}] LIKE '%동부%' OR t.[${colIpgo}] LIKE '%남양주%' THEN '02'
               WHEN t.[${colIpgo}] LIKE '%서부%' OR t.[${colIpgo}] LIKE '%인천%' THEN '03'
               ELSE 'unknown'
-            END IN ('02','03','05','06','09','34','42','50','51','54','32','36','45','P1','P2','P3','P4')
+            END IN ('02','03','05','06','09','42','50','51','54','P1','P2','P3','P4')
           )
 
         UNION ALL
@@ -278,7 +302,7 @@ export async function GET(request: Request) {
               WHEN t.[${colChulgo}] LIKE '%동부%' OR t.[${colChulgo}] LIKE '%남양주%' THEN '02'
               WHEN t.[${colChulgo}] LIKE '%서부%' OR t.[${colChulgo}] LIKE '%인천%' THEN '03'
               ELSE 'unknown'
-            END IN ('02','03','05','06','09','34','42','50','51','54','32','36','45','P1','P2','P3','P4')
+            END IN ('02','03','05','06','09','42','50','51','54','P1','P2','P3','P4')
           )
 
         UNION ALL
@@ -338,6 +362,8 @@ export async function GET(request: Request) {
                ${weightCalc('inv.재고수량', 'p.규격정보')} as weight
         FROM east_inventory_20251231 inv
         LEFT JOIN items p ON inv.품목코드 = p.품목코드
+        WHERE (p.재고수량관리 IS NULL OR p.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('inv.창고코드')}
         
         UNION ALL
         
@@ -348,6 +374,8 @@ export async function GET(request: Request) {
         FROM east_division_sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE s.일자 >= '${rollStartDate}' AND s.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('s.출하창고코드')}
           
         UNION ALL
         
@@ -358,6 +386,8 @@ export async function GET(request: Request) {
         FROM east_division_purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
         WHERE p.일자 >= '${rollStartDate}' AND p.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('p.창고코드')}
 
         UNION ALL
 
@@ -367,7 +397,10 @@ export async function GET(request: Request) {
                -(${weightCalc('u.수량', 'i.규격정보')})
         FROM east_internal_uses u
         LEFT JOIN items i ON u.품목코드 = i.품목코드
+        LEFT JOIN warehouses w ON u.창고명 = w.창고명
         WHERE u.월_일 >= '${rollStartDate}' AND u.월_일 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesJoinFilter('w')}
 
         UNION ALL
 
@@ -379,6 +412,8 @@ export async function GET(request: Request) {
         LEFT JOIN items i ON d.품목코드 = i.품목코드
         LEFT JOIN warehouses w ON d.창고코드 = w.창고코드 OR CAST(d.창고코드 AS TEXT) = CAST(w.창고코드 AS TEXT)
         WHERE d.일자 >= '${rollStartDate}' AND d.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesJoinFilter('w')}
 
         UNION ALL
 
@@ -389,6 +424,38 @@ export async function GET(request: Request) {
         FROM east_inventory_adjustments adj
         LEFT JOIN items i ON adj.품목코드 = i.품목코드
         WHERE adj.일자 >= '${rollStartDate}' AND adj.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('adj.창고코드')}
+
+        UNION ALL
+
+        -- East Inbound Transfers Roll forward
+        SELECT ${getBranchExpr('East', 'w.창고코드')}, ${categoryCase('i')}, ${tierCase('i')}, 
+               CAST(REPLACE(t.수량, ',', '') AS NUMERIC), 
+               ${weightCalc('t.수량', 'i.규격정보')}
+        FROM east_inventory_transfers t
+        LEFT JOIN items i ON t.품목명_규격 = i.품목명 || ' [' || i.규격정보 || ']'
+          OR (t.품목명_규격 = 'MOBIL 1 SYNTHETIC LV ATF HP CTN 6X1L [1/6]' AND i.품목코드 = '140618')
+          OR (t.품목명_규격 = 'M SUP TP SMART PLUS PRO 0W20 CTN1LX12:KR [1/12]' AND i.품목코드 = '143207')
+        LEFT JOIN warehouses w ON t.입고창고명 = w.창고명
+        WHERE t.일자 >= '${rollStartDate}' AND t.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND w.창고코드 = '02'
+
+        UNION ALL
+
+        -- East Outbound Transfers Roll forward
+        SELECT ${getBranchExpr('East', 'w.창고코드')}, ${categoryCase('i')}, ${tierCase('i')}, 
+               -CAST(REPLACE(t.수량, ',', '') AS NUMERIC), 
+               -(${weightCalc('t.수량', 'i.규격정보')})
+        FROM east_inventory_transfers t
+        LEFT JOIN items i ON t.품목명_규격 = i.품목명 || ' [' || i.규격정보 || ']'
+          OR (t.품목명_규격 = 'MOBIL 1 SYNTHETIC LV ATF HP CTN 6X1L [1/6]' AND i.품목코드 = '140618')
+          OR (t.품목명_규격 = 'M SUP TP SMART PLUS PRO 0W20 CTN1LX12:KR [1/12]' AND i.품목코드 = '143207')
+        LEFT JOIN warehouses w ON t.출고창고명 = w.창고명
+        WHERE t.일자 >= '${rollStartDate}' AND t.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND w.창고코드 = '02'
 
         -- West Snapshot
         UNION ALL
@@ -397,6 +464,8 @@ export async function GET(request: Request) {
                ${weightCalc('inv.재고수량', 'p.규격정보')} as weight
         FROM west_inventory_20251231 inv
         LEFT JOIN items p ON inv.품목코드 = p.품목코드
+        WHERE (p.재고수량관리 IS NULL OR p.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('inv.창고코드')}
         
         UNION ALL
         
@@ -407,6 +476,8 @@ export async function GET(request: Request) {
         FROM west_division_sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE s.일자 >= '${rollStartDate}' AND s.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('s.출하창고코드')}
           
         UNION ALL
         
@@ -417,6 +488,8 @@ export async function GET(request: Request) {
         FROM west_division_purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
         WHERE p.일자 >= '${rollStartDate}' AND p.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('p.창고코드')}
 
         UNION ALL
 
@@ -426,7 +499,10 @@ export async function GET(request: Request) {
                -(${weightCalc('u.수량', 'i.규격정보')})
         FROM west_internal_uses u
         LEFT JOIN items i ON u.품목코드 = i.품목코드
+        LEFT JOIN warehouses w ON u.창고명 = w.창고명
         WHERE u.월_일 >= '${rollStartDate}' AND u.월_일 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesJoinFilter('w')}
 
         UNION ALL
 
@@ -436,7 +512,10 @@ export async function GET(request: Request) {
                -(${weightCalc('d.수량', 'i.규격정보')})
         FROM west_disposed_inventory d
         LEFT JOIN items i ON d.품목코드 = i.품목코드
+        LEFT JOIN warehouses w ON d.창고명 = w.창고명
         WHERE d.일자 >= '${rollStartDate}' AND d.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesJoinFilter('w')}
 
         UNION ALL
 
@@ -447,6 +526,38 @@ export async function GET(request: Request) {
         FROM west_inventory_adjustments adj
         LEFT JOIN items i ON adj.품목코드 = i.품목코드
         WHERE adj.일자 >= '${rollStartDate}' AND adj.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('adj.창고코드')}
+
+        UNION ALL
+
+        -- West Inbound Transfers Roll forward
+        SELECT ${getBranchExpr('West', 'w.창고코드')}, ${categoryCase('i')}, ${tierCase('i')}, 
+               CAST(REPLACE(t.수량, ',', '') AS NUMERIC), 
+               ${weightCalc('t.수량', 'i.규격정보')}
+        FROM west_internal_transfers t
+        LEFT JOIN items i ON t."품목명_규격_" = i.품목명 || ' [' || i.규격정보 || ']'
+          OR (t."품목명_규격_" = 'MOBIL 1 SYNTHETIC LV ATF HP CTN 6X1L [1/6]' AND i.품목코드 = '140618')
+          OR (t."품목명_규격_" = 'M SUP TP SMART PLUS PRO 0W20 CTN1LX12:KR [1/12]' AND i.품목코드 = '143207')
+        LEFT JOIN warehouses w ON t.입고창고명 = w.창고명
+        WHERE t.일자 >= '${rollStartDate}' AND t.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND w.창고코드 = '03'
+
+        UNION ALL
+
+        -- West Outbound Transfers Roll forward
+        SELECT ${getBranchExpr('West', 'w.창고코드')}, ${categoryCase('i')}, ${tierCase('i')}, 
+               -CAST(REPLACE(t.수량, ',', '') AS NUMERIC), 
+               -(${weightCalc('t.수량', 'i.규격정보')})
+        FROM west_internal_transfers t
+        LEFT JOIN items i ON t."품목명_규격_" = i.품목명 || ' [' || i.규격정보 || ']'
+          OR (t."품목명_규격_" = 'MOBIL 1 SYNTHETIC LV ATF HP CTN 6X1L [1/6]' AND i.품목코드 = '140618')
+          OR (t."품목명_규격_" = 'M SUP TP SMART PLUS PRO 0W20 CTN1LX12:KR [1/12]' AND i.품목코드 = '143207')
+        LEFT JOIN warehouses w ON t.출고창고명 = w.창고명
+        WHERE t.일자 >= '${rollStartDate}' AND t.일자 < '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND w.창고코드 = '03'
       ) GROUP BY 1, 2, 3
     `;
 
@@ -477,6 +588,8 @@ export async function GET(request: Request) {
         FROM east_division_sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE s.일자 = '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('s.출하창고코드')}
 
         -- Today's Sales (West)
         UNION ALL
@@ -484,6 +597,8 @@ export async function GET(request: Request) {
         FROM west_division_sales s
         LEFT JOIN items i ON s.품목코드 = i.품목코드
         WHERE s.일자 = '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('s.출하창고코드')}
           
         UNION ALL
         
@@ -501,6 +616,8 @@ export async function GET(request: Request) {
         FROM east_division_purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
         WHERE p.일자 = '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('p.창고코드')}
 
         -- Today's Purchases (West)
         UNION ALL
@@ -508,6 +625,8 @@ export async function GET(request: Request) {
         FROM west_division_purchases p
         LEFT JOIN items i ON p.품목코드 = i.품목코드
         WHERE p.일자 = '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesFilter('p.창고코드')}
 
         UNION ALL
         
@@ -537,7 +656,7 @@ export async function GET(request: Request) {
               WHEN u.창고명 LIKE '%동부%' OR u.창고명 LIKE '%남양주%' THEN '02'
               WHEN u.창고명 LIKE '%서부%' OR u.창고명 LIKE '%인천%' THEN '03'
               ELSE 'unknown'
-            END IN ('02','03','05','06','09','34','42','50','51','54','32','36','45','P1','P2','P3','P4')
+            END IN ('02','03','05','06','09','42','50','51','54','P1','P2','P3','P4')
           )
 
         -- Today's Internal Uses (East)
@@ -545,14 +664,20 @@ export async function GET(request: Request) {
         SELECT ${getBranchExpr('East', 'u.창고명')}, ${categoryCase('i')}, ${tierCase('i')}, 0, 0, CAST(REPLACE(u.수량, ',', '') AS NUMERIC), ${weightCalc('u.수량', 'i.규격정보')}, 0, 0
         FROM east_internal_uses u
         LEFT JOIN items i ON u.품목코드 = i.품목코드
+        LEFT JOIN warehouses w ON u.창고명 = w.창고명
         WHERE u.월_일 = '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesJoinFilter('w')}
 
         -- Today's Internal Uses (West)
         UNION ALL
         SELECT ${getBranchExpr('West', 'u.창고명')}, ${categoryCase('i')}, ${tierCase('i')}, 0, 0, CAST(REPLACE(u.수량, ',', '') AS NUMERIC), ${weightCalc('u.수량', 'i.규격정보')}, 0, 0
         FROM west_internal_uses u
         LEFT JOIN items i ON u.품목코드 = i.품목코드
+        LEFT JOIN warehouses w ON u.창고명 = w.창고명
         WHERE u.월_일 = '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesJoinFilter('w')}
 
         -- Today's Inbound Transfers (HQ)
         UNION ALL
@@ -580,7 +705,7 @@ export async function GET(request: Request) {
               WHEN t.[${colIpgo}] LIKE '%동부%' OR t.[${colIpgo}] LIKE '%남양주%' THEN '02'
               WHEN t.[${colIpgo}] LIKE '%서부%' OR t.[${colIpgo}] LIKE '%인천%' THEN '03'
               ELSE 'unknown'
-            END IN ('02','03','05','06','09','34','42','50','51','54','32','36','45','P1','P2','P3','P4')
+            END IN ('02','03','05','06','09','42','50','51','54','P1','P2','P3','P4')
           )
 
         -- Today's Outbound Transfers (HQ)
@@ -609,7 +734,7 @@ export async function GET(request: Request) {
               WHEN t.[${colChulgo}] LIKE '%동부%' OR t.[${colChulgo}] LIKE '%남양주%' THEN '02'
               WHEN t.[${colChulgo}] LIKE '%서부%' OR t.[${colChulgo}] LIKE '%인천%' THEN '03'
               ELSE 'unknown'
-            END IN ('02','03','05','06','09','34','42','50','51','54','32','36','45','P1','P2','P3','P4')
+            END IN ('02','03','05','06','09','42','50','51','54','P1','P2','P3','P4')
           )
 
         -- Today's Production Inbound (HQ)
@@ -657,11 +782,82 @@ export async function GET(request: Request) {
         WHERE pm.일자 = '${date}'
           AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
           AND ${hqWhFilter('pm.format_wh')}
+
+        -- Today's Inbound Transfers (East)
+        UNION ALL
+        SELECT ${getBranchExpr('East', 'w.창고코드')}, ${categoryCase('i')}, ${tierCase('i')}, 0, 0, 0, 0, CAST(REPLACE(t.수량, ',', '') AS NUMERIC), ${weightCalc('t.수량', 'i.규격정보')}
+        FROM east_inventory_transfers t
+        LEFT JOIN items i ON t.품목명_규격 = i.품목명 || ' [' || i.규격정보 || ']'
+          OR (t.품목명_규격 = 'MOBIL 1 SYNTHETIC LV ATF HP CTN 6X1L [1/6]' AND i.품목코드 = '140618')
+          OR (t.품목명_규격 = 'M SUP TP SMART PLUS PRO 0W20 CTN1LX12:KR [1/12]' AND i.품목코드 = '143207')
+        LEFT JOIN warehouses w ON t.입고창고명 = w.창고명
+        WHERE t.일자 = '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND w.창고코드 = '02'
+
+        -- Today's Outbound Transfers (East)
+        UNION ALL
+        SELECT ${getBranchExpr('East', 'w.창고코드')}, ${categoryCase('i')}, ${tierCase('i')}, 0, 0, CAST(REPLACE(t.수량, ',', '') AS NUMERIC), ${weightCalc('t.수량', 'i.규격정보')}, 0, 0
+        FROM east_inventory_transfers t
+        LEFT JOIN items i ON t.품목명_규격 = i.품목명 || ' [' || i.규격정보 || ']'
+          OR (t.품목명_규격 = 'MOBIL 1 SYNTHETIC LV ATF HP CTN 6X1L [1/6]' AND i.품목코드 = '140618')
+          OR (t.품목명_규격 = 'M SUP TP SMART PLUS PRO 0W20 CTN1LX12:KR [1/12]' AND i.품목코드 = '143207')
+        LEFT JOIN warehouses w ON t.출고창고명 = w.창고명
+        WHERE t.일자 = '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND w.창고코드 = '02'
+
+        -- Today's Inbound Transfers (West)
+        UNION ALL
+        SELECT ${getBranchExpr('West', 'w.창고코드')}, ${categoryCase('i')}, ${tierCase('i')}, 0, 0, 0, 0, CAST(REPLACE(t.수량, ',', '') AS NUMERIC), ${weightCalc('t.수량', 'i.규격정보')}
+        FROM west_internal_transfers t
+        LEFT JOIN items i ON t."품목명_규격_" = i.품목명 || ' [' || i.규격정보 || ']'
+          OR (t."품목명_규격_" = 'MOBIL 1 SYNTHETIC LV ATF HP CTN 6X1L [1/6]' AND i.품목코드 = '140618')
+          OR (t."품목명_규격_" = 'M SUP TP SMART PLUS PRO 0W20 CTN1LX12:KR [1/12]' AND i.품목코드 = '143207')
+        LEFT JOIN warehouses w ON t.입고창고명 = w.창고명
+        WHERE t.일자 = '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND w.창고코드 = '03'
+
+        -- Today's Outbound Transfers (West)
+        UNION ALL
+        SELECT ${getBranchExpr('West', 'w.창고코드')}, ${categoryCase('i')}, ${tierCase('i')}, 0, 0, CAST(REPLACE(t.수량, ',', '') AS NUMERIC), ${weightCalc('t.수량', 'i.규격정보')}, 0, 0
+        FROM west_internal_transfers t
+        LEFT JOIN items i ON t."품목명_규격_" = i.품목명 || ' [' || i.규격정보 || ']'
+          OR (t."품목명_규격_" = 'MOBIL 1 SYNTHETIC LV ATF HP CTN 6X1L [1/6]' AND i.품목코드 = '140618')
+          OR (t."품목명_규격_" = 'M SUP TP SMART PLUS PRO 0W20 CTN1LX12:KR [1/12]' AND i.품목코드 = '143207')
+        LEFT JOIN warehouses w ON t.출고창고명 = w.창고명
+        WHERE t.일자 = '${date}'
+          AND (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND w.창고코드 = '03'
       ) r GROUP BY 1, 2, 3
     `;
 
-    const result = await executeSQL(query);
-    const rows = result?.rows || [];
+    interface DisposedRow {
+      branch: string;
+      category: string;
+      tier: string;
+      transfer_qty: number;
+      transfer_w: number;
+      roll_qty: number;
+      roll_w: number;
+    }
+
+    interface MergedRow {
+      branch: string;
+      category: string;
+      tier: string;
+      inventory_baseline: number;
+      inventory_baseline_weight: number;
+      purchase: number;
+      purchase_weight: number;
+      sales: number;
+      sales_weight: number;
+    }
+
+    queryStr = stripComments(query);
+    const result = await executeSQL(queryStr);
+    const rows = (result?.rows as unknown as MergedRow[]) || [];
 
     const rollWhenDisposed = isFebruary
       ? isFeb1st
@@ -706,6 +902,8 @@ export async function GET(request: Request) {
         FROM east_disposed_inventory d
         LEFT JOIN items i ON d.품목코드 = i.품목코드
         LEFT JOIN warehouses w ON d.창고코드 = w.창고코드 OR CAST(d.창고코드 AS TEXT) = CAST(w.창고코드 AS TEXT)
+        WHERE (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesJoinFilter('w')}
         GROUP BY 1, 2, 3
 
         -- West Disposed
@@ -720,14 +918,18 @@ export async function GET(request: Request) {
           SUM(CASE WHEN ${rollWhenDisposed} THEN ${weightCalc('d.수량', 'i.규격정보')} ELSE 0 END) AS roll_w
         FROM west_disposed_inventory d
         LEFT JOIN items i ON d.품목코드 = i.품목코드
+        LEFT JOIN warehouses w ON d.창고명 = w.창고명
+        WHERE (i.재고수량관리 IS NULL OR i.재고수량관리 != '수량관리제외')
+          AND ${excludeVehiclesJoinFilter('w')}
         GROUP BY 1, 2, 3
       ) GROUP BY 1, 2, 3
     `;
 
-    let disposedRows: any[] = [];
+    disposedSqlStr = stripComments(disposedSql);
+    let disposedRows: DisposedRow[] = [];
     try {
-      const disposedResult = await executeSQL(disposedSql);
-      disposedRows = disposedResult?.rows || [];
+      const disposedResult = await executeSQL(disposedSqlStr);
+      disposedRows = (disposedResult?.rows as unknown as DisposedRow[]) || [];
     } catch (e) {
       console.warn('disposed_inventory query failed; transfer defaults to 0:', e);
     }
@@ -753,7 +955,7 @@ export async function GET(request: Request) {
     const rowKey = (row: { branch: string; category?: string; tier?: string }) =>
       `${row.branch}|${row.category || 'Others'}|${row.tier || 'Others'}`;
 
-    const mergedRows = new Map<string, any>();
+    const mergedRows = new Map<string, MergedRow>();
     for (const row of rows) {
       mergedRows.set(rowKey(row), row);
     }
@@ -774,7 +976,18 @@ export async function GET(request: Request) {
       }
     }
 
-    const stats: Record<string, any> = {};
+    const stats: Record<string, Record<string, {
+      beginning: number;
+      beginning_weight: number;
+      purchase: number;
+      purchase_weight: number;
+      sales: number;
+      sales_weight: number;
+      transfer: number;
+      transfer_weight: number;
+      inventory: number;
+      inventory_weight: number;
+    }>> = {};
     const branches = new Set<string>();
 
     for (const row of mergedRows.values()) {
@@ -832,11 +1045,15 @@ export async function GET(request: Request) {
         date
       }
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Daily Inventory API Error:', error);
+    const errMessage = error instanceof Error ? error.message : String(error);
+    // Write query to a file for debugging
+    if (queryStr) fs.writeFileSync('scratch/failing_query.sql', queryStr, 'utf8');
+    if (disposedSqlStr) fs.writeFileSync('scratch/failing_disposed.sql', disposedSqlStr, 'utf8');
     return NextResponse.json({ 
       success: false, 
-      error: error.message || 'Internal Server Error' 
+      error: errMessage || 'Internal Server Error' 
     }, { status: 500 });
   }
 }

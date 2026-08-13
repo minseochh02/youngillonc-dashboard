@@ -10,6 +10,13 @@
  * Schema files:
  *  - egdesk.schema.ts  — committed seed schema (edit this; commit to git)
  *  - egdesk.config.ts  — auto-generated runtime snapshot (gitignored; do not edit)
+ *
+ * AI / external agents:
+ *  - If egdesk-user-data MCP is connected (Claude Desktop / Antigravity / Cursor), prefer MCP tools
+ *    for exploring My DB: user_data_list_projects → user_data_select_project → user_data_list_tables / query.
+ *  - Check that EGDesk is running and MCP tools are actually available before relying on them.
+ *  - For app code in this repo, keep using these helpers (queryTable, etc.) — MCP is optional for agents.
+ *  - If MCP tools are missing/empty, fall back to helpers + EGDESK-README.md; ask the user to install MCP from EGDesk.
  */
 
 import { EGDESK_CONFIG } from './egdesk.config';
@@ -257,6 +264,16 @@ export async function getTableSchema(tableName: string) {
 }
 
 /**
+ * Get schemas for multiple tables in ONE call (preferred over repeated getTableSchema).
+ * Omit tableNames to fetch schemas for all tables.
+ */
+export async function getTableSchemas(tableNames?: string[]) {
+  return callUserDataTool('user_data_get_schemas_batch', {
+    ...(tableNames?.length ? { tableNames } : {}),
+  });
+}
+
+/**
  * Create a new table
  */
 export async function createTable(
@@ -355,9 +372,11 @@ export async function renameTable(
 // ==========================================
 
 /**
- * Upload a file to a user data table row.
- * Data must be base64-encoded. Files <10KB are stored as uncompressed blobs,
- * 10-100KB as gzip-compressed blobs, >100KB on the filesystem via BucketManager.
+ * Upload a file attachment for a table row.
+ * Files are NOT table columns — they attach via a virtual columnName (e.g. "file").
+ * Workflow: insertRows(...) → uploadFile(tableName, rowId, 'file', filename, base64).
+ * Data must be base64 (raw or data URL). Files <10KB store as uncompressed blobs,
+ * 10-100KB as gzip blobs, >100KB on disk via BucketManager.
  */
 export async function uploadFile(
   tableName: string,
@@ -367,7 +386,7 @@ export async function uploadFile(
   data: string,
   options: {
     mimeType?: string;
-    forceStorageType?: 'blob' | 'file';
+    forceStorageType?: 'blob' | 'filesystem';
     compress?: boolean;
   } = {}
 ) {
@@ -424,6 +443,190 @@ export async function getFileStats(tableName?: string) {
 }
 
 // ==========================================
+// USER DATA CRON JOBS
+// ==========================================
+
+export type UserDataCronActionType = 'sync_config' | 'browser_recording' | 'backup' | 'script';
+export type UserDataCronFrequencyType = 'daily' | 'weekly' | 'monthly' | 'custom' | 'cron';
+
+export type UserDataCronActionPayload = {
+  syncConfigId?: string;
+  syncConfigName?: string;
+  testPath?: string;
+  testName?: string;
+  scriptPath?: string;
+  functionName?: string;
+  args?: unknown;
+  timeoutMs?: number;
+  cwd?: string;
+};
+
+export type CreateUserDataCronJobOptions = {
+  name: string;
+  actionType: UserDataCronActionType;
+  actionPayload?: UserDataCronActionPayload;
+  /** Flat alias for actionPayload.syncConfigId */
+  syncConfigId?: string;
+  syncConfigName?: string;
+  /** Flat alias for actionPayload.testPath */
+  testPath?: string;
+  testName?: string;
+  /** Flat alias for actionPayload.scriptPath (.js/.mjs/.cjs) */
+  scriptPath?: string;
+  functionName?: string;
+  args?: unknown;
+  timeoutMs?: number;
+  cwd?: string;
+  scheduledTime?: string;
+  /** Defaults to daily when omitted */
+  frequencyType?: UserDataCronFrequencyType;
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+  customIntervalDays?: number;
+  cronExpression?: string;
+  enabled?: boolean;
+};
+
+export type UpdateUserDataCronJobOptions = Partial<CreateUserDataCronJobOptions> & {
+  jobId: string;
+};
+
+/** List UserData cron jobs for the active project+env */
+export async function listUserDataCronJobs() {
+  return callUserDataTool('user_data_cron_list', {});
+}
+
+/** Get a UserData cron job by id */
+export async function getUserDataCronJob(jobId: string) {
+  return callUserDataTool('user_data_cron_get', { jobId });
+}
+
+/** Create a UserData cron job (sync_config / browser_recording / backup) */
+export async function createUserDataCronJob(options: CreateUserDataCronJobOptions) {
+  return callUserDataTool('user_data_cron_create', options);
+}
+
+/** Update a UserData cron job */
+export async function updateUserDataCronJob(options: UpdateUserDataCronJobOptions) {
+  return callUserDataTool('user_data_cron_update', options);
+}
+
+/** Delete a UserData cron job */
+export async function deleteUserDataCronJob(jobId: string) {
+  return callUserDataTool('user_data_cron_delete', { jobId });
+}
+
+/** Enable or pause a UserData cron job */
+export async function toggleUserDataCronJob(jobId: string, enabled: boolean) {
+  return callUserDataTool('user_data_cron_toggle', { jobId, enabled });
+}
+
+/** Run a UserData cron job immediately */
+export async function runUserDataCronJobNow(jobId: string) {
+  return callUserDataTool('user_data_cron_run_now', { jobId });
+}
+
+/** List execution history for a UserData cron job */
+export async function listUserDataCronExecutions(jobId: string, limit?: number) {
+  return callUserDataTool('user_data_cron_executions', {
+    jobId,
+    ...(limit != null ? { limit } : {}),
+  });
+}
+
+/** Get UserData cron scheduler status */
+export async function getUserDataCronStatus() {
+  return callUserDataTool('user_data_cron_status', {});
+}
+
+// ==========================================
+// USER DATA QUEUE JOBS
+// ==========================================
+
+export type UserDataQueueActionType =
+  | 'sync_config'
+  | 'browser_recording'
+  | 'backup'
+  | 'script';
+
+export type UserDataQueueActionPayload = UserDataCronActionPayload;
+
+export type EnqueueUserDataQueueJobOptions = {
+  name?: string;
+  actionType: UserDataQueueActionType;
+  actionPayload?: UserDataQueueActionPayload;
+  syncConfigId?: string;
+  syncConfigName?: string;
+  testPath?: string;
+  testName?: string;
+  scriptPath?: string;
+  functionName?: string;
+  args?: unknown;
+  timeoutMs?: number;
+  cwd?: string;
+  priority?: number;
+  maxAttempts?: number;
+  runAfter?: string | null;
+  idempotencyKey?: string | null;
+};
+
+/** List UserData queue jobs for the active project+env */
+export async function listUserDataQueueJobs(options?: {
+  status?: string;
+  limit?: number;
+}) {
+  return callUserDataTool('user_data_queue_list', options || {});
+}
+
+/** Get a UserData queue job by id */
+export async function getUserDataQueueJob(jobId: string) {
+  return callUserDataTool('user_data_queue_get', { jobId });
+}
+
+/** Enqueue a UserData job (sync_config / browser_recording / backup / script) */
+export async function enqueueUserDataQueueJob(options: EnqueueUserDataQueueJobOptions) {
+  return callUserDataTool('user_data_queue_enqueue', options);
+}
+
+/** Cancel a pending UserData queue job */
+export async function cancelUserDataQueueJob(jobId: string) {
+  return callUserDataTool('user_data_queue_cancel', { jobId });
+}
+
+/** Retry a failed/dead/cancelled UserData queue job */
+export async function retryUserDataQueueJob(jobId: string) {
+  return callUserDataTool('user_data_queue_retry', { jobId });
+}
+
+/** Delete a UserData queue job */
+export async function deleteUserDataQueueJob(jobId: string) {
+  return callUserDataTool('user_data_queue_delete', { jobId });
+}
+
+/** Run a UserData queue job immediately */
+export async function runUserDataQueueJobNow(jobId: string) {
+  return callUserDataTool('user_data_queue_run_now', { jobId });
+}
+
+/** List attempt history for a UserData queue job */
+export async function listUserDataQueueRuns(jobId: string, limit?: number) {
+  return callUserDataTool('user_data_queue_runs', {
+    jobId,
+    ...(limit != null ? { limit } : {}),
+  });
+}
+
+/** Get UserData queue counts by status */
+export async function getUserDataQueueStats() {
+  return callUserDataTool('user_data_queue_stats', {});
+}
+
+/** Get UserData queue worker status */
+export async function getUserDataQueueStatus() {
+  return callUserDataTool('user_data_queue_status', {});
+}
+
+// ==========================================
 // USER DATA REAL-TIME SUBSCRIPTIONS
 // ==========================================
 
@@ -469,7 +672,16 @@ export function onUserDataChanged(
 
   const apiUrl = EGDESK_CONFIG.apiUrl || '';
   const apiKey = EGDESK_CONFIG.apiKey || '';
-  const sseUrl = apiKey ? `${apiUrl}/user-data/sse?key=${encodeURIComponent(apiKey)}` : `${apiUrl}/user-data/sse`;
+  const projectId =
+    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_PROJECT_ID) || '';
+  const egdeskEnv =
+    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_ENV) || '';
+  const sseParams = new URLSearchParams();
+  if (apiKey) sseParams.set('key', apiKey);
+  if (projectId) sseParams.set('egdeskId', projectId);
+  if (egdeskEnv) sseParams.set('environment', egdeskEnv);
+  const sseQuery = sseParams.toString();
+  const sseUrl = `${apiUrl}/user-data/sse${sseQuery ? `?${sseQuery}` : ''}`;
   const es = new EventSource(sseUrl);
 
   es.addEventListener('message', (e: MessageEvent) => {
@@ -2099,12 +2311,65 @@ export type AiCallerCallResult = {
 };
 
 /**
- * Call Gemini and log token usage. Returns the AI response plus a usage summary.
- * Supports images, filePaths, and inline files (documents, text, video frames).
+ * Call Gemini for TEXT generation and log token usage. Returns the AI response plus a usage summary.
+ * Supports images, filePaths, and inline files (documents, text, video frames) as INPUT context.
  * Omit `maxOutputTokens` to auto-use the selected model's maximum from the Gemini API.
+ *
+ * Do NOT pass an image-generation model (gemini-*-image, imagen-*) here — it cannot return image
+ * bytes and will throw. Use `generateAiCallerImage` instead.
  */
 export async function callAiCaller(prompt: string, options: AiCallerCallOptions = {}): Promise<AiCallerCallResult> {
   return callAiCallerTool('ai_caller_call', { prompt, ...options });
+}
+
+export type AiCallerGenerateImageOptions = {
+  /** Image model id (e.g. gemini-3.1-flash-image, imagen-4.0-generate-001). Defaults to the preferred image model from AI Keys. */
+  model?: string;
+  /** Number of images to generate (default: 1) */
+  count?: number;
+  /** Optional reference images (base64, raw or data URLs) to ground generation */
+  images?: string[];
+  /** Aspect ratio (Imagen only; default 1:1) */
+  aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+  /** Output resolution (Imagen only; default 1K) */
+  imageSize?: '1K' | '2K';
+  /** Output MIME type (Imagen only; default image/png) */
+  outputMimeType?: 'image/jpeg' | 'image/png';
+  /** Optional absolute directory (on the EGDesk host) to also save generated images to disk */
+  outputDir?: string;
+  /** Gemini image model to fall back to if the primary (usually Imagen) model fails */
+  fallbackModel?: string;
+  caller?: string;
+  /** Select a specific Google API key by name (as saved in EGDesk AI Keys Manager). Leave empty to use the default key. */
+  keyName?: '01ONC' | (string & {});
+};
+
+export type AiCallerGeneratedImage = {
+  fileName: string;
+  mimeType: string;
+  /** Base64-encoded image data */
+  data: string;
+  size: number;
+  /** Local path on the EGDesk host, only set when outputDir was provided */
+  filePath: string | null;
+};
+
+export type AiCallerGenerateImageResult = {
+  model: string;
+  count: number;
+  images: AiCallerGeneratedImage[];
+};
+
+/**
+ * Generate image(s) with Gemini image models or Imagen and log token usage.
+ * Returns base64 image data (and a local filePath when `outputDir` is set).
+ * Use this instead of `callAiCaller` for any image-generation model.
+ */
+export async function generateAiCallerImage(
+  prompt: string,
+  options: AiCallerGenerateImageOptions = {}
+): Promise<AiCallerGenerateImageResult> {
+  return callAiCallerTool('ai_caller_generate_image', { prompt, ...options });
 }
 
 export type AiCallerUsageOptions = {
@@ -2140,11 +2405,15 @@ export type AiCallerModelsResult = {
   models: string[];
   defaultModel: string;
   modelDetails?: AiCallerModelDetails[];
+  /** Image-generation model ids — pass these to generateAiCallerImage, NOT callAiCaller */
+  imageModels: string[];
+  defaultImageModel: string;
 };
 
 /**
  * List Gemini models available for text generation, fetched live from the Google API via EGDesk.
- * Includes per-model input/output token limits when available.
+ * Includes per-model input/output token limits when available, plus separate image-generation
+ * model ids (for use with generateAiCallerImage).
  */
 export async function listAiCallerModels(): Promise<AiCallerModelsResult> {
   return callAiCallerTool('ai_caller_list_models', {});
@@ -2219,6 +2488,242 @@ export async function getPageIndexPages(docId: string, pages: string) {
 /** Delete an indexed document */
 export async function deletePageIndexDocument(docId: string) {
   return callPageIndexTool('pageindex_delete_document', { doc_id: docId });
+}
+
+// ==========================================
+// Drive (MCP) — change watch / poll / events
+// ==========================================
+
+/**
+ * Call EGDesk Drive MCP tool (Google Drive change notifications + poll).
+ *
+ * Auth on EGDesk: GOOGLE_SERVICE_ACCOUNT_JSON or Google Workspace sign-in.
+ * Share target folders with the service account when using SA credentials.
+ *
+ * - Server: `POST {apiUrl}/drive/tools/call`
+ * - Client: `POST /__drive_proxy` (see proxy.ts / middleware)
+ * - Webhook (Google push, not this helper): `POST {apiUrl}/drive/webhook`
+ */
+export async function callDriveTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const body = JSON.stringify({ tool: toolName, arguments: args });
+
+  const isServer = typeof window === 'undefined';
+
+  let response: Response;
+  if (isServer) {
+    const apiUrl =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_URL) ||
+      EGDESK_CONFIG.apiUrl;
+    response = await fetch(`${apiUrl}/drive/tools/call`, {
+      method: 'POST',
+      headers: buildServerEgdeskHeaders(),
+      body
+    });
+  } else {
+    response = await apiFetch('/__drive_proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+  }
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+/** Check Drive auth (service account / Google OAuth) */
+export async function getDriveAuthStatus() {
+  return callDriveTool('drive_auth_status', {});
+}
+
+/**
+ * Start Google OAuth for Drive. Returns { status:'pending', authUrl } immediately.
+ * Open authUrl in the browser, then poll getDriveAuthStatus() until connected.
+ */
+export async function startDriveAuthLogin(options: {
+  openWindow?: boolean;
+  forceConsent?: boolean;
+} = {}) {
+  return callDriveTool('drive_auth_login', options);
+}
+
+/** Initialize Drive sync (page token + target folders; optional snapshot) */
+export async function initDriveSync(options: {
+  folderIds: string[];
+  snapshot?: boolean;
+  downloadPath?: string;
+  reset?: boolean;
+}) {
+  return callDriveTool('drive_init', options);
+}
+
+/** Start drive.changes.watch; webhook = {webhookBaseUrl}/drive/webhook */
+export async function watchDriveChanges(options: {
+  webhookBaseUrl: string;
+  ttlSeconds?: number;
+}) {
+  return callDriveTool('drive_watch', options);
+}
+
+/** Stop the active Drive watch channel */
+export async function stopDriveWatch() {
+  return callDriveTool('drive_stop', {});
+}
+
+/** One-shot poll via changes.list (no tunnel needed) */
+export async function pollDriveChanges(options: { download?: boolean } = {}) {
+  return callDriveTool('drive_poll', options);
+}
+
+/** Keep watching saved folders on an interval (persists + auto-resumes) */
+export async function startDrivePollLoop(options: {
+  intervalSeconds?: number;
+  download?: boolean;
+} = {}) {
+  return callDriveTool('drive_start_poll_loop', options);
+}
+
+/** Stop continuous poll loop (folders/page token stay saved) */
+export async function stopDrivePollLoop() {
+  return callDriveTool('drive_stop_poll_loop', {});
+}
+
+/** Sync state, channel expiry, and event counts */
+export async function getDriveStatus() {
+  return callDriveTool('drive_status', {});
+}
+
+/** List currently watched folders with names and Drive URLs */
+export async function listDriveWatchedFolders() {
+  return callDriveTool('drive_list_watched_folders', {});
+}
+
+/** List recent drive_file_events */
+export async function listDriveEvents(options: {
+  limit?: number;
+  downloadedOnly?: boolean;
+  since?: string;
+} = {}) {
+  return callDriveTool('drive_list_events', options);
+}
+
+/** Replace monitored folder IDs without resetting the page token */
+export async function setDriveTargetFolders(folderIds: string[]) {
+  return callDriveTool('drive_set_target_folders', { folderIds });
+}
+
+// ==========================================
+// Knowledge Wiki (MCP) — Obsidian + wikiHow
+// ==========================================
+
+/**
+ * Call EGDesk Knowledge Wiki MCP tool (Obsidian vault index + wikiHow guides).
+ *
+ * - Server: `POST {apiUrl}/knowledge-wiki/tools/call`
+ * - Client: `POST /__knowledge_wiki_proxy` (see proxy.ts / middleware)
+ */
+export async function callKnowledgeWikiTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const body = JSON.stringify({ tool: toolName, arguments: args });
+
+  const isServer = typeof window === 'undefined';
+
+  let response: Response;
+  if (isServer) {
+    const apiUrl =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_URL) ||
+      EGDESK_CONFIG.apiUrl;
+    response = await fetch(`${apiUrl}/knowledge-wiki/tools/call`, {
+      method: 'POST',
+      headers: buildServerEgdeskHeaders(),
+      body
+    });
+  } else {
+    response = await apiFetch('/__knowledge_wiki_proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+  }
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+export async function getKnowledgeWikiStatus() {
+  return callKnowledgeWikiTool('knowledge_wiki_status', {});
+}
+
+export async function searchKnowledgeWiki(
+  query: string,
+  options: { limit?: number; sources?: Array<'obsidian' | 'wikihow'> } = {}
+) {
+  return callKnowledgeWikiTool('knowledge_wiki_search', { query, ...options });
+}
+
+export async function setObsidianVault(vaultPath: string) {
+  return callKnowledgeWikiTool('obsidian_set_vault', { vaultPath });
+}
+
+export async function indexObsidianVault(options: { vaultPath?: string } = {}) {
+  return callKnowledgeWikiTool('obsidian_index', options);
+}
+
+export async function listObsidianNotes(options: {
+  limit?: number;
+  offset?: number;
+  tag?: string;
+} = {}) {
+  return callKnowledgeWikiTool('obsidian_list_notes', options);
+}
+
+export async function getObsidianNote(options: {
+  path?: string;
+  title?: string;
+  id?: string;
+}) {
+  return callKnowledgeWikiTool('obsidian_get_note', options);
+}
+
+export async function searchObsidianNotes(query: string, limit?: number) {
+  return callKnowledgeWikiTool('obsidian_search', { query, limit });
+}
+
+export async function getObsidianBacklinks(title: string, limit?: number) {
+  return callKnowledgeWikiTool('obsidian_backlinks', { title, limit });
+}
+
+export async function listObsidianTags() {
+  return callKnowledgeWikiTool('obsidian_list_tags', {});
+}
+
+export async function searchWikiHow(
+  query: string,
+  options: { lang?: string; limit?: number } = {}
+) {
+  return callKnowledgeWikiTool('wikihow_search', { query, ...options });
+}
+
+export async function getWikiHowGuide(
+  titleOrUrl: string,
+  options: { lang?: string; cache?: boolean } = {}
+) {
+  return callKnowledgeWikiTool('wikihow_get_guide', { titleOrUrl, ...options });
+}
+
+export async function listCachedWikiHow(options: {
+  limit?: number;
+  offset?: number;
+  lang?: string;
+} = {}) {
+  return callKnowledgeWikiTool('wikihow_list_cached', options);
+}
+
+export async function searchCachedWikiHow(query: string, limit?: number) {
+  return callKnowledgeWikiTool('wikihow_search_cached', { query, limit });
 }
 
 // ==========================================
@@ -2306,4 +2811,1006 @@ export async function setGeminiApiKey(options: {
 /** List all Google/Gemini keys in AI Keys Manager */
 export async function listGeminiApiKeys() {
   return listApiKeys({ provider: 'google' });
+}
+
+// ==========================================
+// Phone / Google Messages (MCP)
+// ==========================================
+
+/**
+ * Call EGDesk Phone MCP tool (Messages Web devices, inbox, SMS queue, consent).
+ *
+ * - Server: `POST {apiUrl}/phone/tools/call`
+ * - Client: `POST /__phone_proxy` (see proxy.ts / middleware)
+ */
+export async function callPhoneTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const body = JSON.stringify({ tool: toolName, arguments: args });
+  const isServer = typeof window === 'undefined';
+
+  let response: Response;
+  if (isServer) {
+    const apiUrl =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_URL) ||
+      EGDESK_CONFIG.apiUrl;
+    response = await fetch(`${apiUrl}/phone/tools/call`, {
+      method: 'POST',
+      headers: buildServerEgdeskHeaders(),
+      body
+    });
+  } else {
+    response = await apiFetch('/__phone_proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+  }
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+export async function listPhoneDevices() {
+  return callPhoneTool('phone_list_devices', {});
+}
+
+export async function createPhoneDevice(options: {
+  label: string;
+  id?: string;
+  googleProfileName?: string;
+}) {
+  return callPhoneTool('phone_create_device', options);
+}
+
+export async function updatePhoneDevice(options: {
+  deviceId: string;
+  label?: string;
+  googleProfileName?: string | null;
+}) {
+  return callPhoneTool('phone_update_device', options);
+}
+
+export async function deletePhoneDevice(deviceId: string) {
+  return callPhoneTool('phone_delete_device', { deviceId });
+}
+
+export async function connectPhoneDevice(deviceId: string) {
+  return callPhoneTool('phone_connect', { deviceId });
+}
+
+export async function checkPhoneDevice(deviceId: string) {
+  return callPhoneTool('phone_check', { deviceId });
+}
+
+export async function listPhoneConversations(deviceId: string) {
+  return callPhoneTool('phone_list_conversations', { deviceId });
+}
+
+export async function syncPhoneConversations(deviceId: string) {
+  return callPhoneTool('phone_sync_conversations', { deviceId });
+}
+
+export async function listPhoneConversationMessages(options: {
+  deviceId: string;
+  convKey: string;
+}) {
+  return callPhoneTool('phone_list_conversation_messages', options);
+}
+
+export async function syncPhoneConversationThread(options: {
+  deviceId: string;
+  convKey: string;
+  title: string;
+}) {
+  return callPhoneTool('phone_sync_conversation_thread', options);
+}
+
+export async function listPhoneContacts(deviceId: string) {
+  return callPhoneTool('phone_list_contacts', { deviceId });
+}
+
+export async function syncPhoneContacts(deviceId: string) {
+  return callPhoneTool('phone_sync_contacts', { deviceId });
+}
+
+export async function sendPhoneSms(options: {
+  deviceId: string;
+  phoneNumber: string;
+  message: string;
+  snapshotId?: string;
+  scheduledAt?: number;
+  isMarketing?: boolean;
+  brandName?: string;
+}) {
+  return callPhoneTool('phone_send', options);
+}
+
+export async function listPhoneQueue(options: {
+  deviceId?: string;
+  snapshotId?: string;
+  limit?: number;
+} = {}) {
+  return callPhoneTool('phone_list_queue', options);
+}
+
+export async function cancelPhoneSend(jobId: string) {
+  return callPhoneTool('phone_cancel_send', { jobId });
+}
+
+export async function retryPhoneSend(jobId: string) {
+  return callPhoneTool('phone_retry_send', { jobId });
+}
+
+export async function listPhoneDevicesForSnapshot(snapshotId: string) {
+  return callPhoneTool('phone_list_for_snapshot', { snapshotId });
+}
+
+export async function linkPhoneSnapshot(options: {
+  snapshotId: string;
+  deviceId: string;
+}) {
+  return callPhoneTool('phone_link_snapshot', options);
+}
+
+export async function unlinkPhoneSnapshot(options: {
+  snapshotId: string;
+  deviceId: string;
+}) {
+  return callPhoneTool('phone_unlink_snapshot', options);
+}
+
+export async function getPhoneConsentLink(snapshotId: string) {
+  return callPhoneTool('phone_consent_link_get', { snapshotId });
+}
+
+export async function createPhoneConsentLink(options: {
+  snapshotId: string;
+  brandName?: string;
+  optOutPhone?: string;
+}) {
+  return callPhoneTool('phone_consent_link_create', options);
+}
+
+export async function syncPhoneConsentEvents(snapshotId: string) {
+  return callPhoneTool('phone_consent_events_sync', { snapshotId });
+}
+
+// ==========================================
+// INSTAGRAM (MCP)
+// ==========================================
+//
+// Login model: each connection stores a login id (email/username) + password
+// (or a shared googleProfileName), plus an optional public @handle used for
+// profile URLs. Posting and stats sync drive real Instagram via Playwright,
+// so they are slower (~seconds to ~1-2 min) than plain data reads.
+
+/**
+ * Call EGDesk Instagram MCP tool.
+ *
+ * - Server: `POST {apiUrl}/instagram/tools/call`
+ * - Client: `POST /__instagram_proxy` (see proxy.ts / middleware)
+ */
+export async function callInstagramTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const body = JSON.stringify({ tool: toolName, arguments: args });
+
+  const isServer = typeof window === 'undefined';
+
+  let response: Response;
+  if (isServer) {
+    const apiUrl =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_URL) ||
+      EGDESK_CONFIG.apiUrl;
+    response = await fetch(`${apiUrl}/instagram/tools/call`, {
+      method: 'POST',
+      headers: buildServerEgdeskHeaders(),
+      body
+    });
+  } else {
+    response = await apiFetch('/__instagram_proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+  }
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+export type InstagramConnection = {
+  id: string;
+  name: string;
+  username: string;
+  /** Public @handle (no leading @) used for profile URLs, or null. */
+  handle: string | null;
+  hasPassword: boolean;
+  hasAccessToken: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** List Instagram connections saved in EGDesk. Passwords are never returned. */
+export async function listInstagramConnections(): Promise<{
+  success: boolean;
+  connections: InstagramConnection[];
+}> {
+  return callInstagramTool('instagram_list_connections', {});
+}
+
+/** Save a new Instagram connection, or update an existing one by (username or id). */
+export async function saveInstagramConnection(options: {
+  name: string;
+  /** Login id (email, phone, or username) */
+  username: string;
+  password: string;
+  /** Public Instagram @handle (not email) */
+  handle?: string;
+  /** Optional existing connection id */
+  id?: string;
+}) {
+  return callInstagramTool('instagram_save_connection', options);
+}
+
+/** Update fields on an Instagram connection (name, login, password, handle). */
+export async function updateInstagramConnection(options: {
+  connectionId: string;
+  name?: string;
+  username?: string;
+  password?: string;
+  handle?: string;
+}) {
+  return callInstagramTool('instagram_update_connection', options);
+}
+
+/** Delete an Instagram connection by id. */
+export async function deleteInstagramConnection(connectionId: string) {
+  return callInstagramTool('instagram_delete_connection', { connectionId });
+}
+
+export type InstagramPublishHistorySource = 'schedule' | 'debug' | 'manual';
+
+export type InstagramPublishHistoryEntry = {
+  id: string;
+  source: InstagramPublishHistorySource;
+  status: 'success' | 'failure';
+  connectionId?: string | null;
+  connectionName?: string | null;
+  username?: string | null;
+  scheduleId?: string | null;
+  scheduleTitle?: string | null;
+  title?: string | null;
+  caption?: string | null;
+  imagePath?: string | null;
+  postUrl?: string | null;
+  shortcode?: string | null;
+  likes?: number | null;
+  comments?: number | null;
+  views?: number | null;
+  statsScrapedAt?: string | null;
+  errorMessage?: string | null;
+  startedAt: string;
+  completedAt: string;
+  durationMs?: number;
+};
+
+/** List Instagram publish history (scheduled runs + debug/manual posts) with likes/comments when synced. */
+export async function listInstagramHistory(options: {
+  connectionId?: string;
+  /** 'success' | 'failure' */
+  status?: string;
+  /** Max rows (default 100, max 500) */
+  limit?: number;
+} = {}): Promise<{ success: boolean; total: number; history: InstagramPublishHistoryEntry[] }> {
+  return callInstagramTool('instagram_list_history', options);
+}
+
+/**
+ * Login (headed, background window) and scrape recent posts for likes/comments;
+ * merge into publish history. Slow (~1-2 min).
+ */
+export async function syncInstagramPostStats(options: {
+  connectionId: string;
+  /** Max posts to open (default 12, max 24) */
+  limit?: number;
+  /** Parallel tabs (default 8, max 8) */
+  concurrency?: number;
+}) {
+  return callInstagramTool('instagram_sync_post_stats', options);
+}
+
+/** Alias of syncInstagramPostStats — scrape recent posts with engagement. */
+export async function fetchInstagramPosts(options: {
+  connectionId: string;
+  limit?: number;
+}) {
+  return callInstagramTool('instagram_fetch_posts', options);
+}
+
+export type GenerateInstagramContentOptions = {
+  topic?: string;
+  /** Alias for topic; used to resolve a BI catalog product */
+  productName?: string;
+  /** BI snapshot for brand identity + product grounding */
+  biSnapshotId?: string;
+  /** Override the auto-built content goal */
+  contentGoal?: string;
+  /** Guidance for the generated image */
+  visualBrief?: string;
+  /** Hashtags to bias the AI toward */
+  preferredHashtags?: string[];
+  /** Preferred call-to-action */
+  cta?: string;
+  language?: string;
+  extraInstructions?: string;
+  textModel?: string;
+  imageModel?: string;
+  /** Default true — set false to skip image generation and only return the caption */
+  generateImage?: boolean;
+};
+
+export type GeneratedInstagramContentResult = {
+  success: boolean;
+  topic: string;
+  productName: string | null;
+  biSnapshotId: string | null;
+  content: {
+    caption: string;
+    hook: string;
+    body: string;
+    cta: string;
+    hashtags: string[];
+    altText?: string;
+    imagePrompt?: string;
+    notes?: string[];
+  };
+  textModel: string | null;
+  image?: { filePath: string; fileName: string; mimeType: string; size: number };
+  imageWarning?: string;
+  imageError?: string;
+  hint?: string;
+};
+
+/**
+ * Generate an Instagram caption + image WITHOUT logging in or publishing.
+ * Pass topic, or biSnapshotId (+ optional productName) to ground on a Business Identity product.
+ * Returns content.caption and image.filePath — pass both to createInstagramPost() to publish afterwards.
+ */
+export async function generateInstagramContent(
+  options: GenerateInstagramContentOptions = {}
+): Promise<GeneratedInstagramContentResult> {
+  return callInstagramTool('instagram_generate_content', options);
+}
+
+/**
+ * Publish an Instagram post via Playwright (login + create). Requires a local
+ * imagePath (absolute path on the EGDesk machine) and caption. Records publish history.
+ */
+export async function createInstagramPost(options: {
+  connectionId: string;
+  caption: string;
+  /** Absolute path to an image on the EGDesk machine */
+  imagePath: string;
+  /** Ms to wait after Share (default 8000) */
+  waitAfterShare?: number;
+}) {
+  return callInstagramTool('instagram_create_post', options);
+}
+
+/** Debug publish: post fixed/default caption with ~/Downloads/cat.png (or imagePath). No Gemini. */
+export async function debugInstagramPost(options: {
+  connectionId: string;
+  caption?: string;
+  imagePath?: string;
+}) {
+  return callInstagramTool('instagram_debug_post', options);
+}
+
+export type InstagramSchedule = {
+  id: string;
+  title: string;
+  connectionId: string;
+  connectionName: string;
+  connectionType: string;
+  enabled: boolean;
+  frequencyType: string;
+  frequencyValue: unknown;
+  scheduledTime: string;
+  nextRun?: string | null;
+  lastRun?: string | null;
+  runCount?: number;
+  successCount?: number;
+  failureCount?: number;
+  topics?: unknown;
+};
+
+/** List Instagram scheduled posts for a connection, or all Instagram schedules when omitted. */
+export async function listInstagramSchedules(connectionId?: string): Promise<{
+  success: boolean;
+  schedules: InstagramSchedule[];
+}> {
+  return callInstagramTool('instagram_list_schedules', connectionId ? { connectionId } : {});
+}
+
+export type CreateInstagramScheduleOptions = {
+  title: string;
+  connectionId: string;
+  /** manual topics or rotate BI products */
+  topicSource?: 'manual' | 'bi_products';
+  /** Required when topicSource is bi_products */
+  biSnapshotId?: string;
+  /** Manual topics or product names when using bi_products */
+  topics?: string[];
+  /** HH:MM (24h). Default 09:00. NOTE: this is a RECURRING daily/weekly/monthly
+   * cron time, not a one-off timer — if it already passed "today" when the
+   * schedule registers, it won't fire until tomorrow. Use runNow for an
+   * immediate/one-time post instead of a near-term scheduledTime. */
+  scheduledTime?: string;
+  frequencyType?: 'daily' | 'weekly' | 'monthly' | 'custom';
+  frequencyValue?: number;
+  /** 0=Sunday … 6=Saturday (weekly) */
+  weeklyDay?: number;
+  /** 1-31 (monthly) */
+  monthlyDay?: number;
+  aiKeyId?: string;
+  /** Caption generation model (Gemini text model) */
+  textModel?: string;
+  /** Image generation model (Gemini image model) */
+  imageModel?: string;
+  /** Default true */
+  enabled?: boolean;
+  /** Default true — immediately generate + post to Instagram after creating the schedule. Pass false to only register the recurring schedule. */
+  runNow?: boolean;
+};
+
+/**
+ * Create a recurring Instagram post schedule. Use topicSource='bi_products' with
+ * biSnapshotId + product name topics for product-grounded captions/images using
+ * BI product photos as reference. The response includes an actualNextRun field
+ * (the real cron-computed next fire time) so you can confirm it isn't deferred
+ * to tomorrow — for immediate/one-time testing, pass runNow=true instead.
+ */
+export async function createInstagramSchedule(options: CreateInstagramScheduleOptions) {
+  return callInstagramTool('instagram_schedule_create', options);
+}
+
+/** Enable or disable an Instagram schedule. */
+export async function toggleInstagramSchedule(scheduleId: string, enabled: boolean) {
+  return callInstagramTool('instagram_schedule_toggle', { scheduleId, enabled });
+}
+
+/** Permanently delete an Instagram schedule. */
+export async function deleteInstagramSchedule(scheduleId: string) {
+  return callInstagramTool('instagram_schedule_delete', { scheduleId });
+}
+
+/**
+ * Immediately generate caption + image and post to Instagram for a schedule
+ * (full auto path). May take a minute or more, and may pause for CAPTCHA on
+ * first-time logins.
+ */
+export async function runInstagramScheduleNow(scheduleId: string) {
+  return callInstagramTool('instagram_schedule_run_now', { scheduleId });
+}
+
+// ==========================================
+// BLOG (MCP) — WordPress / Naver
+// ==========================================
+//
+// Path A: schedule auto-generate + publish posts (blog_schedule_create + runNow / blog_schedule_run_now).
+// Path B: generate a draft, inspect it, then publish separately (generateBlogContent → publishBlogDraft).
+// Path C: publish title + HTML + images in one call (publishBlogContent).
+
+/**
+ * Call EGDesk Blog MCP tool.
+ *
+ * - Server: `POST {apiUrl}/blog/tools/call`
+ * - Client: `POST /__blog_proxy` (see proxy.ts / middleware)
+ */
+export async function callBlogTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const body = JSON.stringify({ tool: toolName, arguments: args });
+
+  const isServer = typeof window === 'undefined';
+
+  let response: Response;
+  if (isServer) {
+    const apiUrl =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_URL) ||
+      EGDESK_CONFIG.apiUrl;
+    response = await fetch(`${apiUrl}/blog/tools/call`, {
+      method: 'POST',
+      headers: buildServerEgdeskHeaders(),
+      body
+    });
+  } else {
+    response = await apiFetch('/__blog_proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+  }
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+export type BlogConnection = {
+  id: string;
+  name: string;
+  type: 'wordpress' | 'naver';
+  url?: string;
+};
+
+/** List WordPress and Naver Blog connections available for scheduling/publishing. */
+export async function listBlogConnections(): Promise<{ connections: BlogConnection[] }> {
+  return callBlogTool('blog_list_connections', {});
+}
+
+/**
+ * Add a new blog account connection (WordPress or Naver). Returns connectionId for
+ * schedule/publish tools. Updates existing Naver by username or WordPress by url.
+ */
+export async function addBlogConnection(options: {
+  type: 'naver' | 'wordpress';
+  /** Defaults to username or site URL */
+  name?: string;
+  /** Naver ID or WordPress username */
+  username: string;
+  /** Naver password or WordPress application password */
+  password: string;
+  /** WordPress site URL (required when type=wordpress) */
+  url?: string;
+  /** Optional proxy URL for Naver automation */
+  proxyUrl?: string;
+}) {
+  return callBlogTool('blog_add_connection', options);
+}
+
+export type CreateBlogScheduleOptions = {
+  title: string;
+  connectionId: string;
+  /** manual topics or rotate BI products */
+  topicSource?: 'manual' | 'bi_products';
+  /** Required when topicSource is bi_products */
+  biSnapshotId?: string;
+  /** Manual topics or product names when using bi_products */
+  topics?: string[];
+  /** HH:MM (24h). Default 09:00 */
+  scheduledTime?: string;
+  frequencyType?: 'daily' | 'weekly' | 'monthly' | 'custom';
+  frequencyValue?: number;
+  /** 0=Sunday … 6=Saturday (weekly) */
+  weeklyDay?: number;
+  /** 1-31 (monthly) */
+  monthlyDay?: number;
+  aiKeyId?: string;
+  textModel?: string;
+  imageModel?: string;
+  /** Default true */
+  enabled?: boolean;
+  /** Default true — immediately generate + publish after creating the schedule (may take several minutes). Pass false to only register the recurring schedule. */
+  runNow?: boolean;
+};
+
+/**
+ * Create a recurring blog schedule. Use topicSource='bi_products' with biSnapshotId +
+ * product name topics for auto-generation from the BI catalog.
+ */
+export async function createBlogSchedule(options: CreateBlogScheduleOptions) {
+  return callBlogTool('blog_schedule_create', options);
+}
+
+/** List scheduled blog posts (optional connectionId filter). */
+export async function listBlogSchedules(connectionId?: string) {
+  return callBlogTool('blog_schedule_list', connectionId ? { connectionId } : {});
+}
+
+/** Enable or disable a scheduled blog post. */
+export async function toggleBlogSchedule(scheduleId: string, enabled: boolean) {
+  return callBlogTool('blog_schedule_toggle', { scheduleId, enabled });
+}
+
+/** Immediately generate and publish for a schedule (full auto path). May take several minutes. */
+export async function runBlogScheduleNow(scheduleId: string) {
+  return callBlogTool('blog_schedule_run_now', { scheduleId });
+}
+
+export type BlogPublishHistoryEntry = {
+  id: string;
+  source: 'mcp' | 'schedule';
+  status: 'success' | 'failure';
+  connectionId?: string | null;
+  connectionName?: string | null;
+  connectionType?: string | null;
+  scheduleId?: string | null;
+  scheduleTitle?: string | null;
+  draftId?: string | null;
+  title?: string | null;
+  postUrl?: string | null;
+  /** Naver logNo / WordPress post id when known */
+  postId?: string | null;
+  errorMessage?: string | null;
+  imageCount?: number;
+  topics?: string[];
+  startedAt: string;
+  completedAt: string;
+  durationMs?: number;
+};
+
+/**
+ * Fetch posted-blog history: scheduled executions + MCP one-off publishes (title, postUrl,
+ * postId, status, connection, timestamps). Naver postId is the logNo for
+ * blog.stat.naver.com/blog/download/article/{postId}.
+ */
+export async function listBlogHistory(options: {
+  /** Filter to one schedule */
+  scheduleId?: string;
+  /** Filter by blog connection */
+  connectionId?: string;
+  status?: 'success' | 'failure';
+  /** Max rows (default 100, max 500) */
+  limit?: number;
+} = {}): Promise<{ total: number; history: BlogPublishHistoryEntry[] }> {
+  return callBlogTool('blog_list_history', options);
+}
+
+export type BlogDraftImage = {
+  uuid?: string;
+  description?: string;
+  altText?: string;
+  caption?: string;
+  placement?: string;
+  filePath?: string;
+  url?: string;
+  mimeType?: string;
+};
+
+export type BlogDraftSummary = {
+  draftId: string;
+  topic: string;
+  biSnapshotId: string | null;
+  productName: string | null;
+  title: string;
+  excerpt: string | null;
+  tags: string[] | string;
+  imageCount: number;
+  images: Array<{
+    index: number;
+    uuid: string | null;
+    description: string | null;
+    placement: string | null;
+    filePath: string | null;
+    url: string | null;
+  }>;
+  markerCount: number;
+  wordCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
+ * Generate blog content without publishing. Returns draftId, image filePaths, and preview.
+ * Use productName + biSnapshotId to apply product tone/images. Pass draftId (or
+ * title+content+images) to publishBlogDraft() / publishBlogContent().
+ */
+export async function generateBlogContent(options: {
+  topic?: string;
+  productName?: string;
+  biSnapshotId?: string;
+  textModel?: string;
+  imageModel?: string;
+  aiKeyId?: string;
+  /** Affects image handling. Default naver (local files). */
+  platform?: 'wordpress' | 'naver';
+  /** Optional WordPress connection for image upload during generation */
+  connectionId?: string;
+  /** If true, include full HTML body in the response */
+  includeContent?: boolean;
+} = {}): Promise<
+  BlogDraftSummary & { success: true; hint: string; content?: string; markers?: unknown[] }
+> {
+  return callBlogTool('blog_generate_content', options);
+}
+
+/** Fetch a generated draft. includeContent=true returns full HTML + images metadata. */
+export async function getBlogDraft(
+  draftId: string,
+  includeContent?: boolean
+): Promise<{ summary: BlogDraftSummary; draft?: unknown }> {
+  return callBlogTool('blog_get_draft', { draftId, includeContent });
+}
+
+/**
+ * Publish to WordPress or Naver in one call. Prefer draftId, OR pass title + content HTML
+ * (with [IMAGE:description:placement] markers) + images[] together. images items accept
+ * filePath, dataBase64/data URL, or url — order must match markers.
+ */
+export async function publishBlog(options: {
+  connectionId: string;
+  /** Publish a previously generated draft (images come from the draft unless overridden) */
+  draftId?: string;
+  /** Inline title when not using draftId */
+  title?: string;
+  /** HTML body with [IMAGE:description:placement] markers at insert positions */
+  content?: string;
+  /** Images in marker order */
+  images?: BlogDraftImage[];
+  tags?: string | string[];
+  excerpt?: string;
+}): Promise<{
+  success: boolean;
+  postUrl: string;
+  postId: string | null;
+  connectionType: string;
+  draftId?: string;
+}> {
+  return callBlogTool('blog_publish', options);
+}
+
+/**
+ * Sync fresh Naver article stats for one or many posts from blog.stat.naver.com (Excel
+ * CV/LIKE/COMMENT/REFERER/DEMO + live 누적 조회수/공감/댓글). Pass postIds for multiple logNos,
+ * or fromHistory=true to sync recent published posts.
+ */
+export async function getBlogArticleStats(options: {
+  /** Naver blog connection id */
+  connectionId: string;
+  /** Single Naver logNo / article id (optional if postIds or fromHistory) */
+  postId?: string;
+  /** Multiple Naver logNo / article ids to sync in one call (preferred for batch) */
+  postIds?: string[];
+  /** If true (and no postId/postIds), sync recent successful publish-history posts that have postId */
+  fromHistory?: boolean;
+  metric?: 'CV' | 'LIKE' | 'COMMENT' | 'REFERER' | 'DEMO';
+  /** YYYY-MM-DD filter for returned series */
+  dateFrom?: string;
+  /** YYYY-MM-DD filter for returned series */
+  dateTo?: string;
+  /** Max posts when fromHistory=true (default 20, max 100) */
+  limit?: number;
+  /** Include download snapshot metadata (default true) */
+  includeSnapshots?: boolean;
+}) {
+  return callBlogTool('blog_article_stats', options);
+}
+
+// ==========================================
+// YOUTUBE SHORTS (MCP)
+// ==========================================
+//
+// Login model: connections use a shared Chrome profile (chromeUserDataDir +
+// chromeExecutablePath, recommended to avoid CAPTCHA) or username+password.
+// Generation and upload drive real YouTube via Playwright, so schedule_run_now /
+// generateVideo=true / debug_post are slower (seconds to several minutes).
+
+/**
+ * Call EGDesk YouTube Shorts MCP tool.
+ *
+ * - Server: `POST {apiUrl}/youtube/tools/call`
+ * - Client: `POST /__youtube_proxy` (see proxy.ts / middleware)
+ */
+export async function callYouTubeTool(
+  toolName: string,
+  args: Record<string, any> = {}
+): Promise<any> {
+  const body = JSON.stringify({ tool: toolName, arguments: args });
+
+  const isServer = typeof window === 'undefined';
+
+  let response: Response;
+  if (isServer) {
+    const apiUrl =
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_EGDESK_API_URL) ||
+      EGDESK_CONFIG.apiUrl;
+    response = await fetch(`${apiUrl}/youtube/tools/call`, {
+      method: 'POST',
+      headers: buildServerEgdeskHeaders(),
+      body
+    });
+  } else {
+    response = await apiFetch('/__youtube_proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+  }
+
+  return parseEgdeskMcpToolResponse(response);
+}
+
+export type YouTubeConnection = {
+  id: string;
+  name: string;
+  username: string | null;
+  hasPassword: boolean;
+  googleProfileName: string | null;
+  chromeUserDataDir: string | null;
+  chromeExecutablePath: string | null;
+  channelId: string | null;
+  hasAccessToken: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** List YouTube connections saved in EGDesk (id, name, chrome profile path). Passwords are never returned. */
+export async function listYouTubeConnections(): Promise<{
+  success: boolean;
+  connections: YouTubeConnection[];
+}> {
+  return callYouTubeTool('youtube_list_connections', {});
+}
+
+/**
+ * Save or update a YouTube connection. Prefer chromeUserDataDir + chromeExecutablePath
+ * to avoid CAPTCHA; username+password also accepted.
+ */
+export async function saveYouTubeConnection(options: {
+  name: string;
+  /** Google / YouTube login */
+  username?: string;
+  password?: string;
+  chromeUserDataDir?: string;
+  chromeExecutablePath?: string;
+  channelId?: string;
+  /** Optional existing connection id */
+  id?: string;
+}) {
+  return callYouTubeTool('youtube_save_connection', options);
+}
+
+/** Update fields on a YouTube connection. */
+export async function updateYouTubeConnection(options: {
+  connectionId: string;
+  name?: string;
+  username?: string;
+  password?: string;
+  chromeUserDataDir?: string;
+  chromeExecutablePath?: string;
+  channelId?: string;
+}) {
+  return callYouTubeTool('youtube_update_connection', options);
+}
+
+/** Delete a YouTube connection by id. */
+export async function deleteYouTubeConnection(connectionId: string) {
+  return callYouTubeTool('youtube_delete_connection', { connectionId });
+}
+
+export type CreateYouTubeScheduleOptions = {
+  title: string;
+  connectionId: string;
+  /** manual topics or rotate BI products */
+  topicSource?: 'manual' | 'bi_products';
+  /** BI snapshot for product grounding + brand face / spokesperson */
+  biSnapshotId?: string;
+  /** Manual topics or product names when using bi_products */
+  topics?: string[];
+  /** HH:MM (24h). Default 09:00 */
+  scheduledTime?: string;
+  frequencyType?: 'daily' | 'weekly' | 'monthly' | 'custom';
+  frequencyValue?: number;
+  /** 0=Sunday … 6=Saturday (weekly) */
+  weeklyDay?: number;
+  /** 1-31 (monthly) */
+  monthlyDay?: number;
+  aiKeyId?: string;
+  /** Shorts script model (default gemini-3.5-flash) */
+  textModel?: string;
+  /** Veo video model (default veo-3.1-generate-preview) */
+  videoModel?: string;
+  /** Default true */
+  enabled?: boolean;
+  /** Default true — immediately generate + upload Shorts after creating the schedule (may take several minutes). Pass false to only register the recurring schedule. */
+  runNow?: boolean;
+};
+
+/**
+ * Create a recurring YouTube Shorts schedule. Use topicSource='bi_products' with
+ * biSnapshotId (+ product name topics) for product-grounded Shorts with brand face.
+ */
+export async function createYouTubeSchedule(options: CreateYouTubeScheduleOptions) {
+  return callYouTubeTool('youtube_schedule_create', options);
+}
+
+/** List YouTube Shorts scheduled posts (optional connectionId filter). */
+export async function listYouTubeSchedules(connectionId?: string) {
+  return callYouTubeTool('youtube_list_schedules', connectionId ? { connectionId } : {});
+}
+
+/** Enable or disable a YouTube Shorts schedule. */
+export async function toggleYouTubeSchedule(scheduleId: string, enabled: boolean) {
+  return callYouTubeTool('youtube_schedule_toggle', { scheduleId, enabled });
+}
+
+/**
+ * Immediately generate script + Veo Shorts + upload for a schedule (full auto path).
+ * Uses preferred brand face when biSnapshotId is set. May take several minutes.
+ */
+export async function runYouTubeScheduleNow(scheduleId: string) {
+  return callYouTubeTool('youtube_schedule_run_now', { scheduleId });
+}
+
+export type GenerateYouTubeContentOptions = {
+  /** Topic or product name for the Short */
+  topic?: string;
+  /** Alias for topic; used to resolve BI catalog product */
+  productName?: string;
+  /** BI snapshot for product tone + brand face */
+  biSnapshotId?: string;
+  textModel?: string;
+  videoModel?: string;
+  /** Caption language (default ko) */
+  language?: string;
+  extraInstructions?: string;
+  /** If true, run Veo clip → overlay → outro and return local finalPath */
+  generateVideo?: boolean;
+  /** Skip brand outro stitch when generateVideo=true */
+  skipOutro?: boolean;
+};
+
+export type GeneratedYouTubeContentResult = {
+  success: boolean;
+  topic: string;
+  productName: string;
+  biSnapshotId: string | null;
+  spokesperson: { name: string; role?: string } | null;
+  content: {
+    title: string;
+    description: string;
+    tags: string[];
+    script: unknown;
+    veoScenes: unknown;
+    veoPrompt?: string;
+    thumbnailPrompt?: string;
+    notes?: string[];
+  };
+  textModel: string;
+  videoModel: string;
+  video?: {
+    finalPath: string;
+    composedPath: string;
+    rawClipPath: string;
+    sceneClipPaths: string[];
+    durationSec: number;
+    outroVariantId?: string;
+  };
+  hint: string;
+};
+
+/**
+ * Generate YouTube Shorts content (title/description/script/veoScenes) WITHOUT uploading.
+ * Pass biSnapshotId to ground on a BI product + preferred brand face. Set generateVideo=true
+ * to also render a local mp4 via the Shorts pipeline (pass the returned video.finalPath to
+ * debugYouTubePost() to upload).
+ */
+export async function generateYouTubeContent(
+  options: GenerateYouTubeContentOptions = {}
+): Promise<GeneratedYouTubeContentResult> {
+  return callYouTubeTool('youtube_generate_content', options);
+}
+
+/** Debug upload: login + upload a local Shorts mp4 (no Gemini). Defaults to ~/Downloads/shorts-test.mp4. */
+export async function debugYouTubePost(options: {
+  connectionId: string;
+  /** Absolute local file path to an mp4 already saved on this machine */
+  videoPath?: string;
+  title?: string;
+  description?: string;
+}) {
+  return callYouTubeTool('youtube_debug_post', options);
+}
+
+/** List YouTube Shorts publish/execution history (scheduled runs) with post URLs when available. */
+export async function listYouTubeHistory(options: {
+  scheduleId?: string;
+  connectionId?: string;
+  status?: 'success' | 'failure';
+  /** Max rows (default 100, max 500) */
+  limit?: number;
+} = {}) {
+  return callYouTubeTool('youtube_list_history', options);
 }
