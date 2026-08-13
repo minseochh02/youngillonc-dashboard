@@ -5,7 +5,7 @@ import {
   sqlAndSalesRemarkNotExact,
   sqlSalesResolvedClientKeyExpr,
 } from '@/lib/special-handling-employees';
-import { rebuildComputedInventoryMonthly, CATEGORIES } from './computed-inventory-utils';
+import { rebuildComputedInventoryMonthly, rebuildComputedInventoryDaily, CATEGORIES } from './computed-inventory-utils';
 
 /** Simple lock to prevent multiple concurrent rebuilds */
 let isRebuildingComputedInventory = false;
@@ -291,6 +291,7 @@ export async function buildCumulativeViewPayload(params: {
       try {
         console.log('Missing or stale computed inventory detected. Rebuilding...');
         await rebuildComputedInventoryMonthly();
+        await rebuildComputedInventoryDaily();
       } catch (e) {
         console.error('Failed to rebuild computed inventory:', e);
       } finally {

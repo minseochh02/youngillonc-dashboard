@@ -107,6 +107,25 @@ export const TABLES = {
     columnCount: 13,
     rowCount: 0,
   },
+  computed_inventory_daily: {
+    name: 'computed_inventory_daily',
+    displayName: '일별 계산재고 (Daily Rollup)',
+    columns: [
+      'id', 'date', 'branch_source', 'warehouse_code', 'category', 'tier',
+      'beginning', 'beginning_weight',
+      'purchase', 'purchase_weight',
+      'transfer_in', 'transfer_in_weight',
+      'sales', 'sales_weight',
+      'transfer_out', 'transfer_out_weight',
+      'internal_use', 'internal_use_weight',
+      'disposed', 'disposed_weight',
+      'adjustment', 'adjustment_weight',
+      'ending', 'ending_weight',
+      'computed_at'
+    ],
+    columnCount: 25,
+    rowCount: 0,
+  },
   clients: {
     name: 'clients',
     displayName: '거래처리스트',
