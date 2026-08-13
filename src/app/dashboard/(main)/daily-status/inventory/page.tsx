@@ -243,7 +243,7 @@ export default function DailyInventorySheet() {
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
               }`}
             >
-              사업소 상세 보기
+              창고별로 보기
             </button>
           </div>
 
@@ -273,7 +273,7 @@ export default function DailyInventorySheet() {
       {/* Branch Selection (only visible in office detailed view mode) */}
       {data && viewMode === 'office' && (
         <div className="flex flex-wrap items-center gap-2 bg-zinc-50 dark:bg-zinc-900/50 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-x-auto print:hidden">
-          <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider px-2">사업소 필터:</span>
+          <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider px-2">창고 필터:</span>
           <div className="px-3 py-1.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
             합계 (고정)
           </div>
@@ -322,7 +322,7 @@ export default function DailyInventorySheet() {
                     <span className={`block text-[10px] uppercase tracking-widest mb-1 ${
                       col === '합계' ? 'text-blue-100 font-bold' : col === '본사' || col === '동부' || col === '서부' ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-zinc-400'
                     }`}>
-                      {col === '합계' ? '전체' : (col === '본사' || col === '동부' || col === '서부') ? '3대 지사' : '본사 사업소'}
+                      {col === '합계' ? '전체' : (col === '본사' || col === '동부' || col === '서부') ? '3대 지사' : '본사 창고'}
                     </span>
                     <span className="text-sm font-bold">{col}</span>
                   </th>
