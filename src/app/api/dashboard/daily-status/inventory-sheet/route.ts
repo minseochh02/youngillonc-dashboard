@@ -14,15 +14,30 @@ function getBranchName(branchSource: string, whCode: string, viewMode: 'division
   
   if (branchSource === 'HQ') {
     const col = whCode || '';
-    if (col === 'MB' || col === 'P2') return 'MB';
-    if (col.includes('중부') || col === '42') return '중부';
+    if (col === '02' || col === '2') return '동부';
+    if (col === '03' || col === '3') return '서부';
+    if (col === '05' || col === '5') return '화성';
+    if (col === '06' || col === '6') return '창원';
+    if (col === '09' || col === '9') return '본사';
+    if (col === '42') return '중부';
+    if (col === '50') return '부산';
+    if (col === '51') return '제주';
+    if (col === '54') return '화성(B2B)';
+    if (col === 'P1') return 'EHS';
+    if (col === 'P2') return '영일유화';
+    if (col === 'P3') return '백호테크원';
+    if (col === 'P4') return '다우기업';
+    
+    // Fallback for safety
+    if (col === 'MB') return 'MB';
+    if (col.includes('중부')) return '중부';
     if (col.includes('남부')) return '남부';
-    if (col.includes('서부') || col === '03' || col === '3') return '서부';
-    if (col.includes('동부') || col === '02' || col === '2') return '동부';
-    if (col.includes('화성') || ['05', '5', '54', '36'].includes(col)) return '화성';
-    if (col.includes('창원') || ['06', '6'].includes(col)) return '창원';
-    if (col.includes('제주') || col === '51') return '제주';
-    if (col.includes('부산') || col === '50') return '부산';
+    if (col.includes('서부')) return '서부';
+    if (col.includes('동부')) return '동부';
+    if (col.includes('화성')) return '화성';
+    if (col.includes('창원')) return '창원';
+    if (col.includes('제주')) return '제주';
+    if (col.includes('부산')) return '부산';
     return '본사';
   } else if (branchSource === 'East') {
     return '동부';
