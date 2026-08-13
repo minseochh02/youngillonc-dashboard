@@ -62,10 +62,18 @@ interface InventoryStats {
   beginning_weight: number;
   purchase: number;
   purchase_weight: number;
+  transfer_in: number;
+  transfer_in_weight: number;
   sales: number;
   sales_weight: number;
-  transfer: number;
-  transfer_weight: number;
+  transfer_out: number;
+  transfer_out_weight: number;
+  internal_use: number;
+  internal_use_weight: number;
+  disposed: number;
+  disposed_weight: number;
+  adjustment: number;
+  adjustment_weight: number;
   inventory: number;
   inventory_weight: number;
 }
@@ -93,8 +101,12 @@ const CATEGORIES = [
 const METRICS = [
   { id: "beginning", label: "기초재고", icon: Package },
   { id: "purchase", label: "매입", icon: TrendingUp },
+  { id: "transfer_in", label: "이동입고", icon: ArrowLeftRight },
   { id: "sales", label: "매출", icon: TrendingDown },
-  { id: "transfer", label: "이동", icon: ArrowLeftRight },
+  { id: "transfer_out", label: "이동출고", icon: ArrowLeftRight },
+  { id: "internal_use", label: "자가사용", icon: TrendingDown },
+  { id: "disposed", label: "재고폐기", icon: TrendingDown },
+  { id: "adjustment", label: "재고조정", icon: ArrowLeftRight },
   { id: "inventory", label: "재고", icon: Calculator },
   { id: "inventoryDM", label: "재고 D/M계", icon: Calculator, formula: (val: number) => val / 200 },
 ];
@@ -775,8 +787,12 @@ export default function InventoryStatusPage() {
                                 <metric.icon className={`w-5 h-5 ${
                                   metric.id === 'beginning' ? 'text-zinc-400' :
                                   metric.id === 'purchase' ? 'text-emerald-500' :
+                                  metric.id === 'transfer_in' ? 'text-teal-500' :
                                   metric.id === 'sales' ? 'text-blue-500' :
-                                  metric.id === 'transfer' ? 'text-amber-500' :
+                                  metric.id === 'transfer_out' ? 'text-rose-500' :
+                                  metric.id === 'internal_use' ? 'text-violet-500' :
+                                  metric.id === 'disposed' ? 'text-amber-500' :
+                                  metric.id === 'adjustment' ? 'text-orange-500' :
                                   'text-indigo-500'
                                 }`} />
                                 <span className="text-center leading-tight">{metric.label}</span>
