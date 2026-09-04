@@ -302,18 +302,18 @@ export default function DailyInventorySheet() {
       {/* Daily Table */}
       <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden relative">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full text-sm border-collapse table-fixed">
             <thead>
               <tr className="bg-zinc-50 dark:bg-zinc-900/80 backdrop-blur-md">
-                <th className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[120px]">분류</th>
-                <th className="sticky left-[120px] z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[100px]">산업군</th>
-                <th className="sticky left-[220px] z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[100px]">티어</th>
+                <th className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[100px]">분류</th>
+                <th className="sticky left-[100px] z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[70px]">산업군</th>
+                <th className="sticky left-[170px] z-20 bg-zinc-50 dark:bg-zinc-900 p-4 border-b border-r border-zinc-200 dark:border-zinc-800 text-left w-[75px]">티어</th>
                 {branchesToShow.map(col => (
                   <th 
                     key={col} 
-                    className={`p-4 border-b border-zinc-200 dark:border-zinc-800 text-center min-w-[140px] ${
+                    className={`p-4 border-b border-zinc-200 dark:border-zinc-800 text-center w-[140px] min-w-[140px] ${
                       col === '합계' 
-                        ? 'sticky left-[320px] z-30 bg-blue-600 text-white border-x border-blue-500 shadow-[2px_0_5px_rgba(0,0,0,0.1)]' 
+                        ? 'sticky left-[245px] z-30 bg-blue-600 text-white border-x border-blue-500 shadow-[2px_0_5px_rgba(0,0,0,0.1)]' 
                         : col === '본사' || col === '동부' || col === '서부'
                         ? 'bg-blue-50/70 dark:bg-zinc-900/90 font-bold text-zinc-900 dark:text-zinc-100 border-x border-blue-100 dark:border-zinc-800'
                         : 'bg-zinc-50 dark:bg-zinc-900/80'
@@ -343,7 +343,7 @@ export default function DailyInventorySheet() {
                       {catIdx === 0 && (
                         <td 
                           rowSpan={CATEGORIES.length + 1} 
-                          className="sticky left-0 z-10 bg-white dark:bg-zinc-950 p-4 border-r border-zinc-200 dark:border-zinc-800 font-bold text-zinc-900 dark:text-zinc-100 align-middle"
+                          className="sticky left-0 z-10 bg-white dark:bg-zinc-950 px-1 py-4 border-r border-zinc-200 dark:border-zinc-800 font-bold text-zinc-900 dark:text-zinc-100 align-middle w-[100px]"
                         >
                           <div className="flex flex-col items-center gap-2">
                             <metric.icon className={`w-5 h-5 ${
@@ -363,10 +363,10 @@ export default function DailyInventorySheet() {
                       )}
 
                       {/* Category Headers */}
-                      <td className="sticky left-[120px] z-10 bg-white dark:bg-zinc-950 p-4 border-r border-zinc-200 dark:border-zinc-800 font-medium text-zinc-700 dark:text-zinc-300">
+                      <td className="sticky left-[100px] z-10 bg-white dark:bg-zinc-950 px-1 py-4 border-r border-zinc-200 dark:border-zinc-800 font-medium text-zinc-700 dark:text-zinc-300 w-[70px]">
                         {cat.label}
                       </td>
-                      <td className="sticky left-[220px] z-10 bg-white dark:bg-zinc-950 p-4 border-r border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-500">
+                      <td className="sticky left-[170px] z-10 bg-white dark:bg-zinc-950 px-1 py-4 border-r border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-500 w-[75px]">
                         {cat.subLabel}
                       </td>
 
@@ -407,7 +407,7 @@ export default function DailyInventorySheet() {
                             key={col} 
                             className={`p-4 border-r border-zinc-100 dark:border-zinc-900/50 align-middle ${
                               col === '합계' 
-                                ? 'sticky left-[320px] z-20 bg-blue-50 dark:bg-zinc-900 border-x-2 border-blue-200 dark:border-blue-900/50 font-bold shadow-[2px_0_5px_rgba(0,0,0,0.05)]' 
+                                ? 'sticky left-[245px] z-20 bg-blue-50 dark:bg-zinc-900 border-x-2 border-blue-200 dark:border-blue-900/50 font-bold shadow-[2px_0_5px_rgba(0,0,0,0.05)]' 
                                 : col === '본사' || col === '동부' || col === '서부'
                                 ? 'bg-zinc-50/50 dark:bg-zinc-900/30 font-semibold'
                                 : ''
@@ -439,7 +439,7 @@ export default function DailyInventorySheet() {
 
                   {/* Metric Subtotal Row (소계 / 합계) */}
                   <tr className="bg-zinc-100/90 dark:bg-zinc-900/90 font-bold border-b-2 border-zinc-300 dark:border-zinc-700">
-                    <td colSpan={2} className="sticky left-[120px] z-10 bg-zinc-100 dark:bg-zinc-900 p-3.5 border-r border-zinc-300 dark:border-zinc-700 text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                    <td colSpan={2} className="sticky left-0 z-10 bg-zinc-100 dark:bg-zinc-900 px-1 py-3.5 border-r border-zinc-300 dark:border-zinc-700 text-xs font-bold text-zinc-900 dark:text-zinc-100 w-[170px]">
                       {metric.label} 합계 (소계)
                     </td>
                     {branchesToShow.map(col => {
@@ -477,7 +477,7 @@ export default function DailyInventorySheet() {
                           key={col}
                           className={`p-3.5 border-r border-zinc-200 dark:border-zinc-800 align-middle ${
                             col === '합계'
-                              ? 'sticky left-[320px] z-20 bg-blue-100/80 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border-x-2 border-blue-300 dark:border-blue-800'
+                              ? 'sticky left-[245px] z-20 bg-blue-100/80 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border-x-2 border-blue-300 dark:border-blue-800'
                               : ''
                           }`}
                         >
@@ -554,7 +554,7 @@ export default function DailyInventorySheet() {
                           key={col}
                           className={`p-4 border-r border-zinc-200 dark:border-zinc-800 align-middle ${
                             col === '합계'
-                              ? 'sticky left-[320px] z-30 bg-emerald-100 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 border-x-2 border-emerald-300 dark:border-emerald-700 font-extrabold shadow-[2px_0_5px_rgba(0,0,0,0.05)]'
+                              ? 'sticky left-[245px] z-30 bg-emerald-100 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 border-x-2 border-emerald-300 dark:border-emerald-700 font-extrabold shadow-[2px_0_5px_rgba(0,0,0,0.05)]'
                               : 'bg-emerald-50/50 dark:bg-emerald-950/40'
                           }`}
                         >
@@ -589,7 +589,7 @@ export default function DailyInventorySheet() {
                           key={col}
                           className={`p-4 border-r border-zinc-200 dark:border-zinc-800 align-middle ${
                             col === '합계'
-                              ? 'sticky left-[320px] z-30 bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 border-x-2 border-blue-300 dark:border-blue-700 font-extrabold shadow-[2px_0_5px_rgba(0,0,0,0.05)]'
+                              ? 'sticky left-[245px] z-30 bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 border-x-2 border-blue-300 dark:border-blue-700 font-extrabold shadow-[2px_0_5px_rgba(0,0,0,0.05)]'
                               : 'bg-blue-50/50 dark:bg-blue-950/40'
                           }`}
                         >
@@ -624,7 +624,7 @@ export default function DailyInventorySheet() {
                           key={col}
                           className={`p-4 border-r border-zinc-200 dark:border-zinc-800 align-middle ${
                             col === '합계'
-                              ? 'sticky left-[320px] z-30 bg-indigo-100 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-100 border-x-2 border-indigo-300 dark:border-indigo-700 font-extrabold shadow-[2px_0_5px_rgba(0,0,0,0.05)]'
+                              ? 'sticky left-[245px] z-30 bg-indigo-100 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-100 border-x-2 border-indigo-300 dark:border-indigo-700 font-extrabold shadow-[2px_0_5px_rgba(0,0,0,0.05)]'
                               : 'bg-indigo-50/50 dark:bg-indigo-950/40'
                           }`}
                         >
@@ -672,13 +672,13 @@ export default function DailyInventorySheet() {
 
                     return (
                       <tr key={`div-row-${div.name}`} className="bg-indigo-50/70 dark:bg-indigo-950/40 border-b border-indigo-100 dark:border-indigo-900/40 text-xs">
-                        <td className="sticky left-0 z-20 bg-indigo-50 dark:bg-indigo-950 p-3 border-r border-indigo-200 dark:border-indigo-800 font-bold text-indigo-950 dark:text-indigo-100">
+                        <td className="sticky left-0 z-20 bg-indigo-50 dark:bg-indigo-950 p-3 border-r border-indigo-200 dark:border-indigo-800 font-bold text-indigo-950 dark:text-indigo-100 w-[100px]">
                           └ {div.name}
                         </td>
-                        <td className="sticky left-[120px] z-10 bg-indigo-50 dark:bg-indigo-950 p-3 border-r border-indigo-200 dark:border-indigo-800 font-medium text-indigo-700 dark:text-indigo-300">
+                        <td className="sticky left-[100px] z-10 bg-indigo-50 dark:bg-indigo-950 p-3 border-r border-indigo-200 dark:border-indigo-800 font-medium text-indigo-700 dark:text-indigo-300 w-[70px]">
                           {div.label}
                         </td>
-                        <td className="sticky left-[220px] z-10 bg-indigo-50 dark:bg-indigo-950 p-3 border-r border-indigo-200 dark:border-indigo-800 text-xs text-indigo-600 dark:text-indigo-400 font-bold">
+                        <td className="sticky left-[170px] z-10 bg-indigo-50 dark:bg-indigo-950 p-3 border-r border-indigo-200 dark:border-indigo-800 text-xs text-indigo-600 dark:text-indigo-400 font-bold w-[75px]">
                           ({pct.toFixed(1)}%)
                         </td>
                         {branchesToShow.map(col => {
@@ -711,7 +711,7 @@ export default function DailyInventorySheet() {
                               key={col}
                               className={`p-3 border-r border-indigo-100 dark:border-indigo-900/40 align-middle ${
                                 col === '합계'
-                                  ? 'sticky left-[320px] z-30 bg-indigo-100/90 dark:bg-indigo-900/90 font-bold text-indigo-950 dark:text-indigo-100 border-x-2 border-indigo-200 dark:border-indigo-800'
+                                  ? 'sticky left-[245px] z-30 bg-indigo-100/90 dark:bg-indigo-900/90 font-bold text-indigo-950 dark:text-indigo-100 border-x-2 border-indigo-200 dark:border-indigo-800'
                                   : ''
                               }`}
                             >

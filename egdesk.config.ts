@@ -1,12 +1,13 @@
 /**
  * EGDesk User Data Configuration
- * Generated at: 2026-08-13T06:49:08.256Z
+ * Generated at: 2026-09-04T04:01:37.126Z
  *
  * This file contains type-safe definitions for your EGDesk tables.
  */
 
 export const EGDESK_CONFIG = {
   apiUrl: 'http://localhost:8080',
+  tunnelUrl: 'https://tunneling-service.onrender.com/t/youngilonc',
   apiKey: 'aecf2733-3fd4-4596-a6e3-baab76cb9690',
 } as const;
 
@@ -22,27 +23,51 @@ export interface TableDefinition {
 
 export const TABLES = {
   table1: {
+    name: 'activity_generation_log',
+    displayName: 'Activity Generation Log',
+    description: 'Logs Gemini activity extraction runs',
+    rowCount: 0,
+    columnCount: 11,
+    columns: ['id', '_version', 'eml_file_id', 'chat_room', 'status', 'started_at', 'completed_at', 'activities_generated', 'start_date', 'end_date', 'error_message']
+  } as TableDefinition,
+  table2: {
+    name: 'eml_processing_log',
+    displayName: 'EML Processing Log',
+    description: 'Logs processing details of EML email/kakaotalk files',
+    rowCount: 0,
+    columnCount: 15,
+    columns: ['id', '_version', 'file_id', 'file_name', 'chat_room', 'download_path', 'status', 'deleted_from_drive', 'deleted_from_local', 'started_at', 'completed_at', 'messages_found', 'messages_inserted', 'messages_duplicate', 'error_message']
+  } as TableDefinition,
+  table3: {
     name: 'inventory_transfers',
     displayName: '창고이동현황',
     rowCount: 0,
     columnCount: 14,
     columns: ['id', '_version', '일자', '일자_번호', '출고창고명', '입고창고명', '품목명_규격', '수량', '중량', '금액_수량_입고단가', '품목그룹1코드', '품목그룹3코드', '적요', 'imported_at']
   } as TableDefinition,
-  table2: {
+  table4: {
     name: 'west_inventory_transfers',
     displayName: '서부창고이동현황',
     rowCount: 0,
     columnCount: 14,
     columns: ['id', '_version', '일자', '일자_번호', '출고창고명', '입고창고명', '품목명_규격', '수량', '중량', '금액_수량_입고단가', '품목그룹1코드', '품목그룹3코드', '적요', 'imported_at']
   } as TableDefinition,
-  table3: {
+  table5: {
+    name: 'computed_inventory_daily',
+    displayName: '일별 계산재고 (Daily Rollup)',
+    description: '일별 계산재고 rollup (스냅샷/트랜잭션 기반)',
+    rowCount: 16974,
+    columnCount: 26,
+    columns: ['id', '_version', 'date', 'branch_source', 'warehouse_code', 'category', 'tier', 'beginning', 'beginning_weight', 'purchase', 'purchase_weight', 'transfer_in', 'transfer_in_weight', 'sales', 'sales_weight', 'transfer_out', 'transfer_out_weight', 'internal_use', 'internal_use_weight', 'disposed', 'disposed_weight', 'adjustment', 'adjustment_weight', 'ending', 'ending_weight', 'computed_at']
+  } as TableDefinition,
+  table6: {
     name: 'inventory_transfer',
     displayName: '창고이동현황',
-    rowCount: 427,
+    rowCount: 469,
     columnCount: 13,
     columns: ['id', '_version', '일자', '일자번호', '출고창고명', '입고창고명', '품목코드', '수량', '중량', '금액_수량_입고단가_', '품목그룹1코드', '품목그룹3코드', '적요']
   } as TableDefinition,
-  table4: {
+  table7: {
     name: 'east_production_material_consumption',
     displayName: '동부생산입고/소모현황',
     description: '동부 생산 원자재 소모현황',
@@ -50,7 +75,7 @@ export const TABLES = {
     columnCount: 17,
     columns: ['id', '_version', '일자', '일자번호', '생산품목코드', '출고창고코드', '입고창고코드', '생산품목명', '소모품목코드', '소모품목명', '생산수량', '표준소모수량', '실제소모수량', '생산품목단가', '소모품목단가', '차이', '금액']
   } as TableDefinition,
-  table5: {
+  table8: {
     name: 'east_inventory_adjustments',
     displayName: '동부재고조정현황',
     description: '동부 재고조정현황',
@@ -58,15 +83,15 @@ export const TABLES = {
     columnCount: 9,
     columns: ['id', '_version', '일자', '품목코드', '창고코드', '장부수량', '실사수량', '조정수량', '적요']
   } as TableDefinition,
-  table6: {
+  table9: {
     name: 'east_inventory_transfers',
     displayName: '동부창고이동현황',
     description: '동부 창고이동현황',
-    rowCount: 5187,
+    rowCount: 5537,
     columnCount: 14,
     columns: ['id', '_version', '일자', '일자_번호', '출고창고명', '입고창고명', '품목명_규격', '수량', '중량', '금액_수량_입고단가', '품목그룹1코드', '품목그룹3코드', '적요', 'imported_at']
   } as TableDefinition,
-  table7: {
+  table10: {
     name: 'west_production_material_consumption',
     displayName: '서부생산입고/소모현황',
     description: '서부 생산 원자재 소모현황',
@@ -74,7 +99,7 @@ export const TABLES = {
     columnCount: 17,
     columns: ['id', '_version', '일자', '일자번호', '생산품목코드', '출고창고코드', '입고창고코드', '생산품목명', '소모품목코드', '소모품목명', '생산수량', '표준소모수량', '실제소모수량', '생산품목단가', '소모품목단가', '차이', '금액']
   } as TableDefinition,
-  table8: {
+  table11: {
     name: 'west_inventory_adjustments',
     displayName: '서부재고조정현황',
     description: '서부 재고조정현황',
@@ -82,7 +107,7 @@ export const TABLES = {
     columnCount: 9,
     columns: ['id', '_version', '일자', '품목코드', '창고코드', '장부수량', '실사수량', '조정수량', '적요']
   } as TableDefinition,
-  table9: {
+  table12: {
     name: 'west_disposed_inventory',
     displayName: '서부재고폐기',
     description: '서부 폐기재고현황',
@@ -90,35 +115,35 @@ export const TABLES = {
     columnCount: 9,
     columns: ['id', '_version', '일자', '품목코드', '수량', '금액_수량_입고단가_', '적요', '창고명', '관리항목코드명']
   } as TableDefinition,
-  table10: {
+  table13: {
     name: 'west_internal_transfers',
     displayName: '서부창고이동현황',
-    rowCount: 6067,
+    rowCount: 6453,
     columnCount: 13,
     columns: ['id', '_version', '일자', '일자번호', '출고창고명', '입고창고명', '품목명_규격_', '수량', '중량', '금액_수량_입고단가_', '품목그룹1코드', '품목그룹3코드', '적요']
   } as TableDefinition,
-  table11: {
+  table14: {
     name: 'items',
     displayName: '품목',
-    rowCount: 3360,
+    rowCount: 3375,
     columnCount: 13,
     columns: ['id', '_version', '품목코드', '재고수량관리', '품목그룹1코드', '품목그룹2코드', '품목그룹3코드', '품목명', '품목구분', '규격정보', '구분', '석유류', '제품군']
   } as TableDefinition,
-  table12: {
+  table15: {
     name: 'production_material_consumption',
     displayName: '생산입고/소모현황',
     rowCount: 22,
     columnCount: 17,
     columns: ['id', '_version', '일자', '일자번호', '생산품목코드', '출고창고코드', '입고창고코드', '생산품목명', '소모품목코드', '소모품목명', '생산수량', '표준소모수량', '실제소모수량', '생산품목단가', '소모품목단가', '차이', '금액']
   } as TableDefinition,
-  table13: {
+  table16: {
     name: 'inventory_adjustments',
     displayName: '재고조정현황',
     rowCount: 49,
     columnCount: 9,
     columns: ['id', '_version', '일자', '품목코드', '창고코드', '장부수량', '실사수량', '조정수량', '적요']
   } as TableDefinition,
-  table14: {
+  table17: {
     name: 'youngil_inventory_20251231',
     displayName: '영일재고 20251231스냅샷',
     description: '본사 ESZ018R 스냅샷',
@@ -126,7 +151,7 @@ export const TABLES = {
     columnCount: 7,
     columns: ['id', '_version', '품목코드', '창고코드', '재고수량', '중량', 'imported_at']
   } as TableDefinition,
-  table15: {
+  table18: {
     name: 'sales_goals',
     displayName: '판매 목표',
     description: 'Client-level monthly sales targets by product category',
@@ -134,7 +159,7 @@ export const TABLES = {
     columnCount: 9,
     columns: ['id', '_version', 'year', 'month', 'client_code', 'category_type', 'category', 'target_weight', 'target_amount']
   } as TableDefinition,
-  table16: {
+  table19: {
     name: 'goal_setting_clients',
     displayName: '목표설정 신규 거래처',
     description: '일괄 목표 설정에서 생성한 임시/수동 거래처. ERP 거래처 마스터(clients)와 분리 보관.',
@@ -142,14 +167,14 @@ export const TABLES = {
     columnCount: 9,
     columns: ['id', '_version', 'client_code', 'client_name', 'industry_code', 'employee_code', 'region_code', 'new_client_date', 'created_at']
   } as TableDefinition,
-  table17: {
+  table20: {
     name: 'region_code',
     displayName: '지역코드',
     rowCount: 256,
     columnCount: 9,
     columns: ['id', '_version', '지역코드', '시도명', '시군구명', '3분류', '대분류', '지역세분', '비고']
   } as TableDefinition,
-  table18: {
+  table21: {
     name: 'sales_goals_client_category_backup',
     displayName: '판매 목표 (카테고리 분할 백업)',
     description: 'Client-level sales targets by month and product category slice',
@@ -157,15 +182,15 @@ export const TABLES = {
     columnCount: 11,
     columns: ['id', '_version', 'year', 'month', 'client_code', 'category_type', 'category', 'industry', 'sector', 'target_weight', 'target_amount']
   } as TableDefinition,
-  table19: {
+  table22: {
     name: 'drive_file_events',
     displayName: 'Drive File Events',
     description: 'Logs all Google Drive file change events',
-    rowCount: 21,
+    rowCount: 28,
     columnCount: 13,
     columns: ['id', '_version', 'file_id', 'file_name', 'mime_type', 'folder_id', 'event_type', 'modified_time', 'detected_at', 'downloaded', 'download_path', 'file_size', 'metadata']
   } as TableDefinition,
-  table20: {
+  table23: {
     name: 'drive_sync_state',
     displayName: 'Drive Sync State',
     description: 'Stores Google Drive sync state and watch channel info',
@@ -173,43 +198,43 @@ export const TABLES = {
     columnCount: 9,
     columns: ['id', '_version', 'page_token', 'channel_id', 'channel_resource_id', 'channel_expiration', 'target_folder_ids', 'last_updated', 'created_at']
   } as TableDefinition,
-  table21: {
+  table24: {
     name: 'west_internal_uses',
     displayName: '서부자가사용현황',
-    rowCount: 57,
+    rowCount: 67,
     columnCount: 19,
     columns: ['id', '_version', '월_일', '월_일_번호', '사용유형', '적요', '품목코드', '품목명', '수량', '사용자지정_숫자형_1', '입고단가', '원가', '담당자코드명', '창고명', '품목그룹3코드', '회사명', '기간', '계정코드_메타', '계정명_메타']
   } as TableDefinition,
-  table22: {
+  table25: {
     name: 'east_disposed_inventory',
     displayName: '동부페기재고',
     rowCount: 6,
     columnCount: 10,
     columns: ['id', '_version', '일자', '품목코드', '수량', '중량', '금액_수량_입고단가_', '적요', '창고코드', '관리항목코드']
   } as TableDefinition,
-  table23: {
+  table26: {
     name: 'east_internal_uses',
     displayName: '동부자가사용',
-    rowCount: 236,
-    columnCount: 15,
-    columns: ['id', '_version', '월_일', '월_일_번호', '사용유형', '적요', '품목코드', '품목명', '수량', '사용자지정_숫자형_1', '입고단가', '원가', '담당자코드명', '창고명', '품목그룹3코드']
+    rowCount: 249,
+    columnCount: 16,
+    columns: ['id', '_version', '월_일', '월_일_번호', '사용유형', '적요', '품목코드', '품목명', '수량', '사용자지정_숫자형_1', '입고단가', '원가', '담당자코드명', '창고명', '품목그룹3코드', 'imported_at']
   } as TableDefinition,
-  table24: {
+  table27: {
     name: 'computed_inventory_monthly',
     displayName: 'computed 재고(월말)',
     description: '카테고리별 월말 계산재고 (스냅샷 기반)',
-    rowCount: 826,
+    rowCount: 833,
     columnCount: 14,
     columns: ['id', '_version', 'month', 'month_end_date', 'category', 'purchase_weight', 'sales_weight', 'internal_use_weight', 'disposed_weight', 'net_weight', 'inventory_weight', 'snapshot_month', 'snapshot_date', 'computed_at']
   } as TableDefinition,
-  table25: {
+  table28: {
     name: 'clients',
     displayName: '거래처리스트',
-    rowCount: 10940,
+    rowCount: 11694,
     columnCount: 11,
     columns: ['id', '_version', '거래처코드', '거래처명', '거래처그룹1코드', '거래처그룹1명', '업종분류코드', '담당자코드', '지역코드', '신규일', 'imported_at']
   } as TableDefinition,
-  table26: {
+  table29: {
     name: 'sync_activity_log',
     displayName: 'sync_activity_log',
     description: 'Imported from user_database_export_2026-04-20.sql',
@@ -217,7 +242,7 @@ export const TABLES = {
     columnCount: 13,
     columns: ['id', '_version', 'config_id', 'file_name', 'file_path', 'status', 'rows_imported', 'rows_skipped', 'duplicates_skipped', 'error_message', 'started_at', 'completed_at', 'duration_ms']
   } as TableDefinition,
-  table27: {
+  table30: {
     name: 'sync_configurations',
     displayName: 'sync_configurations',
     description: 'Imported from user_database_export_2026-04-20.sql',
@@ -225,15 +250,15 @@ export const TABLES = {
     columnCount: 24,
     columns: ['id', '_version', 'script_folder_path', 'script_name', 'folder_name', 'target_table_id', 'header_row', 'skip_bottom_rows', 'sheet_index', 'column_mappings', 'applied_splits', 'file_action', 'enabled', 'auto_sync_enabled', 'unique_key_columns', 'duplicate_action', 'last_sync_at', 'last_sync_status', 'last_sync_rows_imported', 'last_sync_rows_skipped', 'last_sync_duplicates', 'last_sync_error', 'created_at', 'updated_at']
   } as TableDefinition,
-  table28: {
+  table31: {
     name: 'east_inventory_20251231',
     displayName: '동부재고 20251231스냅샷',
     description: '동부 ESZ018R 스냅샷',
-    rowCount: 317,
+    rowCount: 297,
     columnCount: 8,
     columns: ['id', '_version', '품목코드', '창고코드', '재고수량', '중량', '총중량', 'imported_at']
   } as TableDefinition,
-  table29: {
+  table32: {
     name: 'west_inventory_20251231',
     displayName: '서부재고 20251231스냅샷',
     description: '서부 ESZ018R 스냅샷',
@@ -241,7 +266,7 @@ export const TABLES = {
     columnCount: 8,
     columns: ['id', '_version', '품목코드', '창고코드', '재고수량', '중량', '총중량', 'imported_at']
   } as TableDefinition,
-  table30: {
+  table33: {
     name: 'team_display_order',
     displayName: '팀 노출 순서 (B2C/B2B)',
     description: 'B2C(b2c_팀) / B2B(b2b팀) 팀 표시 순서 — employee_category가 마스터',
@@ -249,7 +274,7 @@ export const TABLES = {
     columnCount: 5,
     columns: ['id', '_version', 'scope', '팀', '노출순서']
   } as TableDefinition,
-  table31: {
+  table34: {
     name: 'employee_display_order',
     displayName: '팀 내 사원 노출 순서',
     description: '채널·팀별 담당자 표시 순서 — employee_category가 마스터',
@@ -257,7 +282,7 @@ export const TABLES = {
     columnCount: 6,
     columns: ['id', '_version', 'scope', '팀', '담당자', '팀내_노출순서']
   } as TableDefinition,
-  table32: {
+  table35: {
     name: 'office_display_order',
     displayName: '사업소 노출 순서',
     description: '대시보드 내 사업소 표시 순서 관리',
@@ -265,178 +290,178 @@ export const TABLES = {
     columnCount: 4,
     columns: ['id', '_version', '사업소', '노출순서']
   } as TableDefinition,
-  table33: {
+  table36: {
     name: 'east_division_purchases',
     displayName: '동부구매현황',
-    rowCount: 5931,
+    rowCount: 5998,
     columnCount: 14,
     columns: ['id', '_version', '일자', '거래처코드', '창고코드', '품목코드', '수량', '단가', '중량', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
-  table34: {
+  table37: {
     name: 'east_division_sales',
     displayName: '동부판매현황',
-    rowCount: 43575,
+    rowCount: 44348,
     columnCount: 16,
     columns: ['id', '_version', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
-  } as TableDefinition,
-  table35: {
-    name: 'west_division_purchases',
-    displayName: '서부구매현황',
-    rowCount: 7814,
-    columnCount: 14,
-    columns: ['id', '_version', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1', 'imported_at']
-  } as TableDefinition,
-  table36: {
-    name: 'west_division_sales',
-    displayName: '서부판매현황',
-    rowCount: 57133,
-    columnCount: 16,
-    columns: ['id', '_version', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
-  } as TableDefinition,
-  table37: {
-    name: 'purchases',
-    displayName: '구매현황',
-    rowCount: 132094,
-    columnCount: 14,
-    columns: ['id', '_version', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1', 'imported_at']
   } as TableDefinition,
   table38: {
-    name: 'sales',
-    displayName: '판매현황',
-    rowCount: 618214,
+    name: 'west_division_purchases',
+    displayName: '서부구매현황',
+    rowCount: 7914,
+    columnCount: 14,
+    columns: ['id', '_version', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1', 'imported_at']
+  } as TableDefinition,
+  table39: {
+    name: 'west_division_sales',
+    displayName: '서부판매현황',
+    rowCount: 58048,
     columnCount: 16,
     columns: ['id', '_version', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
   } as TableDefinition,
-  table39: {
+  table40: {
+    name: 'purchases',
+    displayName: '구매현황',
+    rowCount: 132756,
+    columnCount: 14,
+    columns: ['id', '_version', '일자', '거래처코드', '창고코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '적요', '적요1', 'imported_at']
+  } as TableDefinition,
+  table41: {
+    name: 'sales',
+    displayName: '판매현황',
+    rowCount: 621061,
+    columnCount: 16,
+    columns: ['id', '_version', '일자', '거래처코드', '담당자코드', '품목코드', '수량', '중량', '단가', '공급가액', '합계', '출하창고코드', '적요', '적요2', '실납업체', 'imported_at']
+  } as TableDefinition,
+  table42: {
     name: 'sales_goals_employee_backup',
     displayName: '판매 목표 (담당자 기준 백업)',
     rowCount: 238,
     columnCount: 11,
     columns: ['id', '_version', 'year', 'month', 'employee_name', 'category_type', 'category', 'industry', 'sector', 'target_weight', 'target_amount']
   } as TableDefinition,
-  table40: {
+  table43: {
     name: 'disposed_inventory',
     displayName: '재고폐기',
     rowCount: 83,
     columnCount: 9,
     columns: ['id', '_version', '일자', '품목코드', '수량', '금액_수량_입고단가_', '적요', '창고명', '관리항목코드명']
   } as TableDefinition,
-  table41: {
+  table44: {
     name: 'shopping_sales',
     displayName: '쇼핑몰판매현황',
     rowCount: 1400,
     columnCount: 18,
     columns: ['id', '_version', '주문번호', '사업소', '담당자', '거래처', 'erp', '사업자번호', '주문상품', '용량', '수량', '주문금액', '총_주문금액', '사용한_포인트', '보유포인트', '결제한_금액', '결재_방법', '주문_날짜']
   } as TableDefinition,
-  table42: {
+  table45: {
     name: 'sales_profit',
     displayName: '월별이익현황',
     rowCount: 590,
     columnCount: 13,
     columns: ['id', '_version', '품목코드', '품목명', '판매수량', '판매단가', '판매금액', '원가단가', '원가금액', '이익단가', '이익금액', '이익율', 'imported_at']
   } as TableDefinition,
-  table43: {
+  table46: {
     name: 'pending_purchases',
     displayName: '미구매현황',
-    rowCount: 8025,
+    rowCount: 11143,
     columnCount: 13,
     columns: ['id', '_version', '일자', '품목코드', '수량', '잔량', '잔량_중량_', '단가', '합계', '납기일자', '거래처코드', '창고명', '품목별납기일자']
   } as TableDefinition,
-  table44: {
+  table47: {
     name: 'pending_sales',
     displayName: '미판매현황',
     rowCount: 19,
     columnCount: 13,
     columns: ['id', '_version', '일자', '품목코드', '거래처코드', '실납업체', '담당자코드', '수량', '잔량', '중량', '합계', '적요', '납기일자']
   } as TableDefinition,
-  table45: {
+  table48: {
     name: 'ar_baselines',
     displayName: '채권기초잔액',
     rowCount: 557,
     columnCount: 15,
     columns: ['id', '_version', 'manager_code', 'manager_name', 'client_code', 'client_name', 'total_ar', 'notes_receivable', 'ar_total', 'ar_feb', 'ar_jan', 'ar_dec', 'ar_nov', 'ar_others', 'baseline_date']
   } as TableDefinition,
-  table46: {
+  table49: {
     name: 'ledger',
     displayName: '계정별원장',
     description: 'Exact schema from 계정별원장-거래처코드포함2.xlsx',
-    rowCount: 48117,
+    rowCount: 53056,
     columnCount: 14,
     columns: ['id', '_version', '일자', '최초작성일자', '최종수정일자', '어음만기일자', '거래유형', '적요', '계정코드', '거래처코드', '차변금액', '대변금액', '잔액', 'imported_at']
   } as TableDefinition,
-  table47: {
+  table50: {
     name: 'bank_accounts',
     displayName: '계좌리스트',
     rowCount: 56,
     columnCount: 9,
     columns: ['id', '_version', '계좌코드', '계좌명', '계정명_계정코드_', '검색창내용', '적요', '외화통장', '사용']
   } as TableDefinition,
-  table48: {
+  table51: {
     name: 'promissory_notes',
     displayName: '받을어음거래내역',
-    rowCount: 535,
+    rowCount: 601,
     columnCount: 14,
     columns: ['id', '_version', '일자', '증감구분', '어음번호', '거래처코드', '계정명', '부서명', '프로젝트명', '적요', '증가금액', '감소금액', '잔액', 'imported_at']
   } as TableDefinition,
-  table49: {
+  table52: {
     name: 'purchase_orders',
     displayName: '발주서현황',
-    rowCount: 4458,
+    rowCount: 4853,
     columnCount: 11,
     columns: ['id', '_version', '일자', '품목코드', '창고코드', '품목그룹1코드', '수량', '단가', '합계', '거래처코드', '적요']
   } as TableDefinition,
-  table50: {
+  table53: {
     name: 'employee_category',
     displayName: '사원분류',
     rowCount: 47,
     columnCount: 10,
     columns: ['id', '_version', '담당자', 'b2b팀', 'b2b사업소', 'b2b팀별담당', 'b2c_팀', 'b2c사업소', '전체사업소', 'imported_at']
   } as TableDefinition,
-  table51: {
+  table54: {
     name: 'employee_activity_log',
     displayName: '직원활동로그',
     description: 'Individual activities extracted from KakaoTalk messages',
-    rowCount: 47765,
+    rowCount: 51278,
     columnCount: 17,
     columns: ['id', '_version', 'source_message_id', 'employee_name', 'activity_date', 'activity_type', 'activity_label', 'customer', 'location', 'products', 'outcome', 'issue_severity', 'action_taken', 'resolved_by', 'chat_room', 'extracted_at', 'confidence_score']
   } as TableDefinition,
-  table52: {
+  table55: {
     name: 'kakaotalk_raw_messages',
     displayName: '카카오톡원본메시지',
     description: 'Raw KakaoTalk messages with multi-line support',
-    rowCount: 7143,
+    rowCount: 10520,
     columnCount: 6,
     columns: ['id', '_version', 'chat_room', 'chat_date', 'user_name', 'message']
   } as TableDefinition,
-  table53: {
+  table56: {
     name: 'company_type_auto',
     displayName: 'AUTO 업종분류기준',
     rowCount: 35,
     columnCount: 6,
     columns: ['id', '_version', '업종분류코드', '오토_대분류', '모빌_대시보드채널', '거래처그룹2']
   } as TableDefinition,
-  table54: {
+  table57: {
     name: 'company_type',
     displayName: '업종분류',
     rowCount: 115,
     columnCount: 8,
     columns: ['id', '_version', '업종분류코드', '모빌분류', '산업분류', '섹터분류', '영일분류', '비고']
   } as TableDefinition,
-  table55: {
+  table58: {
     name: 'employees',
     displayName: '사원',
     rowCount: 128,
     columnCount: 5,
     columns: ['id', '_version', '사원_담당_코드', '사원_담당_명', 'imported_at']
   } as TableDefinition,
-  table56: {
+  table59: {
     name: 'warehouses',
     displayName: '창고',
     rowCount: 64,
     columnCount: 11,
     columns: ['id', '_version', '창고코드', '창고명', '계층그룹코드', '구분', '생산공정명', '외주거래처명', '사용', '추가사업장명', 'imported_at']
   } as TableDefinition,
-  table57: {
+  table60: {
     name: 'user_data_files',
     displayName: 'user_data_files',
     description: 'Imported from user_database_export_2026-03-12.sql',
@@ -444,10 +469,10 @@ export const TABLES = {
     columnCount: 16,
     columns: ['id', '_version', 'table_id', 'row_id', 'column_name', 'filename', 'mime_type', 'size_bytes', 'storage_type', 'file_data', 'file_path', 'is_compressed', 'compression_type', 'original_size', 'created_at', 'updated_at']
   } as TableDefinition,
-  table58: {
+  table61: {
     name: 'internal_uses',
     displayName: '자가사용현황',
-    rowCount: 151,
+    rowCount: 162,
     columnCount: 16,
     columns: ['id', '_version', '일자', '일자_번호', '사용유형', '적요', '품목코드', '품명_및_규격', '수량', '중량', '입고단가', '원가', '담당자코드명', '창고명', '품목그룹3코드', 'imported_at']
   } as TableDefinition
@@ -465,62 +490,65 @@ export function getTableByName(tableName: string): TableDefinition | undefined {
 
 // Export table names for easy access
 export const TABLE_NAMES = {
-  table1: 'inventory_transfers',
-  table2: 'west_inventory_transfers',
-  table3: 'inventory_transfer',
-  table4: 'east_production_material_consumption',
-  table5: 'east_inventory_adjustments',
-  table6: 'east_inventory_transfers',
-  table7: 'west_production_material_consumption',
-  table8: 'west_inventory_adjustments',
-  table9: 'west_disposed_inventory',
-  table10: 'west_internal_transfers',
-  table11: 'items',
-  table12: 'production_material_consumption',
-  table13: 'inventory_adjustments',
-  table14: 'youngil_inventory_20251231',
-  table15: 'sales_goals',
-  table16: 'goal_setting_clients',
-  table17: 'region_code',
-  table18: 'sales_goals_client_category_backup',
-  table19: 'drive_file_events',
-  table20: 'drive_sync_state',
-  table21: 'west_internal_uses',
-  table22: 'east_disposed_inventory',
-  table23: 'east_internal_uses',
-  table24: 'computed_inventory_monthly',
-  table25: 'clients',
-  table26: 'sync_activity_log',
-  table27: 'sync_configurations',
-  table28: 'east_inventory_20251231',
-  table29: 'west_inventory_20251231',
-  table30: 'team_display_order',
-  table31: 'employee_display_order',
-  table32: 'office_display_order',
-  table33: 'east_division_purchases',
-  table34: 'east_division_sales',
-  table35: 'west_division_purchases',
-  table36: 'west_division_sales',
-  table37: 'purchases',
-  table38: 'sales',
-  table39: 'sales_goals_employee_backup',
-  table40: 'disposed_inventory',
-  table41: 'shopping_sales',
-  table42: 'sales_profit',
-  table43: 'pending_purchases',
-  table44: 'pending_sales',
-  table45: 'ar_baselines',
-  table46: 'ledger',
-  table47: 'bank_accounts',
-  table48: 'promissory_notes',
-  table49: 'purchase_orders',
-  table50: 'employee_category',
-  table51: 'employee_activity_log',
-  table52: 'kakaotalk_raw_messages',
-  table53: 'company_type_auto',
-  table54: 'company_type',
-  table55: 'employees',
-  table56: 'warehouses',
-  table57: 'user_data_files',
-  table58: 'internal_uses'
+  table1: 'activity_generation_log',
+  table2: 'eml_processing_log',
+  table3: 'inventory_transfers',
+  table4: 'west_inventory_transfers',
+  table5: 'computed_inventory_daily',
+  table6: 'inventory_transfer',
+  table7: 'east_production_material_consumption',
+  table8: 'east_inventory_adjustments',
+  table9: 'east_inventory_transfers',
+  table10: 'west_production_material_consumption',
+  table11: 'west_inventory_adjustments',
+  table12: 'west_disposed_inventory',
+  table13: 'west_internal_transfers',
+  table14: 'items',
+  table15: 'production_material_consumption',
+  table16: 'inventory_adjustments',
+  table17: 'youngil_inventory_20251231',
+  table18: 'sales_goals',
+  table19: 'goal_setting_clients',
+  table20: 'region_code',
+  table21: 'sales_goals_client_category_backup',
+  table22: 'drive_file_events',
+  table23: 'drive_sync_state',
+  table24: 'west_internal_uses',
+  table25: 'east_disposed_inventory',
+  table26: 'east_internal_uses',
+  table27: 'computed_inventory_monthly',
+  table28: 'clients',
+  table29: 'sync_activity_log',
+  table30: 'sync_configurations',
+  table31: 'east_inventory_20251231',
+  table32: 'west_inventory_20251231',
+  table33: 'team_display_order',
+  table34: 'employee_display_order',
+  table35: 'office_display_order',
+  table36: 'east_division_purchases',
+  table37: 'east_division_sales',
+  table38: 'west_division_purchases',
+  table39: 'west_division_sales',
+  table40: 'purchases',
+  table41: 'sales',
+  table42: 'sales_goals_employee_backup',
+  table43: 'disposed_inventory',
+  table44: 'shopping_sales',
+  table45: 'sales_profit',
+  table46: 'pending_purchases',
+  table47: 'pending_sales',
+  table48: 'ar_baselines',
+  table49: 'ledger',
+  table50: 'bank_accounts',
+  table51: 'promissory_notes',
+  table52: 'purchase_orders',
+  table53: 'employee_category',
+  table54: 'employee_activity_log',
+  table55: 'kakaotalk_raw_messages',
+  table56: 'company_type_auto',
+  table57: 'company_type',
+  table58: 'employees',
+  table59: 'warehouses',
+  table60: 'user_data_files',
+  table61: 'internal_uses'
 } as const;

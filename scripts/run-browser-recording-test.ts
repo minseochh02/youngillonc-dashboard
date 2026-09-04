@@ -42,7 +42,9 @@ function localYmd(d: Date): string {
 }
 
 function parseRunOptions(argv: string[], resolvedTestFile: string): BrowserRecordingRunOptions {
-  const o: BrowserRecordingRunOptions = {};
+  const o: BrowserRecordingRunOptions = {
+    headless: argv.includes('--headless') ? true : false
+  };
   const startArg = argv.find((a) => a.startsWith('--start='))?.slice('--start='.length);
   const endArg = argv.find((a) => a.startsWith('--end='))?.slice('--end='.length);
   if (argv.includes('--week-from-today')) {

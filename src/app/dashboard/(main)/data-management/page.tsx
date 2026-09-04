@@ -190,8 +190,14 @@ export default function DataManagementPage() {
     const year = selectedYear;
     const month = selectedMonth - 1;
     const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-    const lastDay = new Date(year, month + 1, 0).getDate();
-    const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    // Special case for August: Ecount fails on 8/1~8/31, so range 8/1 to 9/1 instead
+    let endDate: string;
+    if (selectedMonth === 8) {
+      endDate = `${year}-09-01`;
+    } else {
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      endDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    }
 
     setIsRefreshing(true);
     setRefreshResult(null);
@@ -208,7 +214,7 @@ export default function DataManagementPage() {
         const response = await apiFetch('/api/dashboard/browser-recording', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ testFile: scriptName, runOptions: { startDate, endDate } })
+          body: JSON.stringify({ testFile: scriptName, runOptions: { startDate, endDate, headless: false } })
         });
         const result = await response.json();
         if (!result.success) throw new Error(result.error || '실행 실패');

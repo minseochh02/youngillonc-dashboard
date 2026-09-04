@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 /**
  * 🔍 Automatically detect local IPv4 addresses to allow LAN access.
@@ -28,6 +29,10 @@ const getLocalIPs = () => {
 console.log('🔍 DEBUG next.config: EGDESK_BASE_PATH env var =', process.env.EGDESK_BASE_PATH);
 
 const nextConfig: NextConfig = {
+  eslint: {
+    // Always skip ESLint errors to prevent blocking on auto-generated files
+    ignoreDuringBuilds: true,
+  },
   // Allow LAN/IP access to the dev server (Next.js 15+)
   allowedDevOrigins: getLocalIPs(),
   experimental: {
@@ -48,13 +53,12 @@ const nextConfig: NextConfig = {
       ]
     }
   },
+  turbopack: {
+    root: path.resolve(__dirname),
+  },
   typescript: {
     // Always skip TypeScript errors to prevent blocking on auto-generated files
     ignoreBuildErrors: true,
-  },
-  eslint: {
-    // Always skip ESLint errors to prevent blocking on auto-generated files
-    ignoreDuringBuilds: true,
   },
   basePath: process.env.NODE_ENV === 'development' ? '' : (process.env.EGDESK_BASE_PATH || ''),
   assetPrefix: process.env.NODE_ENV === 'development' ? '' : (process.env.EGDESK_BASE_PATH || ''),
