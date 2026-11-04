@@ -37,6 +37,8 @@ interface Activity {
   action_taken?: string;
   resolved_by?: string;
   confidence_score: number;
+  date_context?: 'exact' | 'early' | 'mid' | 'late' | 'range' | 'unspecified';
+  date_context_raw?: string | null;
 }
 
 interface EmployeeStat {
@@ -58,6 +60,8 @@ interface PlannedTask {
   next_action_date: string;
   customer_name?: string;
   confidence_score: number;
+  date_context?: 'exact' | 'early' | 'mid' | 'late' | 'range' | 'unspecified';
+  date_context_raw?: string | null;
 }
 
 interface ActualActivity {
@@ -287,11 +291,11 @@ export default function EmployeesPage() {
         setSummaryData(summaryDataJson.data);
       }
 
-      // 3. Load full activities for the calendar
+      // 3. Load full activities for the calendar (including future planned tasks)
       const calParams = new URLSearchParams({
         employee: name,
-        startDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0], // Start of current year
-        endDate: new Date().toISOString().split('T')[0] // Today
+        startDate: '2024-01-01',
+        endDate: '2027-12-31'
       });
       const calRes = await apiFetch(`/api/employees/activities?${calParams}`);
       const calDataJson = await calRes.json();
@@ -546,7 +550,7 @@ export default function EmployeesPage() {
                           onChange={(e) => setCurrentMonth(new Date(parseInt(e.target.value), currentMonth.getMonth(), 1))}
                           className="text-xl font-black bg-gray-50 border-none rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                         >
-                          {[2024, 2025, 2026].map(year => (
+                          {[2024, 2025, 2026, 2027].map(year => (
                             <option key={year} value={year}>{year}년</option>
                           ))}
                         </select>
@@ -555,19 +559,9 @@ export default function EmployeesPage() {
                           onChange={(e) => setCurrentMonth(new Date(currentMonth.getFullYear(), parseInt(e.target.value), 1))}
                           className="text-xl font-black bg-gray-50 border-none rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                         >
-                          {Array.from({ length: 12 }, (_, i) => {
-                            const now = new Date();
-                            const currentYearNum = now.getFullYear();
-                            const currentMonthNum = now.getMonth();
-                            const selectedYear = currentMonth.getFullYear();
-                            
-                            if (selectedYear > currentYearNum) return null;
-                            if (selectedYear === currentYearNum && i > currentMonthNum) return null;
-                            
-                            return (
-                              <option key={i} value={i}>{i + 1}월</option>
-                            );
-                          }).filter(Boolean)}
+                          {Array.from({ length: 12 }, (_, i) => (
+                            <option key={i} value={i}>{i + 1}월</option>
+                          ))}
                         </select>
                       </div>
                       <div className="flex gap-2">
@@ -585,7 +579,7 @@ export default function EmployeesPage() {
                         </button>
                       </div>
                       <button 
-                        onClick={() => setCurrentMonth(new Date(2026, 2, 1))}
+                        onClick={() => setCurrentMonth(new Date())}
                         className="px-4 py-2 text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-100"
                       >
                         오늘
@@ -676,11 +670,27 @@ export default function EmployeesPage() {
                                   return (
                                     <div
                                       key={act.id}
-                                      className={`p-2 rounded-lg text-[10px] leading-tight border transition-all hover:scale-[1.02] cursor-default ${config.bg} ${config.border} ${config.text}`}
+                                      onClick={() => loadSourceMessages(act.id, act)}
+                                      className={`p-2 rounded-lg text-[10px] leading-tight border transition-all hover:scale-[1.02] cursor-pointer ${config.bg} ${config.border} ${config.text}`}
                                     >
-                                      <div className="font-black mb-1 flex items-center gap-1">
-                                        <span>{config.icon}</span>
-                                        {act.activity_label || act.customer_name || '업무'}
+                                      <div className="font-black mb-1 flex items-center justify-between gap-1">
+                                        <div className="flex items-center gap-1 truncate">
+                                          <span>{config.icon}</span>
+                                          <span className="truncate">{act.activity_label || act.customer_name || '업무'}</span>
+                                        </div>
+                                        {act.date_context && act.date_context !== 'exact' && (
+                                          <span
+                                            className="shrink-0 text-[8px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                                            title={act.date_context_raw || act.date_context}
+                                          >
+                                            {act.date_context_raw || (
+                                              act.date_context === 'mid' ? '중순' :
+                                              act.date_context === 'early' ? '초' :
+                                              act.date_context === 'late' ? '말' :
+                                              act.date_context === 'range' ? '기간' : '미정'
+                                            )}
+                                          </span>
+                                        )}
                                       </div>
                                       {act.location && (
                                         <div className="text-[9px] text-gray-500 mb-1">📍 {act.location}</div>
@@ -828,6 +838,11 @@ export default function EmployeesPage() {
                                   </span>
                                   <p className="text-xs font-bold text-gray-400">
                                     계획: {formatDate(match.planned.message_date)} → 예정: {formatDate(match.planned.next_action_date)}
+                                    {match.planned.date_context && match.planned.date_context !== 'exact' && (
+                                      <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-800 font-bold">
+                                        {match.planned.date_context_raw || match.planned.date_context}
+                                      </span>
+                                    )}
                                   </p>
                                 </div>
                                 {match.planned.activity_label && (
@@ -1194,8 +1209,20 @@ export default function EmployeesPage() {
             {/* Activity Summary */}
             {selectedActivity && (
               <div className="px-6 py-4 bg-blue-50 border-b border-blue-100">
-                <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-1">추출된 활동 내용</p>
-                <p className="text-sm font-bold text-gray-900">{selectedActivity.next_action}</p>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">추출된 활동 내용</p>
+                  {selectedActivity.date_context && selectedActivity.date_context !== 'exact' && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                      예정 시점: {selectedActivity.date_context_raw || selectedActivity.date_context}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm font-bold text-gray-900">
+                  {selectedActivity.activity_label || selectedActivity.next_action || selectedActivity.activity_summary}
+                </p>
+                {selectedActivity.outcome && (
+                  <p className="text-xs text-emerald-700 mt-1 font-medium">결과: {selectedActivity.outcome}</p>
+                )}
                 {selectedActivity.customer_name && (
                   <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
                     <Building2 className="w-3 h-3" />

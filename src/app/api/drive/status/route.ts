@@ -11,15 +11,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeSQL } from '../../../../../egdesk-helpers';
 import { getSyncState, parseTargetFolderIds } from '../../../../lib/drive-webhook-processor';
+import { getDrivePollerStatus } from '../../../../lib/drive-poller';
 
 export async function GET(req: NextRequest) {
   try {
+    const pollerStatus = getDrivePollerStatus();
+
     // Get sync state
     const state = await getSyncState();
     if (!state) {
       return NextResponse.json({
         status: 'not_initialized',
-        message: 'Drive sync not initialized. Run GET /api/drive/init to set up.'
+        message: 'Drive sync not initialized. Run GET /api/drive/init to set up.',
+        poller: pollerStatus
       });
     }
 
@@ -104,6 +108,7 @@ export async function GET(req: NextRequest) {
         downloaded: downloadedCount,
         latest: latestEvent
       },
+      poller: pollerStatus,
       recommendations: getRecommendations(channelStatus, timeUntilExpiration)
     });
 

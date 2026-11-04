@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { extractDateContext } from '@/lib/date-context';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -60,6 +61,9 @@ export async function GET(request: NextRequest) {
           products = row.products_mentioned.split(',').map((p: string) => p.trim()).filter(Boolean);
         }
       }
+
+      const timingInfo = extractDateContext(row, row.activity_summary);
+
       return {
         id: row.id,
         activity_date: row.activity_date,
@@ -73,7 +77,9 @@ export async function GET(request: NextRequest) {
         issue_severity: row.issue_severity,
         action_taken: row.action_taken,
         resolved_by: row.resolved_by,
-        confidence_score: row.confidence_score
+        confidence_score: row.confidence_score,
+        date_context: timingInfo.date_context,
+        date_context_raw: timingInfo.date_context_raw
       };
     });
 

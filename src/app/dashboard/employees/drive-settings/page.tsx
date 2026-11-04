@@ -15,9 +15,27 @@ import {
   Activity,
   ChevronRight,
   FileText,
-  Download
+  Download,
+  Server
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+
+interface DrivePollerInfo {
+  isRunning: boolean;
+  intervalSeconds: number;
+  lastPollTime: string | null;
+  nextPollTime: string | null;
+  lastResult?: {
+    changesProcessed: number;
+    filesLogged: number;
+    filesDownloaded: number;
+  } | null;
+  pollCount: number;
+  errorCount: number;
+  lastError: string | null;
+  isPollingInProgress: boolean;
+  startedAt: string | null;
+}
 
 interface DriveStatus {
   status: string;
@@ -45,6 +63,7 @@ interface DriveStatus {
       detected_at: string;
     };
   };
+  poller?: DrivePollerInfo;
   recommendations?: string[];
 }
 
@@ -62,72 +81,53 @@ export default function DriveSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [folderIds, setFolderIds] = useState('');
-  const [pollingActive, setPollingActive] = useState(false);
   const [mode, setMode] = useState<'polling' | 'webhook'>('polling');
   const [pollingInterval, setPollingInterval] = useState(30); // seconds
-  const [lastPollTime, setLastPollTime] = useState<Date | null>(null);
   const [nextPollIn, setNextPollIn] = useState<number | null>(null);
 
   useEffect(() => {
     checkStatus();
     checkTables();
+
+    // Auto-refresh status periodically
+    const refreshInterval = setInterval(() => {
+      checkStatus();
+    }, 10000);
+
     // Load folder IDs from env if available
     const envFolderIds = process.env.NEXT_PUBLIC_DRIVE_TARGET_FOLDER_IDS;
     if (envFolderIds && !folderIds) {
       setFolderIds(envFolderIds);
     }
+
+    return () => clearInterval(refreshInterval);
   }, []);
 
-  // Continuous polling effect
+  // Poller countdown ticker
   useEffect(() => {
-    if (!pollingActive) {
+    if (!status?.poller?.isRunning || !status.poller.nextPollTime) {
       setNextPollIn(null);
       return;
     }
 
-    // Initial poll
-    pollForChanges();
-
-    // Set up interval
-    const pollIntervalId = setInterval(() => {
-      pollForChanges();
-    }, pollingInterval * 1000);
-
-    // Countdown timer
-    const countdownId = setInterval(() => {
-      if (lastPollTime) {
-        const elapsed = Math.floor((Date.now() - lastPollTime.getTime()) / 1000);
-        const remaining = pollingInterval - elapsed;
-        setNextPollIn(remaining > 0 ? remaining : 0);
+    const timer = setInterval(() => {
+      if (status.poller?.nextPollTime) {
+        const remaining = Math.max(0, Math.floor((new Date(status.poller.nextPollTime).getTime() - Date.now()) / 1000));
+        setNextPollIn(remaining);
       }
     }, 1000);
 
-    return () => {
-      clearInterval(pollIntervalId);
-      clearInterval(countdownId);
-    };
-  }, [pollingActive, pollingInterval]);
-
-  const pollForChanges = async () => {
-    try {
-      const res = await apiFetch('/api/drive/poll', { method: 'POST' });
-      const data = await res.json();
-
-      if (res.ok) {
-        setLastPollTime(new Date());
-        // Silently update status, don't show success message for continuous polling
-        await checkStatus();
-      }
-    } catch (err: any) {
-      console.error('Poll error:', err);
-    }
-  };
+    return () => clearInterval(timer);
+  }, [status?.poller]);
 
   const checkStatus = async () => {
     try {
       const res = await apiFetch('/api/drive/status');
       const data = await res.json();
       setStatus(data);
+      if (data.poller?.intervalSeconds) {
+        setPollingInterval(data.poller.intervalSeconds);
+      }
     } catch (err: any) {
       console.error('Failed to check status:', err);
     }
@@ -154,6 +154,7 @@ export default function DriveSettingsPage() {
       if (res.ok) {
         setSuccess('Database tables created successfully!');
         await checkTables();
+        await checkStatus();
       } else {
         setError(data.error || 'Failed to create tables');
       }
@@ -189,7 +190,7 @@ export default function DriveSettingsPage() {
     }
   };
 
-  const startPolling = async () => {
+  const triggerPollNow = async () => {
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -198,7 +199,7 @@ export default function DriveSettingsPage() {
       const data = await res.json();
 
       if (res.ok) {
-        setSuccess(`Poll complete! Processed ${data.changesProcessed} changes, ${data.filesLogged} files logged.`);
+        setSuccess(`Poll complete! Processed ${data.changesProcessed ?? 0} changes, ${data.filesLogged ?? 0} files logged.`);
         await checkStatus();
       } else {
         setError(data.error || 'Failed to poll');
@@ -210,14 +211,30 @@ export default function DriveSettingsPage() {
     }
   };
 
-  const toggleContinuousPolling = () => {
-    if (pollingActive) {
-      setPollingActive(false);
-      setSuccess('Continuous polling stopped');
-    } else {
-      setPollingActive(true);
-      setLastPollTime(new Date());
-      setSuccess(`Continuous polling started (every ${pollingInterval}s)`);
+  const toggleServerPoller = async () => {
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const isCurrentlyRunning = status?.poller?.isRunning ?? false;
+      const action = isCurrentlyRunning ? 'stop' : 'start';
+      const res = await apiFetch('/api/drive/poll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, intervalSeconds: pollingInterval })
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setSuccess(isCurrentlyRunning ? 'Server background poller stopped' : `Server background poller started (every ${pollingInterval}s)`);
+        await checkStatus();
+      } else {
+        setError(data.error || 'Failed to toggle poller');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to toggle poller');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -288,6 +305,8 @@ export default function DriveSettingsPage() {
     }
   };
 
+  const isPollerActive = status?.poller?.isRunning ?? false;
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-6xl mx-auto">
@@ -298,7 +317,7 @@ export default function DriveSettingsPage() {
             Google Drive Settings
           </h1>
           <p className="text-gray-600 mt-2">
-            Monitor and sync Google Drive folders for file changes
+            Monitor and sync Google Drive folders for file changes (Auto-polls on server startup)
           </p>
         </div>
 
@@ -459,7 +478,7 @@ export default function DriveSettingsPage() {
             </div>
 
             <p className="text-gray-600 text-sm mb-4">
-              Choose how to monitor Drive changes.
+              Google Drive background polling runs automatically on server start.
             </p>
 
             <div className="space-y-3">
@@ -473,8 +492,8 @@ export default function DriveSettingsPage() {
                   }`}
                 >
                   <Activity className="w-5 h-5 mx-auto mb-1" />
-                  <p className="text-sm font-medium">Polling Mode</p>
-                  <p className="text-xs mt-1">No tunnel needed</p>
+                  <p className="text-sm font-medium">Server Polling Mode</p>
+                  <p className="text-xs mt-1">Auto-runs on startup</p>
                 </button>
 
                 <button
@@ -487,12 +506,42 @@ export default function DriveSettingsPage() {
                 >
                   <Cloud className="w-5 h-5 mx-auto mb-1" />
                   <p className="text-sm font-medium">Webhook Mode</p>
-                  <p className="text-xs mt-1">Real-time</p>
+                  <p className="text-xs mt-1">Push Notifications</p>
                 </button>
               </div>
 
               {mode === 'polling' ? (
                 <div className="space-y-3">
+                  {/* Server Polling Status Card */}
+                  <div className={`p-3 rounded-lg border ${isPollerActive ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Server className={`w-4 h-4 ${isPollerActive ? 'text-green-600' : 'text-gray-400'}`} />
+                        <span className="text-sm font-semibold text-gray-900">
+                          Server Background Poller: {isPollerActive ? 'Running' : 'Stopped'}
+                        </span>
+                      </div>
+                      {isPollerActive && (
+                        <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse" />
+                      )}
+                    </div>
+                    {status?.poller?.lastPollTime && (
+                      <p className="text-xs text-gray-600">
+                        Last poll: {new Date(status.poller.lastPollTime).toLocaleTimeString()} (Cycle #{status.poller.pollCount})
+                      </p>
+                    )}
+                    {isPollerActive && nextPollIn !== null && nextPollIn >= 0 && (
+                      <p className="text-xs text-green-700 font-medium mt-1">
+                        Next poll in: {nextPollIn}s
+                      </p>
+                    )}
+                    {status?.poller?.lastError && (
+                      <p className="text-xs text-red-600 mt-1">
+                        Last Error: {status.poller.lastError}
+                      </p>
+                    )}
+                  </div>
+
                   {/* Polling Interval Selector */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -501,68 +550,48 @@ export default function DriveSettingsPage() {
                     <select
                       value={pollingInterval}
                       onChange={(e) => setPollingInterval(Number(e.target.value))}
-                      disabled={pollingActive}
+                      disabled={loading}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <option value={10}>Every 10 seconds</option>
-                      <option value={30}>Every 30 seconds</option>
+                      <option value={30}>Every 30 seconds (Default)</option>
                       <option value={60}>Every 1 minute</option>
                       <option value={120}>Every 2 minutes</option>
                       <option value={300}>Every 5 minutes</option>
                     </select>
                   </div>
 
-                  {/* Continuous Polling Toggle */}
+                  {/* Server Poller Toggle */}
                   <button
-                    onClick={toggleContinuousPolling}
-                    disabled={!status?.sync?.initialized}
+                    onClick={toggleServerPoller}
+                    disabled={loading || !status?.sync?.initialized}
                     className={`w-full flex items-center justify-center gap-2 px-4 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
-                      pollingActive
-                        ? 'bg-red-600 hover:bg-red-700'
+                      isPollerActive
+                        ? 'bg-amber-600 hover:bg-amber-700'
                         : 'bg-green-600 hover:bg-green-700'
                     }`}
                   >
-                    {pollingActive ? (
+                    {isPollerActive ? (
                       <>
                         <StopCircle className="w-4 h-4" />
-                        Stop Continuous Polling
+                        {loading ? 'Stopping...' : 'Pause Background Poller'}
                       </>
                     ) : (
                       <>
                         <PlayCircle className="w-4 h-4" />
-                        Start Continuous Polling
+                        {loading ? 'Starting...' : 'Start Background Poller'}
                       </>
                     )}
                   </button>
 
-                  {/* Polling Status */}
-                  {pollingActive && (
-                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-2 h-2 bg-green-600 rounded-full animate-pulse" />
-                        <p className="text-sm font-medium text-green-900">Polling Active</p>
-                      </div>
-                      {lastPollTime && (
-                        <p className="text-xs text-green-700">
-                          Last poll: {lastPollTime.toLocaleTimeString()}
-                        </p>
-                      )}
-                      {nextPollIn !== null && nextPollIn > 0 && (
-                        <p className="text-xs text-green-700">
-                          Next poll in: {nextPollIn}s
-                        </p>
-                      )}
-                    </div>
-                  )}
-
                   {/* Manual Poll Button */}
                   <button
-                    onClick={startPolling}
-                    disabled={loading || !status?.sync?.initialized}
+                    onClick={triggerPollNow}
+                    disabled={loading || !status?.sync?.initialized || status?.poller?.isPollingInProgress}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
                   >
-                    <RefreshCw className="w-4 h-4" />
-                    {loading ? 'Polling...' : 'Poll Once Now'}
+                    <RefreshCw className={`w-4 h-4 ${status?.poller?.isPollingInProgress ? 'animate-spin' : ''}`} />
+                    {status?.poller?.isPollingInProgress ? 'Polling in progress...' : 'Poll Once Now'}
                   </button>
                 </div>
               ) : (
@@ -634,32 +663,25 @@ export default function DriveSettingsPage() {
                   </div>
                 </div>
 
-                {/* Channel Status */}
-                {status.channel && (
-                  <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm font-medium text-gray-700 mb-2">Channel Status</p>
-                    <div className="flex items-center gap-2">
-                      {status.channel.status === 'active' ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4 text-green-600" />
-                          <span className="text-sm text-gray-900">
-                            Active (expires {status.channel.expiresIn})
-                          </span>
-                        </>
-                      ) : status.channel.status === 'expired' ? (
-                        <>
-                          <XCircle className="w-4 h-4 text-red-600" />
-                          <span className="text-sm text-gray-900">Expired</span>
-                        </>
-                      ) : (
-                        <>
-                          <AlertCircle className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm text-gray-600">No active channel</span>
-                        </>
-                      )}
-                    </div>
+                {/* Poller Status */}
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Server Startup Poller</p>
+                  <div className="flex items-center gap-2">
+                    {status.poller?.isRunning ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        <span className="text-sm text-gray-900">
+                          Active (every {status.poller.intervalSeconds}s)
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-4 h-4 text-amber-500" />
+                        <span className="text-sm text-gray-600">Paused / Inactive</span>
+                      </>
+                    )}
                   </div>
-                )}
+                </div>
 
                 {/* Events Stats */}
                 {status.events && (

@@ -12,6 +12,8 @@ interface PlannedTask {
   next_action_date: string;
   customer_name?: string;
   confidence_score: number;
+  date_context?: 'exact' | 'early' | 'mid' | 'late' | 'range' | 'unspecified';
+  date_context_raw?: string | null;
 }
 
 interface ActualActivity {
@@ -328,9 +330,16 @@ export default function FollowUpTrackerPage() {
                     {match.planned.customer_name && (
                       <p className="text-xs text-blue-600 mt-1">👥 고객: {match.planned.customer_name}</p>
                     )}
-                    <p className="text-xs text-gray-500 mt-1">
-                      📅 예정일: {formatDate(match.planned.next_action_date)}
-                    </p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <p className="text-xs text-gray-500">
+                        📅 예정일: {formatDate(match.planned.next_action_date)}
+                      </p>
+                      {match.planned.date_context && match.planned.date_context !== 'exact' && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-800 font-bold">
+                          {match.planned.date_context_raw || match.planned.date_context}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 

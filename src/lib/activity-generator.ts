@@ -5,28 +5,34 @@
  * Used by both automatic EML processing and manual batch extraction.
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { executeSQL, insertRows } from '../../egdesk-helpers';
+import {
+  DateContextType,
+  encodeTimingContext,
+  extractDateContext,
+  calculateAnchorDate
+} from './date-context';
 
 // Tool definition for searching previous activities
-const searchActivitiesTool = {
+const searchActivitiesTool: any = {
   functionDeclarations: [
     {
       name: 'search_previous_activities',
       description: 'Search this employee\'s previous activities to understand context. Use when messages reference previous customers, ongoing issues, or need historical context.',
       parameters: {
-        type: 'OBJECT',
+        type: SchemaType.OBJECT,
         properties: {
           employee_name: {
-            type: 'STRING',
+            type: SchemaType.STRING,
             description: 'Employee name to search for'
           },
           days_back: {
-            type: 'NUMBER',
+            type: SchemaType.NUMBER,
             description: 'Number of days to look back (1-7)'
           },
           search_type: {
-            type: 'STRING',
+            type: SchemaType.STRING,
             description: 'Type of activities to search: "all", "customers", "issues"',
             enum: ['all', 'customers', 'issues']
           }
@@ -61,6 +67,8 @@ export interface Activity {
   chat_room: string;
   extracted_at: string;
   confidence_score: number;
+  date_context?: DateContextType;
+  date_context_raw?: string | null;
 }
 
 export interface GenerationResult {
@@ -220,8 +228,17 @@ SEPARATE activity object for EACH person, duplicating the activity details with 
 
 Activity types:
 - completed_task: Something they did today
-- planned_task: Something they plan to do (look for "내일", "예정", "방문 예정")
-  - IMPORTANT: Set activity_date to the PLANNED date (tomorrow if "내일"), not today
+- planned_task: Something they plan to do (look for "내일", "예정", "방문 예정", "9월 중순", "9월초", "9월말", "대보수기간")
+  - IMPORTANT for planned tasks & future events:
+    - Set planned_date to a representative anchor date (YYYY-MM-DD):
+      - Exact specific date if mentioned (e.g. "내일" -> next day, "9월 21일" -> 2026-09-21)
+      - Early period ("9월초", "다음달 초", "월초") -> 5th of that month (e.g. 2026-09-05)
+      - Mid period ("9월 중순", "중순", "9월 중") -> 15th of that month (e.g. 2026-09-15)
+      - Late period ("9월말", "월말", "9월 하순") -> 25th of that month (e.g. 2026-09-25)
+      - Range ("9월말~10월초") -> start date of the period (e.g. 2026-09-25)
+      - Unspecified/General ("상반기", "10월경") -> 15th of the target month
+    - Set date_context to one of: "exact" | "early" | "mid" | "late" | "range" | "unspecified"
+    - Set date_context_raw to the original Korean phrasing (e.g., "9월 중순", "9월말~10월초", "내일")
 - issue: A problem, blocker, or challenge
 - meeting: A meeting or discussion
 - other: Anything else noteworthy
@@ -240,7 +257,9 @@ Return JSON array (extract metadata ONLY, do NOT rewrite the message):
     "issue_severity": "low|medium|high or null (only for issues)",
     "action_taken": "action taken if mentioned or null (only for issues)",
     "resolved_by": "person who resolved the issue (if someone answered/resolved) or null",
-    "planned_date": "YYYY-MM-DD if a SPECIFIC future date is mentioned (e.g., 내일, 3/2, 다음주 화요일). Use null if the date is vague (e.g., 4월 중, 6월, 상반기). IMPORTANT: include this even for 'other' type activities"
+    "planned_date": "YYYY-MM-DD representative date for future tasks/meetings or null",
+    "date_context": "exact|early|mid|late|range|unspecified",
+    "date_context_raw": "original timing text (e.g. '9월 중순', '9월말~10월초', '내일') or null"
   }
 ]
 
@@ -267,13 +286,14 @@ Return:
     let response = result.response;
 
     // Handle tool calls
-    while (response.functionCalls && response.functionCalls.length > 0) {
-      const functionCall = response.functionCalls[0];
+    let functionCalls = typeof response.functionCalls === 'function' ? response.functionCalls() : (response as any).functionCalls;
+    while (functionCalls && functionCalls.length > 0) {
+      const functionCall = functionCalls[0];
 
       if (functionCall.name === 'search_previous_activities') {
-        const employeeName = functionCall.args.employee_name;
-        const daysBack = functionCall.args.days_back || 3;
-        const searchType = functionCall.args.search_type || 'all';
+        const employeeName = (functionCall.args as any).employee_name;
+        const daysBack = (functionCall.args as any).days_back || 3;
+        const searchType = (functionCall.args as any).search_type || 'all';
 
         console.log(`    🔍 AI requested previous activities: ${daysBack} days, type: ${searchType}`);
 
@@ -319,20 +339,37 @@ Return:
 
     // Convert to Activity objects
     for (const activity of parsed) {
-      // Use planned_date if provided
-      let activityDate = date;
-      if (activity.planned_date) {
-        activityDate = activity.planned_date;
-      } else if (activity.activity_type === 'planned_task') {
-        // Default to next day for planned_task without explicit date
-        const nextDay = new Date(date);
-        nextDay.setDate(nextDay.getDate() + 1);
-        activityDate = nextDay.toISOString().split('T')[0];
-      }
-
       // Use first message_id from array
       const messageIds = activity.message_ids || [activity.message_id] || [messages[0].id];
       const sourceMessageId = Array.isArray(messageIds) ? messageIds[0] : messageIds;
+      const matchingMsg = messages.find(m => m.id === sourceMessageId)?.message || messages[0]?.message;
+
+      // Extract date context & calculate anchor date
+      const contextFromExtraction = (activity.date_context as DateContextType) || null;
+      const rawFromExtraction = activity.date_context_raw || null;
+
+      const timingInfo = (contextFromExtraction && contextFromExtraction !== 'exact')
+        ? { date_context: contextFromExtraction, date_context_raw: rawFromExtraction }
+        : extractDateContext(activity, matchingMsg);
+
+      let activityDate = date;
+      if (activity.planned_date) {
+        activityDate = calculateAnchorDate(date, timingInfo.date_context, activity.planned_date);
+      } else if (activity.activity_type === 'planned_task') {
+        if (timingInfo.date_context !== 'exact') {
+          activityDate = calculateAnchorDate(date, timingInfo.date_context, null);
+        } else {
+          // Default to next day for planned_task without explicit date
+          const nextDay = new Date(date);
+          nextDay.setDate(nextDay.getDate() + 1);
+          activityDate = nextDay.toISOString().split('T')[0];
+        }
+      }
+
+      let actionTaken = activity.action_taken || null;
+      if ((activity.activity_type === 'planned_task' || activity.planned_date) && timingInfo.date_context !== 'exact') {
+        actionTaken = encodeTimingContext(timingInfo.date_context, timingInfo.date_context_raw);
+      }
 
       activities.push({
         source_message_id: sourceMessageId,
@@ -345,11 +382,13 @@ Return:
         products: JSON.stringify(activity.products || []),
         outcome: activity.outcome || null,
         issue_severity: activity.issue_severity || null,
-        action_taken: activity.action_taken || null,
+        action_taken: actionTaken,
         resolved_by: activity.resolved_by || null,
         chat_room: messages[0].chat_room,
         extracted_at: new Date().toISOString(),
-        confidence_score: 0.85
+        confidence_score: 0.85,
+        date_context: timingInfo.date_context,
+        date_context_raw: timingInfo.date_context_raw
       });
     }
 

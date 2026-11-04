@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import path from "path";
 
 /**
  * 🔍 Automatically detect local IPv4 addresses to allow LAN access.
@@ -52,9 +51,6 @@ const nextConfig: NextConfig = {
         '*.localto.net'
       ]
     }
-  },
-  turbopack: {
-    root: path.resolve(__dirname),
   },
   typescript: {
     // Always skip TypeScript errors to prevent blocking on auto-generated files

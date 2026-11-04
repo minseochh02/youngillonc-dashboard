@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeSQL } from '@/egdesk-helpers';
+import { extractDateContext, DateContextType } from '@/lib/date-context';
 
 interface PlannedTask {
   id: number;
@@ -10,6 +11,8 @@ interface PlannedTask {
   next_action_date: string; // When they plan to do it
   customer_name?: string;
   confidence_score: number;
+  date_context?: DateContextType;
+  date_context_raw?: string | null;
 }
 
 interface ActualActivity {
@@ -53,7 +56,9 @@ export async function GET(request: NextRequest) {
         eal.activity_label,
         eal.activity_date as next_action_date,
         eal.customer as customer_name,
-        eal.confidence_score
+        eal.confidence_score,
+        eal.action_taken,
+        eal.outcome
       FROM employee_activity_log eal
       LEFT JOIN kakaotalk_raw_messages krm ON eal.source_message_id = krm.id
       WHERE (eal.activity_type = 'planned_task' OR eal.activity_type = 'planning')
@@ -73,7 +78,22 @@ export async function GET(request: NextRequest) {
     plannedQuery += ' ORDER BY eal.activity_date DESC, eal.employee_name';
 
     const plannedResult = await executeSQL(plannedQuery);
-    const plannedTasks: PlannedTask[] = plannedResult?.rows || [];
+    const rawPlannedTasks: any[] = plannedResult?.rows || [];
+    const plannedTasks: PlannedTask[] = rawPlannedTasks.map(row => {
+      const timingInfo = extractDateContext(row, row.next_action);
+      return {
+        id: row.id,
+        employee_name: row.employee_name,
+        message_date: row.message_date,
+        activity_label: row.activity_label,
+        next_action: row.next_action,
+        next_action_date: row.next_action_date,
+        customer_name: row.customer_name,
+        confidence_score: row.confidence_score,
+        date_context: timingInfo.date_context,
+        date_context_raw: timingInfo.date_context_raw
+      };
+    });
 
     // Get all actual completed activities
     // Join with kakaotalk_raw_messages to get the original message
@@ -122,9 +142,22 @@ export async function GET(request: NextRequest) {
       const matchingActivity = actualActivities
         .filter(actual => {
           if (usedActualIds.has(actual.id)) return false;
-          // Must be same employee and same date
+          // Must be same employee
           if (actual.employee_name !== planned.employee_name) return false;
-          if (actual.activity_date !== planned.next_action_date) return false;
+
+          // Date matching: exact vs flexible window
+          if (planned.date_context && planned.date_context !== 'exact') {
+            const plannedMonth = planned.next_action_date.slice(0, 7);
+            const actualMonth = actual.activity_date.slice(0, 7);
+            if (plannedMonth !== actualMonth) return false;
+
+            const actualDay = parseInt(actual.activity_date.slice(8, 10), 10);
+            if (planned.date_context === 'early' && actualDay > 12) return false;
+            if (planned.date_context === 'mid' && (actualDay < 7 || actualDay > 23)) return false;
+            if (planned.date_context === 'late' && actualDay < 18) return false;
+          } else {
+            if (actual.activity_date !== planned.next_action_date) return false;
+          }
           return true;
         })
         .sort((a, b) => {
